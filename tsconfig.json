@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "target": "ES2023",
+    // จำเป็นสำหรับ sequelize-typescript: ถ้าเป็น true (ค่า default ของ target ES2022+)
+    // class field ที่ประกาศไว้เฉย ๆ จะถูก define ทับ getter/setter ที่ Sequelize ใส่ไว้
+    // ทำให้ทุก field อ่านค่าได้เป็น undefined
+    "useDefineForClassFields": false,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "noFallthroughCasesInSwitch": true,
+    "strictPropertyInitialization": false,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/database/migrations", "src/database/seeders"]
+}

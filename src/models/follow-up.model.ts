@@ -1,0 +1,52 @@
+import { BelongsTo, Column, DataType, ForeignKey, Table } from 'sequelize-typescript';
+
+import { AuditedModel } from './base.model';
+import { Customer } from './customer.model';
+import { User } from './user.model';
+
+export enum FollowUpStatus {
+  PLANNED = 'PLANNED',
+  DONE = 'DONE',
+  OVERDUE = 'OVERDUE',
+  CANCELLED = 'CANCELLED',
+}
+
+/** งานติดตามลูกค้า — ป้อนเข้า notification rule แบบ FOLLOWUP_DUE */
+@Table({ tableName: 'follow_ups', underscored: true, timestamps: true, paranoid: true })
+export class FollowUp extends AuditedModel<FollowUp> {
+  @ForeignKey(() => Customer)
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'customer_id' })
+  customerId: number;
+
+  @Column({ type: DataType.STRING(255), allowNull: false })
+  title: string;
+
+  @Column({ type: DataType.TEXT, allowNull: true })
+  detail: string | null;
+
+  @Column({ type: DataType.DATEONLY, allowNull: false, field: 'due_date' })
+  dueDate: string;
+
+  @Column({
+    type: DataType.ENUM(...Object.values(FollowUpStatus)),
+    allowNull: false,
+    defaultValue: FollowUpStatus.PLANNED,
+  })
+  status: FollowUpStatus;
+
+  @ForeignKey(() => User)
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'assigned_user_id' })
+  assignedUserId: number | null;
+
+  @Column({ type: DataType.DATE, allowNull: true, field: 'completed_at' })
+  completedAt: Date | null;
+
+  @Column({ type: DataType.TEXT, allowNull: true, field: 'result_note' })
+  resultNote: string | null;
+
+  @BelongsTo(() => Customer)
+  customer: Customer;
+
+  @BelongsTo(() => User)
+  assignedUser: User;
+}

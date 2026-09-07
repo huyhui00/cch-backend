@@ -1,0 +1,45 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
+
+import { AppController } from './app.controller';
+import { AccessControlModule } from './common/access-control.module';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
+import { DatabaseModule } from './database/database.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { RolesModule } from './modules/roles/roles.module';
+import { UsersModule } from './modules/users/users.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env'],
+      cache: true,
+    }),
+    ScheduleModule.forRoot(),
+    DatabaseModule,
+    AccessControlModule,
+
+    AuthModule,
+    UsersModule,
+    RolesModule,
+
+    // modules ทางธุรกิจที่เหลือจะถูกเพิ่มที่นี่ตามลำดับ Phase ใน CLAUDE.md ข้อ 12
+    // CustomersModule, ProjectsModule, TicketsModule, ...
+  ],
+  controllers: [AppController],
+  providers: [
+    // ผูกที่ระดับ global เพื่อให้ "ต้องล็อกอิน" เป็นค่าเริ่มต้นของทุก endpoint
+    // module ใหม่ที่เพิ่มใน phase ถัดไปจึงถูกป้องกันทันทีโดยไม่ต้องจำใส่ guard เอง
+    // endpoint ที่เข้าถึงได้โดยไม่ต้องมี token ต้องประกาศ @Public() ออกมาให้ชัด
+    //
+    // ลำดับสำคัญ: JwtAuthGuard ต้องมาก่อน เพราะ PermissionsGuard อ่าน request.user
+    // ที่ตัวแรกแนบไว้ให้
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
+  ],
+})
+export class AppModule {}
