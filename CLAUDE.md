@@ -76,7 +76,26 @@ users.account_type: 'SUPER_ADMIN' | 'ADMIN' | 'USER'
 | `USER` | เฉพาะเมนูตาม Role ที่ได้รับ |
 
 - `SUPER_ADMIN` **ไม่ต้องผูก Role** — bypass permission check ทั้งหมด
+- `ADMIN` **ไม่ต้องผูก Role เช่นกัน** — bypass ทุกเมนู ยกเว้นสิ่งที่สงวนให้ SUPER_ADMIN
 - Seeder ต้องสร้าง SUPER_ADMIN 1 บัญชีตอน setup ระบบ
+
+**กฎละเอียด (ยืนยันจากผู้บริหาร 8 ก.ย. 2026):**
+
+| การกระทำ | SUPER_ADMIN | ADMIN | USER |
+|---|---|---|---|
+| สร้าง / แก้ / ลบ Role | ✅ | ❌ | ❌ |
+| กำหนดว่า Role นั้นทำอะไรได้ (ติ๊กสิทธิ์) | ✅ | ❌ | ❌ |
+| ดูรายการสิทธิ์ทั้งหมด (`GET /api/permissions`) | ✅ | ❌ | ❌ |
+| **มอบ Role ให้ user** | ✅ | ✅ | ตามสิทธิ์ |
+| เข้าเมนูทั่วไปโดยไม่ต้องมี Role | ✅ | ✅ | ❌ ต้องรอรับ Role |
+| สร้าง / เลื่อนใครเป็น SUPER_ADMIN | ✅ | ❌ | ❌ |
+| **เลื่อนตัวเองเป็น SUPER_ADMIN** | — | ❌ | ❌ |
+| แก้ไขบัญชีที่เป็น SUPER_ADMIN | ✅ | ❌ | ❌ |
+
+- ADMIN เลือกได้เฉพาะ Role ที่ SUPER_ADMIN สร้างไว้ — เป็นจริงโดยอัตโนมัติ เพราะมีแต่
+  SUPER_ADMIN ที่สร้าง Role ได้ ไม่ต้องเขียนโค้ดบังคับเพิ่ม
+- ข้อจำกัดเรื่อง SUPER_ADMIN ถูกบังคับที่ `UsersService.assertCanGrantAccountType()`
+  ส่วนข้อจำกัดเรื่อง Role ถูกบังคับที่ `PermissionsGuard` (ดู 9.4)
 
 ### 4.2 Role เป็นแบบ Dynamic M:N
 
@@ -108,16 +127,30 @@ src/
 ├── main.ts                      # bootstrap, CORS, Swagger, ValidationPipe
 ├── app.module.ts
 ├── common/
+│   ├── access-control.module.ts       # @Global — ให้ guard หา AccessControlService เจอ
 │   ├── guards/
 │   │   ├── jwt-auth.guard.ts
-│   │   └── permissions.guard.ts  # เช็ค permission + bypass ถ้า SUPER_ADMIN
+│   │   └── permissions.guard.ts       # ตรวจสิทธิ์ตาม 9.4
 │   ├── decorators/
 │   │   ├── require-permission.decorator.ts
+│   │   ├── require-account-type.decorator.ts  # จำกัดด้วย account_type ไม่ใช่ permission
+│   │   ├── public.decorator.ts        # ยกเว้น endpoint จาก JwtAuthGuard ที่เป็น global
 │   │   └── current-user.decorator.ts
 │   ├── interceptors/
-│   │   └── transform.interceptor.ts   # ห่อ response format
+│   │   ├── transform.interceptor.ts   # ห่อ response format
+│   │   └── request-context.interceptor.ts  # เติม userId ลง context หลัง guard ผ่าน
+│   ├── context/
+│   │   └── request-context.ts         # AsyncLocalStorage — ที่มาของ user_id ใน audit hook
+│   ├── services/
+│   │   └── access-control.service.ts  # union สิทธิ์จากทุก Role ของผู้ใช้
+│   ├── types/
+│   │   └── auth.types.ts              # AuthenticatedUser, JwtPayload
+│   ├── utils/
+│   │   └── crypto.util.ts             # bcrypt + hash ของ refresh token
 │   ├── filters/
 │   │   └── http-exception.filter.ts
+│   ├── pipes/
+│   │   └── validation.pipe.ts
 │   └── dto/
 │       └── pagination.dto.ts
 ├── database/
@@ -221,6 +254,7 @@ communication_logs.channel  LINE | PHONE | EMAIL | FACEBOOK | MEETING | OTHER
 projects.status         DRAFT | IN_PROGRESS | DELIVERED | CLOSED | CANCELLED
 projects.priority       LOW | NORMAL | HIGH | URGENT
 tasks.status            TODO | DOING | WAITING | REVIEW | DONE
+tasks.priority          LOW | NORMAL | HIGH | URGENT
 deliveries.acceptance_status  PENDING | ACCEPTED | REJECTED
 warranties.status       ACTIVE | EXPIRED | VOID
 documents.doc_type      QUOTATION | PO | CONTRACT | DELIVERY_NOTE | MA_CONTRACT | OTHER
@@ -274,26 +308,56 @@ POST /api/tickets/:id/resolutions
 
 ### 9.4 Permission Check
 
+**ลำดับการตรวจสำคัญมาก** — `role.manage` ต้องถูกตรวจ *ก่อน* ที่ ADMIN จะได้ bypass
+ไม่งั้น ADMIN จะหลุดเข้าไปจัดการ Role ได้ ซึ่งขัด BR-10 โดยตรง
+
 ```typescript
-// PermissionsGuard
-if (user.accountType === 'SUPER_ADMIN') return true;   // bypass
-if (requiredPermission === 'role.manage') return false; // เฉพาะ SUPER_ADMIN
-const perms = union(user.roles.map(r => r.permissions));
-return perms.includes(requiredPermission);
+// PermissionsGuard — src/common/guards/permissions.guard.ts
+if (isPublic) return true;                              // endpoint ที่ติด @Public()
+if (!required.permissions && !required.accountTypes) return true;
+if (!user) throw Unauthorized;
+
+// 1. SUPER_ADMIN ผ่านทุกอย่าง ไม่มีข้อยกเว้น
+if (user.accountType === 'SUPER_ADMIN') return true;
+
+// 2. สิทธิ์ที่ผูกกับ account_type — ติ๊กให้ Role ยังไงก็ไม่ผ่าน (BR-10)
+//    ต้องอยู่เหนือ ADMIN bypass
+if (required.permissions.some(c => SUPER_ADMIN_ONLY.has(c))) throw Forbidden;
+
+// 3. ข้อจำกัดที่ endpoint ระบุเอง ผ่าน @RequireAccountType(...)
+if (required.accountTypes.length && !required.accountTypes.includes(user.accountType))
+  throw Forbidden;
+
+// 4. ADMIN เข้าได้ทุกเมนูโดยไม่ต้องผูก Role (ดู 4.1)
+if (user.accountType === 'ADMIN') return true;
+
+// 5. USER — union ของทุก Role ที่ได้รับมอบหมาย (ดู 4.2)
+const perms = union(user.roles.map(r => r.permissions));   // query สดทุกครั้ง ไม่ยัดลง token
+if (!required.permissions.some(c => perms.has(c))) throw Forbidden;
+return true;
 ```
+
+- `SUPER_ADMIN_ONLY` ปัจจุบันมีค่าเดียวคือ `role.manage`
+- ไม่ยัด permissions ลง JWT payload โดยเจตนา — เพื่อให้การถอด Role มีผลทันที
+  ไม่ต้องรอ token หมดอายุ
+- ครอบคลุมด้วย unit test 27 เคสที่ `permissions.guard.spec.ts` — ถ้าเผลอย้ายลำดับ
+  ข้อ 2 กับ 4 สลับกัน เทสต์จะแดงทันที
 
 ---
 
 ## 10. สิ่งที่ยังไม่ได้ข้อสรุป (ห้ามเดาเอง ให้ถามก่อน)
 
-| # | ประเด็น |
-|---|---|
-| Q1 | ลูกค้ากรอกแบบประเมินยังไง ในเมื่อไม่มี login (ลิงก์ token สาธารณะ / พนักงานกรอกแทน) |
-| Q2 | โควตา MA reset ทุกวันที่ 1 หรือนับจากวันเริ่มสัญญา |
-| Q3 | MA รายปี นับโควตารายเดือน หรือรวมทั้งปียกยอดได้ |
-| Q4 | 1 โครงการมี MA active พร้อมกันหลายฉบับได้ไหม |
-| Q5 | Task ซ้อนกันได้กี่ระดับ |
-| Q6 | ต้อง migrate ข้อมูลเก่าไหม |
+| # | ประเด็น | สถานะ | ต้องรู้คำตอบก่อน Phase |
+|---|---|---|---|
+| Q1 | ลูกค้ากรอกแบบประเมินยังไง ในเมื่อไม่มี login (ลิงก์ token สาธารณะ / พนักงานกรอกแทน) | ⬜ ยังไม่สรุป | 13 |
+| Q2 | โควตา MA reset ทุกวันที่ 1 หรือนับจากวันเริ่มสัญญา | ⬜ ยังไม่สรุป (ทำเป็น config `MA_QUOTA_RESET_MODE` ไว้ก่อน) | 8 |
+| Q3 | MA รายปี นับโควตารายเดือน หรือรวมทั้งปียกยอดได้ | ⬜ ยังไม่สรุป | 8 |
+| Q4 | 1 โครงการมี MA active พร้อมกันหลายฉบับได้ไหม | ⬜ ยังไม่สรุป | 8 |
+| Q5 | Task ซ้อนกันได้กี่ระดับ + "ลำดับก่อนหลัง" คือ sort order หรือ dependency จริง | ⬜ **ยังไม่สรุป — อาจทำให้เกิน 30 ตาราง** | 5 |
+| Q6 | ต้อง migrate ข้อมูลเก่าไหม | ✅ **ตอบแล้ว** — บริษัทเปิดมา 4 ปี เก็บเป็นเอกสารกระดาษล้วน ไม่มีฐานข้อมูลเดิม จึงไม่ต้องเขียน migration script มีแต่การคีย์มือ (ยังไม่สรุปว่าต้องมี import CSV ไหม) | — |
+
+> Q5 สำคัญเป็นพิเศษ ถ้า "ลำดับก่อนหลัง" หมายถึง dependency จริง (งาน B เริ่มไม่ได้จนกว่า A เสร็จ)
+> ต้องเพิ่มตาราง `task_dependencies` ซึ่งจะกลายเป็นตารางที่ 31 ต้องขออนุมัติก่อน
 
 ---
 
@@ -303,26 +367,86 @@ return perms.includes(requiredPermission);
 - ทุก endpoint ต้องมี `@ApiTags`, `@ApiOperation`, `@ApiResponse`
 - ทุก DTO ต้องมี `class-validator` decorator
 - เขียน migration แยกไฟล์ต่อกลุ่มตาราง อย่ารวมทั้ง 30 ตารางในไฟล์เดียว
-- ก่อน commit: `npm run lint && npm run build` ต้องผ่าน
+- ก่อน commit: `npm run lint && npm run build && npm test` ต้องผ่านทั้งสามคำสั่ง
 - **อย่าสร้าง endpoint ที่ไม่มีใน scope** ถ้าคิดว่าจำเป็นให้เสนอก่อน
+- **เมื่อกฎธุรกิจเปลี่ยน ให้อัปเดตไฟล์นี้ก่อนเขียนโค้ด** ไม่ใช่ตามเก็บทีหลัง
+  เพราะไฟล์นี้ถูกอ่านทุกครั้งที่เริ่มงานใหม่ ถ้าปล่อยให้ขัดกับโค้ด งานรอบหน้าจะผิดตามเอกสาร
+
+**หมายเหตุด้านเทคนิคที่เจอระหว่างทาง:**
+- `@nestjs/common` v12 เป็น ESM ล้วน Jest จึงต้องรันด้วย `--experimental-vm-modules`
+  script `test` ใน package.json เรียก jest ผ่าน node โดยตรงด้วยเหตุผลนี้
+- TypeScript 6 ไม่ดึง `@types/jest` เข้ามาอัตโนมัติ ไฟล์ `*.spec.ts` ต้องมี
+  `/// <reference types="jest" />` ที่บรรทัดแรก
+- Model ที่ต้องเขียนลง DB ต้องประกาศ creation-attributes interface แล้วส่งเป็น generic
+  ตัวที่สองของ `AuditedModel<T, TCreation>` ไม่งั้น `create()` จะบังคับให้ส่ง method ของ
+  Model มาด้วยทุกครั้ง (ทำแล้วกับ User, Role, UserRole, RolePermission, AuditLog)
 
 ---
 
 ## 12. ลำดับการพัฒนา (Phase)
 
+> **กำหนดส่ง 22 ตุลาคม 2026 — เกณฑ์ผ่านคือความคืบหน้าเกิน 80% หรือเสร็จ**
+> (จากประชุมครั้งแรก) ทีม 2 คน อาจมีงานอื่นแทรกได้แต่โปรเจกต์นี้เป็นงานหลัก
+
 | Phase | Module | สถานะ |
 |---|---|---|
-| 0 | Setup, CORS, Swagger, Response format, Error filter | ⬜ |
-| 1 | Models + Migrations 30 ตาราง + Seeders | ⬜ |
-| 2 | Auth + Users + Roles + Permissions + Guards | ⬜ |
-| 3 | Audit Log (global hook) | ⬜ |
-| 4 | Customers + Contacts + Communication Logs | ⬜ |
-| 5 | Projects + Tasks | ⬜ |
+| 0 | Setup, CORS, Swagger, Response format, Error filter | ✅ เสร็จ |
+| 1 | Models + Migrations 30 ตาราง + Seeders | ✅ เสร็จ |
+| 2 | Auth + Users + Roles + Permissions + Guards | ✅ เสร็จ |
+| 3 | Audit Log (global hook) | ✅ เสร็จ |
+| 4 | Customers + Contacts + Communication Logs | ⬜ **ถัดไป** |
+| 5 | Projects + Tasks | ⬜ ติด Q5 |
 | 6 | Deliveries + Warranties | ⬜ |
 | 7 | **Tickets + Resolutions** | ⬜ |
-| 8 | MA (Plans, Contracts, Usages, Addons) | ⬜ |
+| 8 | MA (Plans, Contracts, Usages, Addons) | ⬜ ติด Q2–Q4 |
 | 9 | Documents + Files (R2) | ⬜ |
 | 10 | Reports + Analytics | ⬜ |
 | 11 | Notifications + Scheduler + LINE | ⬜ |
 | 12 | Follow-ups | ⬜ |
-| 13 | Surveys | ⬜ |
+| 13 | Surveys | ⬜ ติด Q1 — **ตัวที่ตัดทิ้งก่อนถ้าเวลาไม่พอ** |
+
+**ข้อเสนอปรับลำดับ (ยังไม่ยืนยัน):** เลื่อน Phase 12 (Follow-ups) ขึ้นมาก่อน Phase 9–11
+เพราะตอบ pain point ที่ผู้บริหารบ่นหนักที่สุด — "ลืมติดตามลูกค้า เลยไปเป็นเดือนสองเดือน"
+และเป็น module เล็ก ทำเสร็จเร็ว
+
+---
+
+## 13. สิ่งที่ตกลงเพิ่มจากประชุม แต่ยังไม่ได้ทำ
+
+รายการนี้มาจาก transcript ประชุม 2 ครั้ง ไม่ได้อยู่ในหัวข้อ 1–12 เดิม
+**ต้องเคลียร์ให้หมดก่อนถือว่าโปรเจกต์เสร็จ**
+
+| # | สิ่งที่ต้องเพิ่ม | ผลต่อโครงสร้าง | ทำตอน Phase |
+|---|---|---|---|
+| A-1 | `POST /api/auth/logout` — เคลียร์ `refresh_token_hash` | endpoint ใหม่ | ✅ **เสร็จ 8 ก.ย.** |
+| A-2 | `deliveries.version` + `delivered_by_user_id` (ผู้ส่งมอบที่เป็นพนักงาน) | +2 คอลัมน์ | ✅ **เสร็จ 8 ก.ย.** |
+| A-3 | `tickets.received_by_user_id` — ผู้รับเรื่อง **แยกจาก** ผู้รับผิดชอบแก้ไข | +1 คอลัมน์ | ✅ **เสร็จ 8 ก.ย.** |
+| A-4 | `tasks.priority` — ระดับความสำคัญของงานย่อย | +1 คอลัมน์ | ✅ **เสร็จ 8 ก.ย.** |
+| A-5 | ลำดับก่อนหลังของ task | **ขึ้นกับ Q5** อาจ +1 ตาราง | 5 |
+| A-6 | `GET /api/customers/:id/overview` — มุมมองลูกค้า 360 องศา รวมโครงการ ประกัน สัญญา ปัญหา การติดตาม ในครั้งเดียว | endpoint ใหม่ | 10 (ต้องรอโมดูลอื่นเสร็จก่อน) |
+| A-7 | Customer Lifetime Value — ค่ารวมตลอดอายุการใช้บริการต่อลูกค้า 1 ราย คำนวณจาก `projects.contract_value` + `ma_contracts.price` + `ma_addons` | คำนวณสด ไม่เพิ่มคอลัมน์ | 10 |
+| A-8 | import ข้อมูลเก่าจาก Excel/CSV (ต่อเนื่องจาก Q6) | ยังไม่สรุปว่าต้องมีไหม | — |
+
+> A-2 ถึง A-4 ทำเป็น migration ไฟล์ใหม่แล้ว ไม่ได้แก้ไฟล์เดิมที่รันไปแล้ว
+> `20260908000001-add-group-c-meeting-columns.js` และ `20260908000002-add-group-e-meeting-columns.js`
+>
+> คอลัมน์ที่เพิ่มยังไม่มี endpoint รองรับ — จะไปเปิดใช้ตอน Phase 5 (tasks), 6 (deliveries), 7 (tickets)
+
+---
+
+## 14. สิ่งที่ระบบทำได้แล้ว ณ สิ้น Phase 3
+
+ใช้อ้างอิงเวลาต่อยอด จะได้ไม่เขียนซ้ำ
+
+- **Guard ระดับ global** — ทุก endpoint ต้องล็อกอินโดยอัตโนมัติ endpoint ที่เปิดสาธารณะ
+  ต้องประกาศ `@Public()` ออกมาให้ชัด (ปัจจุบันมี 3 เส้น: login, refresh, health)
+- **Audit log อัตโนมัติทุกตาราง** — เขียนที่ Sequelize global hook ที่เดียว
+  module ใหม่ไม่ต้องเขียนโค้ด audit เพิ่มเลย ครอบคลุมทั้ง create/update/destroy และ bulk
+  ค่าในช่องรหัสผ่านถูกแทนที่ด้วย `[REDACTED]` เสมอ
+- **ผู้กระทำถูกดึงผ่าน AsyncLocalStorage** — ดู `common/context/request-context.ts`
+  ถ้าเขียน DB จาก scheduler ที่ไม่มี request จะได้ `user_id = null` ซึ่งถูกต้องแล้ว
+- **Endpoint ที่มีแล้ว** — auth (login/refresh/logout/me), users (list/create/update/roles/status/
+  me-password), roles (CRUD + permissions), permissions (list), audit-logs (list), health
+  — รวม 18 เส้น
+- **logout ล้างเฉพาะ refresh token** — access token ใบเดิมยังใช้ได้จนหมดอายุ (15 นาที)
+  ถ้าต้องการตัดสิทธิ์ทันที ให้เปลี่ยนสถานะบัญชีเป็น SUSPENDED ซึ่ง JwtStrategy เช็คทุก request
