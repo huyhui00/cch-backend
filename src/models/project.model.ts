@@ -20,8 +20,27 @@ export enum ProjectPriority {
   URGENT = 'URGENT',
 }
 
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface ProjectCreationAttributes {
+  customerId: number;
+  code?: string | null;
+  name: string;
+  description?: string | null;
+  projectType?: string | null;
+  status?: ProjectStatus;
+  priority?: ProjectPriority;
+  startDate?: string | null;
+  targetEndDate?: string | null;
+  actualEndDate?: string | null;
+  contractValue?: string | null;
+  functionCount?: number | null;
+  managerUserId?: number | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'projects', underscored: true, timestamps: true, paranoid: true })
-export class Project extends AuditedModel<Project> {
+export class Project extends AuditedModel<Project, ProjectCreationAttributes> {
   @ForeignKey(() => Customer)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'customer_id' })
   customerId: number;
@@ -64,6 +83,14 @@ export class Project extends AuditedModel<Project> {
 
   @Column({ type: DataType.DECIMAL(15, 2), allowNull: true, field: 'contract_value' })
   contractValue: string | null;
+
+  /**
+   * จำนวนฟังก์ชันของโครงการ — ใช้เป็นตัวตั้งคิดราคา MA ภายหลัง (Phase 8)
+   * โครงการที่มีฟังก์ชันเยอะมีพื้นที่ให้เกิดบั๊กเยอะกว่า ค่าดูแลรายปีจึงต่างกัน
+   * ทั้งที่เนื้อหาแผน MA เหมือนกันทุกโครงการ (BR-05)
+   */
+  @Column({ type: DataType.INTEGER.UNSIGNED, allowNull: true, field: 'function_count' })
+  functionCount: number | null;
 
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'manager_user_id' })

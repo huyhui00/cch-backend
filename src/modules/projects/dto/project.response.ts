@@ -1,0 +1,271 @@
+import { ApiProperty } from '@nestjs/swagger';
+
+import {
+  Project,
+  ProjectPriority,
+  ProjectStatus,
+  Task,
+  TaskPriority,
+  TaskStatus,
+} from '../../../models';
+
+/** ผู้ใช้แบบย่อ — แสดงชื่อผู้จัดการหรือผู้รับผิดชอบงานโดยไม่ต้องยิงถามตาราง users ซ้ำ */
+export class UserSummaryDto {
+  @ApiProperty({ example: 3 })
+  id: number;
+
+  @ApiProperty({ example: 'somchai' })
+  username: string;
+
+  @ApiProperty({ example: 'สมชาย ใจดี' })
+  fullName: string;
+}
+
+export class CustomerSummaryDto {
+  @ApiProperty({ example: 1 })
+  id: number;
+
+  @ApiProperty({ example: 'บริษัท ตัวอย่าง จำกัด' })
+  name: string;
+}
+
+export class TaskResponseDto {
+  @ApiProperty({ example: 5 })
+  id: number;
+
+  @ApiProperty({ example: 1 })
+  projectId: number;
+
+  @ApiProperty({ nullable: true, example: null })
+  parentTaskId: number | null;
+
+  @ApiProperty({ example: 'ออกแบบหน้าจอรับสินค้าเข้าคลัง' })
+  title: string;
+
+  @ApiProperty({ nullable: true })
+  description: string | null;
+
+  @ApiProperty({ enum: TaskStatus })
+  status: TaskStatus;
+
+  @ApiProperty({ enum: TaskPriority })
+  priority: TaskPriority;
+
+  @ApiProperty({ nullable: true, example: 3 })
+  assignedUserId: number | null;
+
+  @ApiProperty({ type: UserSummaryDto, nullable: true })
+  assignedUser: UserSummaryDto | null;
+
+  @ApiProperty({ nullable: true, example: '2026-09-10' })
+  startDate: string | null;
+
+  @ApiProperty({ nullable: true, example: '2026-09-20' })
+  dueDate: string | null;
+
+  @ApiProperty({ nullable: true, description: 'ระบบบันทึกให้เองเมื่อเปลี่ยนสถานะเป็น DONE' })
+  completedAt: Date | null;
+
+  @ApiProperty({ nullable: true, example: '16.00' })
+  estimatedHours: string | null;
+
+  @ApiProperty({ nullable: true, example: '18.50' })
+  actualHours: string | null;
+
+  @ApiProperty({ description: 'ลำดับการแสดงผลในกลุ่มพี่น้องเดียวกัน', example: 0 })
+  sortOrder: number;
+
+  @ApiProperty({
+    description: 'เกินกำหนดแล้วหรือยัง — dueDate ผ่านไปแล้วและสถานะยังไม่ใช่ DONE',
+    example: false,
+  })
+  isOverdue: boolean;
+
+  @ApiProperty({
+    type: [TaskResponseDto],
+    description:
+      'งานย่อยหนึ่งชั้น จะมีค่าเฉพาะ endpoint ที่คืนโครงสร้างซ้อน ' +
+      'ชั้นที่ 3 ขึ้นไปดูได้โดยกรองด้วย parentTaskId',
+  })
+  subTasks: TaskResponseDto[];
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+
+/** สรุปความคืบหน้าของโครงการ — นับ task ทุกชั้นแบบแบน ไม่แยกงานแม่งานย่อย */
+export class ProjectProgressDto {
+  @ApiProperty({ description: 'จำนวนงานทั้งหมดในโครงการ (นับรวมงานย่อยทุกชั้น)', example: 12 })
+  totalTasks: number;
+
+  @ApiProperty({ description: 'จำนวนงานที่สถานะเป็น DONE', example: 9 })
+  doneTasks: number;
+
+  @ApiProperty({
+    description:
+      'เปอร์เซ็นต์ความคืบหน้า = (งานที่ DONE / งานทั้งหมด) x 100 ปัดทศนิยม 2 ตำแหน่ง — เป็น 0 เมื่อยังไม่มีงานเลย',
+    example: 75,
+  })
+  percent: number;
+
+  @ApiProperty({ description: 'จำนวนงานที่เกินกำหนดและยังไม่เสร็จ', example: 2 })
+  overdueTasks: number;
+
+  @ApiProperty({
+    description: 'จำนวนงานแยกตามสถานะ ใช้วาดแถบสรุปบนหน้าจอ',
+    example: { TODO: 2, DOING: 1, WAITING: 0, REVIEW: 0, DONE: 9 },
+  })
+  byStatus: Record<string, number>;
+}
+
+export class ProjectResponseDto {
+  @ApiProperty({ example: 1 })
+  id: number;
+
+  @ApiProperty({ example: 1 })
+  customerId: number;
+
+  @ApiProperty({ type: CustomerSummaryDto, nullable: true })
+  customer: CustomerSummaryDto | null;
+
+  @ApiProperty({ nullable: true, example: 'PRJ-2026-001' })
+  code: string | null;
+
+  @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
+  name: string;
+
+  @ApiProperty({ nullable: true })
+  description: string | null;
+
+  @ApiProperty({ nullable: true, example: 'SOFTWARE' })
+  projectType: string | null;
+
+  @ApiProperty({ enum: ProjectStatus })
+  status: ProjectStatus;
+
+  @ApiProperty({ enum: ProjectPriority })
+  priority: ProjectPriority;
+
+  @ApiProperty({ nullable: true, example: '2026-09-01' })
+  startDate: string | null;
+
+  @ApiProperty({ nullable: true, example: '2026-12-31' })
+  targetEndDate: string | null;
+
+  @ApiProperty({ nullable: true })
+  actualEndDate: string | null;
+
+  @ApiProperty({ nullable: true, example: '1500000.00' })
+  contractValue: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 42,
+    description: 'ใช้เป็นตัวตั้งคิดราคา MA ภายหลัง คู่กับมูลค่าสัญญา (BR-05)',
+  })
+  functionCount: number | null;
+
+  @ApiProperty({ nullable: true, example: 3 })
+  managerUserId: number | null;
+
+  @ApiProperty({ type: UserSummaryDto, nullable: true })
+  manager: UserSummaryDto | null;
+
+  @ApiProperty({
+    type: ProjectProgressDto,
+    nullable: true,
+    description: 'มีค่าเฉพาะ endpoint รายละเอียดโครงการ',
+  })
+  progress: ProjectProgressDto | null;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+
+function toUserSummary(
+  user: { id: number; username: string; fullName: string } | null | undefined,
+): UserSummaryDto | null {
+  return user ? { id: user.id, username: user.username, fullName: user.fullName } : null;
+}
+
+/**
+ * เกินกำหนด = มีวันครบกำหนด และวันนั้นผ่านไปแล้ว และงานยังไม่ DONE
+ * เทียบเป็นวัน ไม่ใช่เวลา เพราะ due_date เก็บเป็น DATEONLY — งานที่ครบกำหนดวันนี้
+ * ยังไม่ถือว่าเกิน จนกว่าจะข้ามไปวันถัดไป
+ */
+export function isTaskOverdue(task: Pick<Task, 'dueDate' | 'status'>): boolean {
+  if (!task.dueDate || task.status === TaskStatus.DONE) {
+    return false;
+  }
+
+  return task.dueDate < todayAsDateOnly();
+}
+
+/** วันที่วันนี้ในรูปแบบ YYYY-MM-DD ตามเวลาเครื่องเซิร์ฟเวอร์ (ตั้ง TZ ไทยไว้ที่ระดับ DB แล้ว) */
+export function todayAsDateOnly(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+export function toTaskResponse(task: Task, includeSubTasks = true): TaskResponseDto {
+  return {
+    id: task.id,
+    projectId: task.projectId,
+    parentTaskId: task.parentTaskId,
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    priority: task.priority,
+    assignedUserId: task.assignedUserId,
+    assignedUser: toUserSummary(task.assignedUser),
+    startDate: task.startDate,
+    dueDate: task.dueDate,
+    completedAt: task.completedAt,
+    estimatedHours: task.estimatedHours,
+    actualHours: task.actualHours,
+    sortOrder: task.sortOrder,
+    isOverdue: isTaskOverdue(task),
+    // ตัดที่ชั้นเดียว — งานย่อยของงานย่อยไม่ถูกคืนมาโดยอัตโนมัติ
+    subTasks:
+      includeSubTasks && task.subTasks
+        ? task.subTasks.map((sub) => toTaskResponse(sub, false))
+        : [],
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+  };
+}
+
+export function toProjectResponse(
+  project: Project,
+  progress: ProjectProgressDto | null = null,
+): ProjectResponseDto {
+  return {
+    id: project.id,
+    customerId: project.customerId,
+    customer: project.customer ? { id: project.customer.id, name: project.customer.name } : null,
+    code: project.code,
+    name: project.name,
+    description: project.description,
+    projectType: project.projectType,
+    status: project.status,
+    priority: project.priority,
+    startDate: project.startDate,
+    targetEndDate: project.targetEndDate,
+    actualEndDate: project.actualEndDate,
+    contractValue: project.contractValue,
+    functionCount: project.functionCount,
+    managerUserId: project.managerUserId,
+    manager: toUserSummary(project.manager),
+    progress,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  };
+}

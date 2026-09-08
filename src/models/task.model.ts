@@ -23,15 +23,35 @@ export enum TaskPriority {
   URGENT = 'URGENT',
 }
 
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface TaskCreationAttributes {
+  projectId: number;
+  parentTaskId?: number | null;
+  title: string;
+  description?: string | null;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  assignedUserId?: number | null;
+  startDate?: string | null;
+  dueDate?: string | null;
+  completedAt?: Date | null;
+  estimatedHours?: string | null;
+  actualHours?: string | null;
+  sortOrder?: number;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 /**
- * Self-reference ผ่าน parent_task_id — task ซ้อน task ได้
+ * Self-reference ผ่าน parent_task_id — task ซ้อน task ได้ไม่จำกัดชั้นในระดับฐานข้อมูล
  *
- * หมายเหตุ: CLAUDE.md ข้อ 10 (Q5) ยังไม่สรุปว่าซ้อนได้กี่ระดับ
- * ระดับฐานข้อมูลจึงไม่จำกัดความลึกไว้ ถ้าผู้บริหารสรุปเพดานเมื่อไหร่
- * ให้บังคับที่ service layer ไม่ต้องแก้ schema
+ * Q5 ได้ข้อสรุปแล้ว (8 ก.ย.) — "ลำดับก่อนหลัง" ที่ผู้บริหารพูดถึงคือการเรียงลำดับเฉย ๆ
+ * ใช้ sort_order ส่วนงานที่ต้องทำก่อนให้ผู้ใช้ตั้ง priority เอง
+ * **ไม่มีตาราง task_dependencies และห้ามเพิ่มคอลัมน์ depends_on ใด ๆ**
+ * ระบบไม่บังคับว่างานไหนต้องเสร็จก่อนงานไหน
  */
 @Table({ tableName: 'tasks', underscored: true, timestamps: true, paranoid: true })
-export class Task extends AuditedModel<Task> {
+export class Task extends AuditedModel<Task, TaskCreationAttributes> {
   @ForeignKey(() => Project)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'project_id' })
   projectId: number;

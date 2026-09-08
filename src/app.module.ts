@@ -11,6 +11,7 @@ import { DatabaseModule } from './database/database.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { ProjectsModule } from './modules/projects/projects.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -30,6 +31,7 @@ import { UsersModule } from './modules/users/users.module';
     RolesModule,
     AuditLogsModule,
     CustomersModule,
+    ProjectsModule,
 
     // modules ทางธุรกิจที่เหลือจะถูกเพิ่มที่นี่ตามลำดับ Phase ใน CLAUDE.md ข้อ 12
     // CustomersModule, ProjectsModule, TicketsModule, ...

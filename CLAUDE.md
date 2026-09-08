@@ -395,8 +395,8 @@ return true;
 | 2 | Auth + Users + Roles + Permissions + Guards | ✅ เสร็จ |
 | 3 | Audit Log (global hook) | ✅ เสร็จ |
 | 4 | Customers + Contacts + Communication Logs | ✅ เสร็จ |
-| 5 | Projects + Tasks | ⬜ **ถัดไป** |
-| 6 | Deliveries + Warranties | ⬜ |
+| 5 | Projects + Tasks | ✅ เสร็จ |
+| 6 | Deliveries + Warranties | ⬜ **ถัดไป** |
 | 7 | **Tickets + Resolutions** | ⬜ |
 | 8 | MA (Plans, Contracts, Usages, Addons) | ⬜ ติด Q2–Q4 |
 | 9 | Documents + Files (R2) | ⬜ |
@@ -426,6 +426,7 @@ return true;
 | A-6 | `GET /api/customers/:id/overview` — มุมมองลูกค้า 360 องศา รวมโครงการ ประกัน สัญญา ปัญหา การติดตาม ในครั้งเดียว | endpoint ใหม่ | 10 (ต้องรอโมดูลอื่นเสร็จก่อน) |
 | A-7 | Customer Lifetime Value — ค่ารวมตลอดอายุการใช้บริการต่อลูกค้า 1 ราย คำนวณจาก `projects.contract_value` + `ma_contracts.price` + `ma_addons` | คำนวณสด ไม่เพิ่มคอลัมน์ | 10 |
 | A-8 | import ข้อมูลเก่าจาก Excel/CSV (ต่อเนื่องจาก Q6) | ยังไม่สรุปว่าต้องมีไหม | — |
+| A-9 | `projects.function_count` — จำนวนฟังก์ชันของโครงการ ใช้เป็นตัวตั้งคิดราคา MA คู่กับ `contract_value` (BR-05 เนื้อหาแผนเหมือนกัน ราคาต่างกัน) | +1 คอลัมน์ | ✅ **เสร็จ 8 ก.ย.** (migration `20260908000003`) |
 
 > A-2 ถึง A-4 ทำเป็น migration ไฟล์ใหม่แล้ว ไม่ได้แก้ไฟล์เดิมที่รันไปแล้ว
 > `20260908000001-add-group-c-meeting-columns.js` และ `20260908000002-add-group-e-meeting-columns.js`
@@ -434,7 +435,7 @@ return true;
 
 ---
 
-## 14. สิ่งที่ระบบทำได้แล้ว ณ สิ้น Phase 4
+## 14. สิ่งที่ระบบทำได้แล้ว ณ สิ้น Phase 5
 
 ใช้อ้างอิงเวลาต่อยอด จะได้ไม่เขียนซ้ำ
 
@@ -447,8 +448,10 @@ return true;
   ถ้าเขียน DB จาก scheduler ที่ไม่มี request จะได้ `user_id = null` ซึ่งถูกต้องแล้ว
 - **Endpoint ที่มีแล้ว** — auth (login/refresh/logout/me), users (list/create/update/roles/status/
   me-password), roles (CRUD + permissions), permissions (list), audit-logs (list), health,
-  customers (CRUD + detail), contacts (CRUD), communication-logs (CRUD + detail)
-  — รวม 32 เส้น
+  customers (CRUD + detail), contacts (CRUD), communication-logs (CRUD + detail),
+  projects (list/detail/create/update), projects/:id/tasks (CRUD),
+  tasks (overdue, status, order)
+  — รวม 43 เส้น
 
 **กฎธุรกิจที่ Phase 4 บังคับไว้ อย่าเขียนทับตอนต่อยอด**
 - ผู้ติดต่อหลักมีได้คนเดียวต่อลูกค้า 1 ราย — ตั้งคนใหม่แล้วระบบถอดคนเดิมให้เองในทรานแซกชันเดียว
@@ -460,5 +463,24 @@ return true;
   ถ้าลบได้ ผู้ติดต่อและบันทึกการติดต่อจะถูก soft delete ตามไปด้วยในทรานแซกชันเดียว
 - ลบผู้ติดต่อไม่ได้ถ้ายังถูกอ้างอิงในบันทึกการติดต่อ
 - `GET /api/customers?idleDays=N` = หน้าจอ "ลูกค้าที่ถูกลืม" นับคนที่ยังไม่เคยติดต่อเลยรวมด้วย
+
+**กฎธุรกิจที่ Phase 5 บังคับไว้**
+- ความคืบหน้าโครงการ = (task ที่ DONE / task ทั้งหมด) x 100 นับ task ทุกชั้นแบบแบน
+  ไม่ถ่วงน้ำหนักด้วย estimated_hours เพราะไม่ได้กรอกกันทุกงาน โครงการที่ยังไม่มี task ได้ 0%
+- **สถานะงานเปลี่ยนไปไหนก็ได้ ไม่บังคับลำดับ** เพราะงานจริงถอยกลับได้ (REVIEW ไม่ผ่าน -> DOING)
+  เป็น DONE แล้วระบบใส่ `completed_at` ให้ ถอยออกจาก DONE แล้วล้างค่า และเป็น DONE ซ้ำไม่ทับเวลาเดิม
+- **จัดลำดับ** ส่งตำแหน่งปลายทาง ระบบเรียงพี่น้องทั้งกลุ่มใหม่เป็น 0,1,2,... ไม่ใช่แก้ค่าตัวเดียว
+  ไม่งั้นลำดับจะเพี้ยนหลังลากไปมาหลายรอบ — ค่านี้ใช้แสดงผลเท่านั้น ไม่ได้บังคับลำดับการทำงาน (Q5)
+- งานย่อยซ้อนได้ไม่จำกัดชั้นในฐานข้อมูล แต่ API คืนโครงสร้างซ้อน **2 ระดับ** เป็นค่าเริ่มต้น
+  ชั้นที่ 3 ขึ้นไปเจาะดูด้วย `?parentTaskId=` ระบบตรวจไม่ให้เกิดวงกลมตอนย้ายงานแม่
+- งานเกินกำหนด = `due_date < วันนี้` และสถานะไม่ใช่ DONE — งานที่ครบกำหนดวันนี้ยังไม่นับว่าเกิน
+- ย้ายโครงการข้ามลูกค้าไม่ได้ ย้ายงานข้ามโครงการไม่ได้ ลบงานแม่แล้วงานย่อยทุกชั้นถูกลบตาม
+- โครงการไม่มี DELETE — ที่ยกเลิกให้เปลี่ยนสถานะเป็น CANCELLED
+
+**กับดักทางเทคนิคที่เจอและต้องระวังตลอดไป**
+- **ห้ามใช้ include object ตัวเดียวกันซ้ำ** ทั้งที่ระดับบนและซ้อนใต้ include อื่น
+  Sequelize แก้ object นั้นในที่ตอน normalize ทำให้ association ปนกันจน join ผิดคอลัมน์
+  (อาการ: `Unknown column 'assignedUser.id' in 'field list'`) ให้ประกาศเป็นฟังก์ชัน
+  ที่คืน object ใหม่ทุกครั้งแทน ดูตัวอย่างที่ `tasks.service.ts`
 - **logout ล้างเฉพาะ refresh token** — access token ใบเดิมยังใช้ได้จนหมดอายุ (15 นาที)
   ถ้าต้องการตัดสิทธิ์ทันที ให้เปลี่ยนสถานะบัญชีเป็น SUSPENDED ซึ่ง JwtStrategy เช็คทุก request
