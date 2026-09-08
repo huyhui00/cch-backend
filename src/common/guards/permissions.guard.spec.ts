@@ -133,10 +133,44 @@ describe('PermissionsGuard', () => {
       await expect(guard.canActivate(createContext(staff))).rejects.toThrow(ForbiddenException);
     });
 
-    it('ADMIN ยังใช้สิทธิ์ปกติได้ตามที่ role กำหนด', async () => {
+    it('ADMIN เข้าเมนูอื่นได้ตามปกติ ข้อจำกัดมีเฉพาะเรื่อง Role เท่านั้น', async () => {
       const { guard } = createGuard(['user.view'], [['user.view']]);
 
       await expect(guard.canActivate(createContext(admin))).resolves.toBe(true);
+    });
+  });
+
+  describe('2.1 ADMIN เข้าได้ทุกเมนูโดยไม่ต้องผูก Role (CLAUDE.md 4.1)', () => {
+    it('เข้าได้แม้ไม่มี Role สักตัว', async () => {
+      const { guard, findPermissionCodes } = createGuard(['customer.view'], []);
+
+      await expect(guard.canActivate(createContext(admin))).resolves.toBe(true);
+
+      // ADMIN คือฝ่ายที่มอบ Role ให้คนอื่น จึงไม่ต้องถามฐานข้อมูลว่าตัวเองถืออะไรอยู่
+      expect(findPermissionCodes).not.toHaveBeenCalled();
+    });
+
+    it('เข้าได้ทุกสิทธิ์ที่ไม่ใช่ role.manage', async () => {
+      for (const code of ['ticket.resolve', 'ma.create', 'audit.view', 'user.create']) {
+        const { guard } = createGuard([code], []);
+        await expect(guard.canActivate(createContext(admin))).resolves.toBe(true);
+      }
+    });
+
+    it('แต่ยังโดนกันที่ role.manage เหมือนเดิม — bypass ต้องไม่ลบล้าง BR-10', async () => {
+      const { guard } = createGuard(['role.manage'], []);
+
+      await expect(guard.canActivate(createContext(admin))).rejects.toThrow(
+        'เฉพาะผู้ดูแลระบบสูงสุดเท่านั้นที่จัดการส่วนนี้ได้',
+      );
+    });
+
+    it('และยังโดนกันที่ @RequireAccountType ที่ไม่มี ADMIN อยู่ในรายการ', async () => {
+      const { guard } = createGuard(undefined, [], false, [AccountType.SUPER_ADMIN]);
+
+      await expect(guard.canActivate(createContext(admin))).rejects.toThrow(
+        'เฉพาะผู้ดูแลระบบเท่านั้นที่เข้าถึงส่วนนี้ได้',
+      );
     });
   });
 
@@ -218,14 +252,16 @@ describe('PermissionsGuard', () => {
       );
     });
 
-    it('ใช้ร่วมกับ @RequirePermission ต้องผ่านทั้งสองเงื่อนไข', async () => {
-      const passed = createGuard(['audit.view'], [['audit.view']], false, adminOnly);
-      await expect(passed.guard.canActivate(createContext(admin))).resolves.toBe(true);
+    it('ใช้ร่วมกับ @RequirePermission — ADMIN ผ่านทั้งคู่โดยไม่ต้องมี Role', async () => {
+      const { guard } = createGuard(['audit.view'], [], false, adminOnly);
 
-      const missingPermission = createGuard(['audit.view'], [[]], false, adminOnly);
-      await expect(missingPermission.guard.canActivate(createContext(admin))).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(guard.canActivate(createContext(admin))).resolves.toBe(true);
+    });
+
+    it('USER ที่มีสิทธิ์ครบก็ยังไม่ผ่าน ถ้าระดับบัญชีไม่ถึง', async () => {
+      const { guard } = createGuard(['audit.view'], [['audit.view']], false, adminOnly);
+
+      await expect(guard.canActivate(createContext(staff))).rejects.toThrow(ForbiddenException);
     });
   });
 

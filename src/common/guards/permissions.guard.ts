@@ -18,15 +18,15 @@ import { AccessControlService } from '../services/access-control.service';
 import type { AuthenticatedUser } from '../types/auth.types';
 
 /**
- * ตรวจสิทธิ์ตาม CLAUDE.md 9.4
+ * ตรวจสิทธิ์ตาม CLAUDE.md 4.1
  *
- *   1. SUPER_ADMIN  → ผ่านทุกอย่าง ไม่ต้องผูก role และไม่ query DB เลย
- *   2. ระดับบัญชี   → ถ้า endpoint ระบุ @RequireAccountType ไว้ ต้องอยู่ในรายการนั้น
- *   3. role.manage  → เฉพาะ SUPER_ADMIN เท่านั้น ADMIN ก็ไม่ได้ (BR-10)
- *   4. นอกนั้น      → union สิทธิ์จากทุก role ของผู้ใช้ แล้วเทียบกับที่ต้องการ
+ *   SUPER_ADMIN  ผ่านทุกอย่าง + เป็นระดับเดียวที่สร้าง/แก้/ลบ Role และกำหนดสิทธิ์ให้ Role ได้
+ *   ADMIN        ผ่านทุกเมนู แต่แก้ Role ไม่ได้ และเลื่อนตัวเองเป็น SUPER_ADMIN ไม่ได้
+ *   USER         เข้าได้เฉพาะสิ่งที่ Role ที่ได้รับมอบหมายอนุญาต
  *
- * ทำงานหลัง JwtAuthGuard เสมอ (ลำดับตามที่ประกาศใน APP_GUARD)
- * endpoint ที่ไม่ได้ติด decorator ตรวจสิทธิ์ใดเลยจะผ่านตัวนี้ไปโดยยังต้องล็อกอินอยู่
+ * ลำดับการตรวจสำคัญมาก — role.manage ต้องถูกตรวจ "ก่อน" ที่ ADMIN จะได้ bypass
+ * ไม่งั้น ADMIN จะหลุดเข้าไปจัดการ Role ได้ ซึ่งขัด BR-10 โดยตรง
+ * นี่เป็นเหตุผลที่ ADMIN bypass ไม่ได้อยู่บรรทัดเดียวกับ SUPER_ADMIN
  */
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -58,27 +58,35 @@ export class PermissionsGuard implements CanActivate {
       throw new UnauthorizedException('กรุณาเข้าสู่ระบบก่อนใช้งาน');
     }
 
-    // 1. SUPER_ADMIN ผ่านทุกอย่าง (CLAUDE.md 4.1)
+    // 1. SUPER_ADMIN ผ่านทุกอย่างโดยไม่มีข้อยกเว้น
     if (user.accountType === AccountType.SUPER_ADMIN) {
       return true;
     }
 
-    // 2. ข้อจำกัดระดับบัญชี — ตอบได้ทันทีจาก account_type ไม่ต้องแตะฐานข้อมูล
+    // 2. สิทธิ์ที่ผูกกับ account_type ไม่ใช่กับ Role — ติ๊กให้ Role ยังไงก็ไม่ผ่าน (BR-10)
+    //    ต้องอยู่เหนือ ADMIN bypass ข้างล่าง ไม่งั้น ADMIN จะแก้ Role ได้
+    if (requiredPermissions.some((code) => SUPER_ADMIN_ONLY_PERMISSIONS.has(code))) {
+      throw new ForbiddenException('เฉพาะผู้ดูแลระบบสูงสุดเท่านั้นที่จัดการส่วนนี้ได้');
+    }
+
+    // 3. ข้อจำกัดระดับบัญชีที่ endpoint ระบุไว้เอง (@RequireAccountType)
     if (requiredAccountTypes.length > 0 && !requiredAccountTypes.includes(user.accountType)) {
       throw new ForbiddenException('เฉพาะผู้ดูแลระบบเท่านั้นที่เข้าถึงส่วนนี้ได้');
+    }
+
+    // 4. ADMIN เข้าได้ทุกเมนูโดยไม่ต้องผูก Role (CLAUDE.md 4.1)
+    //    เพราะ ADMIN คือฝ่ายที่ "มอบ" Role ให้คนอื่น ไม่ใช่ฝ่ายที่รอรับ Role
+    //    ข้อจำกัดของ ADMIN ถูกบังคับไว้แล้วที่ข้อ 2 (แก้ Role ไม่ได้) และที่ UsersService
+    //    (สร้างหรือเลื่อนใครเป็น SUPER_ADMIN ไม่ได้ รวมถึงตัวเอง)
+    if (user.accountType === AccountType.ADMIN) {
+      return true;
     }
 
     if (requiredPermissions.length === 0) {
       return true;
     }
 
-    // 3. สิทธิ์ที่ผูกกับ account_type ไม่ใช่กับ role — ติ๊กให้ยังไงก็ไม่ผ่าน (BR-10)
-    //    ตรวจก่อน query DB เพราะคำตอบไม่ขึ้นกับ role ที่ถืออยู่เลย
-    if (requiredPermissions.some((code) => SUPER_ADMIN_ONLY_PERMISSIONS.has(code))) {
-      throw new ForbiddenException('เฉพาะผู้ดูแลระบบสูงสุดเท่านั้นที่จัดการส่วนนี้ได้');
-    }
-
-    // 4. union ของทุก role ที่ผู้ใช้ถืออยู่ (CLAUDE.md 4.2)
+    // 5. USER — สิทธิ์ที่ใช้ได้คือ union ของทุก Role ที่ได้รับมอบหมาย (CLAUDE.md 4.2)
     const granted = await this.accessControl.findPermissionCodes(user.id);
 
     if (!requiredPermissions.some((code) => granted.has(code))) {
