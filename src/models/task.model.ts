@@ -13,6 +13,17 @@ export enum TaskStatus {
 }
 
 /**
+ * ระดับความสำคัญของงานย่อย (ประชุมครั้งที่ 2 นาที 07:31)
+ * ใช้ชุดค่าเดียวกับ ProjectPriority เพื่อให้หน้าจอกรองข้ามระดับได้
+ */
+export enum TaskPriority {
+  LOW = 'LOW',
+  NORMAL = 'NORMAL',
+  HIGH = 'HIGH',
+  URGENT = 'URGENT',
+}
+
+/**
  * Self-reference ผ่าน parent_task_id — task ซ้อน task ได้
  *
  * หมายเหตุ: CLAUDE.md ข้อ 10 (Q5) ยังไม่สรุปว่าซ้อนได้กี่ระดับ
@@ -41,6 +52,13 @@ export class Task extends AuditedModel<Task> {
     defaultValue: TaskStatus.TODO,
   })
   status: TaskStatus;
+
+  @Column({
+    type: DataType.ENUM(...Object.values(TaskPriority)),
+    allowNull: false,
+    defaultValue: TaskPriority.NORMAL,
+  })
+  priority: TaskPriority;
 
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'assigned_user_id' })

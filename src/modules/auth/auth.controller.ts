@@ -50,6 +50,23 @@ export class AuthController {
     return this.authService.refresh(dto);
   }
 
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'ออกจากระบบ',
+    description:
+      'ล้าง refresh token ที่ระบบเก็บไว้ ทำให้ต่ออายุ session ไม่ได้อีก ' +
+      'ส่วน access token ใบปัจจุบันยังใช้ได้จนหมดอายุตามปกติ ' +
+      'ถ้าต้องการตัดสิทธิ์ทันที ให้เปลี่ยนสถานะบัญชีเป็น SUSPENDED แทน',
+  })
+  @ApiResponse({ status: 200, description: 'ออกจากระบบเรียบร้อย' })
+  @ApiResponse({ status: 401, description: 'ยังไม่ได้เข้าสู่ระบบ หรือ token หมดอายุ' })
+  async logout(@CurrentUser('id') userId: number): Promise<{ data: null; message: string }> {
+    await this.authService.logout(userId);
+    return { data: null, message: 'ออกจากระบบเรียบร้อย' };
+  }
+
   @Get('me')
   @ApiBearerAuth('access-token')
   @ApiOperation({

@@ -3,6 +3,7 @@ import { BelongsTo, Column, DataType, ForeignKey, HasMany, Table } from 'sequeli
 import { AuditedModel } from './base.model';
 import { Contact } from './contact.model';
 import { Project } from './project.model';
+import { User } from './user.model';
 import { Warranty } from './warranty.model';
 
 export enum AcceptanceStatus {
@@ -22,6 +23,13 @@ export class Delivery extends AuditedModel<Delivery> {
 
   @Column({ type: DataType.STRING(255), allowNull: false })
   title: string;
+
+  /**
+   * เวอร์ชันที่ส่งมอบ เก็บเป็นข้อความเพราะบริษัทใช้รูปแบบอย่าง "v1.2.0" หรือ "รอบที่ 2"
+   * การเรียงประวัติการส่งมอบจึงต้องเรียงด้วย deliveredAt เป็นหลัก ไม่ใช่เรียงด้วยค่านี้
+   */
+  @Column({ type: DataType.STRING(50), allowNull: true })
+  version: string | null;
 
   @Column({ type: DataType.TEXT, allowNull: true })
   description: string | null;
@@ -45,6 +53,11 @@ export class Delivery extends AuditedModel<Delivery> {
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'accepted_by_contact_id' })
   acceptedByContactId: number | null;
 
+  /** พนักงานผู้ส่งมอบ — คู่กับ acceptedByContactId ที่เป็นผู้รับมอบฝั่งลูกค้า */
+  @ForeignKey(() => User)
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'delivered_by_user_id' })
+  deliveredByUserId: number | null;
+
   @Column({ type: DataType.TEXT, allowNull: true })
   note: string | null;
 
@@ -53,6 +66,9 @@ export class Delivery extends AuditedModel<Delivery> {
 
   @BelongsTo(() => Contact)
   acceptedByContact: Contact;
+
+  @BelongsTo(() => User)
+  deliveredByUser: User;
 
   @HasMany(() => Warranty)
   warranties: Warranty[];

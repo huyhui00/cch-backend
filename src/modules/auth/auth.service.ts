@@ -109,6 +109,30 @@ export class AuthService {
     return { ...tokens, tokenType: 'Bearer' };
   }
 
+  /**
+   * ออกจากระบบ — ล้าง refresh token ที่เก็บไว้ทิ้ง
+   *
+   * ผลคือ refresh token ใบที่ถืออยู่ใช้ไม่ได้อีก ต้องล็อกอินใหม่เท่านั้น
+   * ส่วน access token ที่ยังไม่หมดอายุจะใช้ได้ต่ออีกไม่เกินอายุที่เหลือ (ค่าเริ่มต้น 15 นาที)
+   * เพราะ JWT เพิกถอนกลางคันไม่ได้ตามธรรมชาติของมัน ถ้าต้องการตัดทันทีจริง ๆ
+   * ให้เปลี่ยนสถานะบัญชีเป็น SUSPENDED แทน ซึ่ง JwtStrategy เช็คทุก request อยู่แล้ว
+   *
+   * เรียกซ้ำหรือเรียกทั้งที่ไม่มี token เก็บไว้ก็ไม่ error — ถือว่าออกจากระบบสำเร็จเหมือนกัน
+   */
+  async logout(userId: number): Promise<void> {
+    const user = await this.userModel.findByPk(userId);
+
+    if (!user || user.refreshTokenHash === null) {
+      return;
+    }
+
+    // อัปเดตผ่าน instance ไม่ใช่ update({ where }) เพื่อให้ audit hook บันทึกเป็น UPDATE
+    // พร้อม record_id ของผู้ใช้ ถ้าใช้แบบ where จะได้ BULK_UPDATE ที่ไม่มี record_id
+    // ทำให้ตามรอยว่าใครออกจากระบบเมื่อไรได้ยากกว่าที่ควร (BR-09)
+    user.refreshTokenHash = null;
+    await user.save();
+  }
+
   /** ข้อมูลผู้ใช้ที่ล็อกอินอยู่ พร้อม role และสิทธิ์ที่ union แล้ว */
   async me(userId: number): Promise<AuthProfileDto> {
     const user = await this.userModel.findByPk(userId);

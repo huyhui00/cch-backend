@@ -125,6 +125,15 @@ export class Ticket extends AuditedModel<Ticket> {
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'assigned_user_id' })
   assignedUserId: number | null;
 
+  /**
+   * พนักงานที่ "รับเรื่อง" ไว้ แยกจาก assignedUserId ที่เป็นคน "แก้ไข"
+   * (ประชุมครั้งที่ 2 นาที 09:33) ตาม BR-02 คนที่รับ LINE จากลูกค้ากับคนที่ลงมือแก้
+   * มักเป็นคนละคน และต้องตามรอยได้ทั้งคู่ (BR-09)
+   */
+  @ForeignKey(() => User)
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'received_by_user_id' })
+  receivedByUserId: number | null;
+
   /** จำนวนรอบที่แก้ไปแล้ว เพิ่มขึ้นทุกครั้งที่สร้าง resolution (CLAUDE.md 9.1) */
   @Column({
     type: DataType.INTEGER,
@@ -166,8 +175,13 @@ export class Ticket extends AuditedModel<Ticket> {
   @BelongsTo(() => Contact)
   reportedByContact: Contact;
 
-  @BelongsTo(() => User)
+  // มี FK ไป users สองตัวในตารางเดียวกัน จึงต้องระบุชื่อ FK ให้ชัดทั้งคู่
+  // ถ้าปล่อยให้ Sequelize เดาเอง มันจะผูกทั้งสอง association เข้ากับคอลัมน์เดียวกัน
+  @BelongsTo(() => User, 'assignedUserId')
   assignedUser: User;
+
+  @BelongsTo(() => User, 'receivedByUserId')
+  receivedByUser: User;
 
   @HasMany(() => TicketResolution)
   resolutions: TicketResolution[];
