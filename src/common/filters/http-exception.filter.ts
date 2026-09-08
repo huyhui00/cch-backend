@@ -14,7 +14,10 @@ import {
   ValidationError as SequelizeValidationError,
 } from 'sequelize';
 
+import { getElapsedMs } from '../context/request-context';
+import { URL_COLUMN_WIDTH } from '../interceptors/request-logging.interceptor';
 import type { ApiResponse } from '../interceptors/transform.interceptor';
+import type { AuthenticatedUser } from '../types/auth.types';
 
 /**
  * ข้อความ default ภาษาไทยต่อ HTTP status (CLAUDE.md 6.5)
@@ -49,20 +52,26 @@ export class HttpExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const request = ctx.getRequest<Request & { user?: AuthenticatedUser }>();
 
     const { status, message } = this.resolve(exception);
+
+    // ให้บรรทัด log ของ request ที่ล้มเหลวมีข้อมูลชุดเดียวกับที่สำเร็จ
+    // ตัวนี้ต้องเป็นคน log เองเพราะ guard ทำงานก่อน interceptor — เมื่อ guard
+    // ปฏิเสธ RequestLoggingInterceptor จะไม่ถูกเรียกเลย
+    const elapsed = String(getElapsedMs() ?? 0).padStart(5);
+    const actor = request.user ? request.user.username : 'ไม่ระบุตัวตน';
+    const url = request.originalUrl.padEnd(URL_COLUMN_WIDTH);
+    const line = `${request.method.padEnd(6)} ${url} ${status} ${elapsed}ms  ${actor}`;
 
     // 5xx = ปัญหาของเรา ต้องเก็บ stack ไว้สืบสวน แต่ไม่ส่งออกไปให้ client
     if (status >= SERVER_ERROR_THRESHOLD) {
       this.logger.error(
-        `${request.method} ${request.originalUrl} -> ${status} : ${
-          exception instanceof Error ? exception.message : String(exception)
-        }`,
+        `${line} — ${exception instanceof Error ? exception.message : String(exception)}`,
         exception instanceof Error ? exception.stack : undefined,
       );
     } else {
-      this.logger.warn(`${request.method} ${request.originalUrl} -> ${status} : ${message}`);
+      this.logger.warn(`${line} — ${message}`);
     }
 
     const body: ApiResponse<null> = {

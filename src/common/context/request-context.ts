@@ -12,6 +12,8 @@ export interface RequestContext {
   userId: number | null;
   ipAddress: string | null;
   userAgent: string | null;
+  /** เวลาที่ request เข้ามาถึง middleware ใช้วัดว่าใช้เวลาทั้งหมดเท่าไร */
+  startedAt: number;
 }
 
 /**
@@ -42,6 +44,12 @@ export function setCurrentUserId(userId: number | null): void {
   }
 }
 
+/** เวลาที่ผ่านไปตั้งแต่ request เข้ามา — คืน null เมื่อเรียกนอก request */
+export function getElapsedMs(): number | null {
+  const store = storage.getStore();
+  return store ? Date.now() - store.startedAt : null;
+}
+
 export function runWithRequestContext<T>(context: RequestContext, callback: () => T): T {
   return storage.run(context, callback);
 }
@@ -65,6 +73,9 @@ export function requestContextMiddleware(req: Request, _res: Response, next: Nex
     userId: null,
     ipAddress: truncate(req.ip ?? req.socket.remoteAddress, MAX_IP_LENGTH),
     userAgent: truncate(req.headers['user-agent'], MAX_USER_AGENT_LENGTH),
+    // จับเวลาตั้งแต่จุดแรกสุดของสาย ไม่ใช่ตอน controller เริ่มทำงาน
+    // จะได้เห็นเวลาที่หมดไปกับ guard ตรวจสิทธิ์ด้วย ซึ่งมีการ query ฐานข้อมูล
+    startedAt: Date.now(),
   };
 
   runWithRequestContext(context, next);
