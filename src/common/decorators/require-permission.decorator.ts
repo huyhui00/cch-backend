@@ -7,8 +7,16 @@ export const PERMISSION_KEY = 'requiredPermissions';
  *
  * PermissionsGuard ปฏิเสธทุกคนที่ไม่ใช่ SUPER_ADMIN เมื่อเจอ code ในชุดนี้
  * ต่อให้ Super Admin เผลอติ๊กให้ role ไหนไว้ก็ไม่มีผล
+ *
+ * ทั้งสามตัวมาจากตาราง CLAUDE.md 4.1 ที่ระบุว่า ADMIN สร้าง/แก้บทบาทไม่ได้
+ * และดูรายการสิทธิ์ทั้งหมดไม่ได้ ชุดนี้ถูกใช้สองที่ — กันที่ guard และตัดออกจาก
+ * รายการสิทธิ์ที่ /auth/me คืนให้ ADMIN เพื่อไม่ให้ frontend วาดเมนูที่กดแล้วเจอ 403
  */
-export const SUPER_ADMIN_ONLY_PERMISSIONS: ReadonlySet<string> = new Set<string>(['role.manage']);
+export const SUPER_ADMIN_ONLY_PERMISSIONS: ReadonlySet<string> = new Set<string>([
+  'role.manage',
+  'role.view',
+  'permission.view',
+]);
 
 /**
  * ระบุสิทธิ์ที่ต้องมีเพื่อเรียก endpoint นี้

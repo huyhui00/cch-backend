@@ -5,6 +5,7 @@ import { InjectModel } from '@nestjs/sequelize';
 import type { SignOptions } from 'jsonwebtoken';
 
 import { setCurrentUserId } from '../../common/context/request-context';
+import { SUPER_ADMIN_ONLY_PERMISSIONS } from '../../common/decorators/require-permission.decorator';
 import { AccessControlService } from '../../common/services/access-control.service';
 import type { JwtPayload } from '../../common/types/auth.types';
 import { hashRefreshToken, safeCompareHex, verifyPassword } from '../../common/utils/crypto.util';
@@ -146,13 +147,19 @@ export class AuthService {
 
   private async buildProfile(user: User): Promise<AuthProfileDto> {
     const isSuperAdmin = user.accountType === AccountType.SUPER_ADMIN;
+    const isAdmin = user.accountType === AccountType.ADMIN;
     const roles = isSuperAdmin ? [] : await this.accessControl.findRolesWithPermissions(user.id);
 
-    // SUPER_ADMIN ไม่ผูก role และ bypass permission check ทั้งหมด (CLAUDE.md 4.1)
-    // จึงคืนรายการสิทธิ์ทั้งระบบให้ frontend เพื่อให้เมนูที่มองเห็นตรงกับสิ่งที่กดได้จริง
-    const permissions = isSuperAdmin
-      ? await this.findAllPermissionCodes()
-      : this.unionPermissionCodes(roles);
+    // SUPER_ADMIN และ ADMIN ไม่ต้องผูก role แต่ bypass permission check ได้ (CLAUDE.md 4.1)
+    // จึงต้องคืนรายการสิทธิ์ให้ตรงกับสิ่งที่ PermissionsGuard ปล่อยผ่านจริง ไม่งั้น
+    // frontend ที่กั้นเมนูด้วย permissions จะซ่อนเมนูที่คนเหล่านี้กดเข้าไปได้อยู่ดี
+    //
+    // ต่างกันตรง ADMIN ไม่ได้ role.manage เพราะสิทธิ์นั้นผูกกับระดับบัญชี ติ๊กให้ไม่ได้ (BR-10)
+    // ผลพลอยได้คือเมนูจัดการบทบาทหายจากหน้าจอ ADMIN เองโดยไม่ต้องเขียนเงื่อนไขเพิ่ม
+    const permissions =
+      isSuperAdmin || isAdmin
+        ? await this.findAllPermissionCodes(isAdmin)
+        : this.unionPermissionCodes(roles);
 
     return {
       id: user.id,
@@ -182,13 +189,17 @@ export class AuthService {
     return [...codes].sort();
   }
 
-  private async findAllPermissionCodes(): Promise<string[]> {
+  private async findAllPermissionCodes(excludeSuperAdminOnly = false): Promise<string[]> {
     const permissions = await this.permissionModel.findAll({
       attributes: ['code'],
       order: [['code', 'ASC']],
     });
 
-    return permissions.map((permission) => permission.code);
+    const codes = permissions.map((permission) => permission.code);
+
+    return excludeSuperAdminOnly
+      ? codes.filter((code) => !SUPER_ADMIN_ONLY_PERMISSIONS.has(code))
+      : codes;
   }
 
   private async issueTokens(user: User): Promise<TokenPair> {

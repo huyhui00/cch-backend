@@ -97,6 +97,20 @@ users.account_type: 'SUPER_ADMIN' | 'ADMIN' | 'USER'
 - ข้อจำกัดเรื่อง SUPER_ADMIN ถูกบังคับที่ `UsersService.assertCanGrantAccountType()`
   ส่วนข้อจำกัดเรื่อง Role ถูกบังคับที่ `PermissionsGuard` (ดู 9.4)
 
+**`GET /api/auth/me` คืน `permissions` ให้ตรงกับสิ่งที่ guard ปล่อยผ่านจริง**
+
+| ระดับ | `roles` | `permissions` |
+|---|---|---|
+| `SUPER_ADMIN` | `[]` | ทั้งระบบ (75 รายการ) |
+| `ADMIN` | role ที่ถืออยู่ (ปกติ `[]`) | ทั้งระบบ **ยกเว้น** `SUPER_ADMIN_ONLY_PERMISSIONS` (72 รายการ) |
+| `USER` | role ที่ได้รับมอบหมาย | union ของทุก role |
+
+- **frontend ต้องกั้นเมนูด้วย `permissions` เท่านั้น ห้ามใช้ `roles`** เพราะ SUPER_ADMIN
+  กับ ADMIN มี `roles` ว่างโดยการออกแบบ ใช้ `roles.length` ตัดสินจะได้ผลผิดทั้งสองระดับ
+  ถ้าต้องรู้ระดับบัญชีให้อ่าน `accountType` ตรง ๆ
+- ADMIN ไม่ได้ `role.manage`, `role.view`, `permission.view` เมนูจัดการบทบาทจึงหายไป
+  จากหน้าจอเองโดยไม่ต้องเขียนเงื่อนไขพิเศษ ตรงกับที่ guard ปฏิเสธจริง
+
 ### 4.2 Role เป็นแบบ Dynamic M:N
 
 ```
@@ -337,7 +351,9 @@ if (!required.permissions.some(c => perms.has(c))) throw Forbidden;
 return true;
 ```
 
-- `SUPER_ADMIN_ONLY` ปัจจุบันมีค่าเดียวคือ `role.manage`
+- `SUPER_ADMIN_ONLY` มี 3 ค่า — `role.manage`, `role.view`, `permission.view`
+  ชุดนี้ถูกใช้สองที่: กันที่ guard และตัดออกจาก `permissions` ที่ `/auth/me` คืนให้ ADMIN
+  ถ้าเพิ่มค่าใหม่ ต้องแน่ใจว่า ADMIN ไม่ควรเห็นเมนูนั้นด้วย
 - ไม่ยัด permissions ลง JWT payload โดยเจตนา — เพื่อให้การถอด Role มีผลทันที
   ไม่ต้องรอ token หมดอายุ
 - ครอบคลุมด้วย unit test 27 เคสที่ `permissions.guard.spec.ts` — ถ้าเผลอย้ายลำดับ
