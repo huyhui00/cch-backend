@@ -7,6 +7,7 @@ import { Reflector } from '@nestjs/core';
 
 import { AccountType } from '../../models';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { ACCOUNT_TYPE_KEY } from '../decorators/require-account-type.decorator';
 import { PERMISSION_KEY } from '../decorators/require-permission.decorator';
 import type { AccessControlService } from '../services/access-control.service';
 import type { AuthenticatedUser } from '../types/auth.types';
@@ -32,10 +33,15 @@ function createContext(user?: AuthenticatedUser): ExecutionContext {
  * Reflector ตัวจริงอ่าน metadata จาก decorator ซึ่งผูกกับ handler จริง
  * ในเทสต์เราสนใจแค่ "guard ทำอะไรเมื่อได้ค่านี้มา" จึงป้อนค่าตรง ๆ ตาม key ที่ถูกถาม
  */
-function createReflectorFor(required: string[] | undefined, isPublic = false): Reflector {
+function createReflectorFor(
+  required: string[] | undefined,
+  isPublic = false,
+  accountTypes?: AccountType[],
+): Reflector {
   const values: Record<string, unknown> = {
     [IS_PUBLIC_KEY]: isPublic,
     [PERMISSION_KEY]: required,
+    [ACCOUNT_TYPE_KEY]: accountTypes,
   };
 
   return {
@@ -61,9 +67,10 @@ function createGuard(
   required: string[] | undefined,
   rolePermissions: string[][] = [],
   isPublic = false,
+  accountTypes?: AccountType[],
 ) {
   const { service, findPermissionCodes } = createAccessControl(rolePermissions);
-  const guard = new PermissionsGuard(createReflectorFor(required, isPublic), service);
+  const guard = new PermissionsGuard(createReflectorFor(required, isPublic, accountTypes), service);
 
   return { guard, findPermissionCodes };
 }
@@ -182,6 +189,43 @@ describe('PermissionsGuard', () => {
       const { guard } = createGuard(['customer.view'], [['customer.viewer']]);
 
       await expect(guard.canActivate(createContext(staff))).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('5. ข้อจำกัดระดับบัญชี (@RequireAccountType)', () => {
+    const adminOnly = [AccountType.ADMIN];
+
+    it('SUPER_ADMIN ผ่านเสมอ แม้ไม่ได้อยู่ในรายการที่ระบุ', async () => {
+      const { guard } = createGuard(undefined, [], false, adminOnly);
+
+      await expect(guard.canActivate(createContext(superAdmin))).resolves.toBe(true);
+    });
+
+    it('ADMIN ผ่านเพราะอยู่ในรายการ', async () => {
+      const { guard, findPermissionCodes } = createGuard(undefined, [], false, adminOnly);
+
+      await expect(guard.canActivate(createContext(admin))).resolves.toBe(true);
+
+      // ตัดสินจาก account_type ล้วน ๆ ไม่ต้องแตะฐานข้อมูล
+      expect(findPermissionCodes).not.toHaveBeenCalled();
+    });
+
+    it('USER ถูกปฏิเสธ แม้จะมีสิทธิ์ audit.view ติดมากับ role', async () => {
+      const { guard } = createGuard(undefined, [['audit.view']], false, adminOnly);
+
+      await expect(guard.canActivate(createContext(staff))).rejects.toThrow(
+        'เฉพาะผู้ดูแลระบบเท่านั้นที่เข้าถึงส่วนนี้ได้',
+      );
+    });
+
+    it('ใช้ร่วมกับ @RequirePermission ต้องผ่านทั้งสองเงื่อนไข', async () => {
+      const passed = createGuard(['audit.view'], [['audit.view']], false, adminOnly);
+      await expect(passed.guard.canActivate(createContext(admin))).resolves.toBe(true);
+
+      const missingPermission = createGuard(['audit.view'], [[]], false, adminOnly);
+      await expect(missingPermission.guard.canActivate(createContext(admin))).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 

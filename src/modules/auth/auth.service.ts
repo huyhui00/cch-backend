@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/sequelize';
 import type { SignOptions } from 'jsonwebtoken';
 
+import { setCurrentUserId } from '../../common/context/request-context';
 import { AccessControlService } from '../../common/services/access-control.service';
 import type { JwtPayload } from '../../common/types/auth.types';
 import { hashRefreshToken, safeCompareHex, verifyPassword } from '../../common/utils/crypto.util';
@@ -56,6 +57,13 @@ export class AuthService {
       throw new UnauthorizedException(ACCOUNT_NOT_ACTIVE);
     }
 
+    // ระบุผู้กระทำให้ audit hook ก่อนเขียนอะไรลงฐานข้อมูล
+    //
+    // endpoint นี้ติด @Public() จึงไม่มี guard มาเติม userId ให้เหมือน endpoint อื่น
+    // ถ้าไม่ตั้งเอง การล็อกอินจะถูกบันทึกเป็น "ระบบเป็นผู้กระทำ" ทั้งที่รู้อยู่แล้วว่าใคร
+    // และคำถามที่ audit log ต้องตอบได้ที่สุดข้อหนึ่งคือใครล็อกอินเมื่อไรจาก IP ไหน (BR-09)
+    setCurrentUserId(user.id);
+
     const tokens = await this.issueTokens(user);
 
     user.refreshTokenHash = hashRefreshToken(tokens.refreshToken);
@@ -89,6 +97,9 @@ export class AuthService {
     if (user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException(ACCOUNT_NOT_ACTIVE);
     }
+
+    // เหตุผลเดียวกับใน login() — endpoint นี้ก็เป็น @Public()
+    setCurrentUserId(user.id);
 
     const tokens = await this.issueTokens(user);
 

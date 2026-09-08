@@ -3,13 +3,20 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module';
+import { requestContextMiddleware } from './common/context/request-context';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { RequestContextInterceptor } from './common/interceptors/request-context.interceptor';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { createValidationPipe } from './common/pipes/validation.pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
   const config = app.get(ConfigService);
+
+  // ---- Request context -----------------------------------------------------
+  // ต้องมาก่อนทุกอย่าง เพื่อให้ทั้ง request วิ่งอยู่ใน AsyncLocalStorage เดียวกัน
+  // Sequelize hook จึงรู้ได้ว่าใครเป็นผู้กระทำ โดยไม่ต้องส่งค่าผ่าน service (BR-09)
+  app.use(requestContextMiddleware);
 
   // ---- Global prefix -------------------------------------------------------
   // ทุก endpoint อยู่ใต้ /api ตาม CLAUDE.md 6.2
@@ -36,7 +43,9 @@ async function bootstrap() {
   app.useGlobalPipes(createValidationPipe());
 
   // ---- Response format (CLAUDE.md 6.1) ------------------------------------
-  app.useGlobalInterceptors(new TransformInterceptor());
+  // RequestContextInterceptor ต้องมาก่อน เพราะเติม userId ลง context
+  // ให้ทันก่อน controller เริ่มเขียนฐานข้อมูล
+  app.useGlobalInterceptors(new RequestContextInterceptor(), new TransformInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
 
   // ---- Swagger -------------------------------------------------------------

@@ -8,6 +8,7 @@ import { AccessControlModule } from './common/access-control.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { DatabaseModule } from './database/database.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { UsersModule } from './modules/users/users.module';
@@ -26,6 +27,7 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
     UsersModule,
     RolesModule,
+    AuditLogsModule,
 
     // modules ทางธุรกิจที่เหลือจะถูกเพิ่มที่นี่ตามลำดับ Phase ใน CLAUDE.md ข้อ 12
     // CustomersModule, ProjectsModule, TicketsModule, ...
