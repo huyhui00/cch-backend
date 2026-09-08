@@ -11,12 +11,35 @@ export enum CustomerStatus {
   CHURNED = 'CHURNED',
 }
 
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface CustomerCreationAttributes {
+  code?: string | null;
+  name: string;
+  taxId?: string | null;
+  businessType?: string | null;
+  address?: string | null;
+  province?: string | null;
+  postalCode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  lineOfficialId?: string | null;
+  facebookUrl?: string | null;
+  status?: CustomerStatus;
+  source?: string | null;
+  ownerUserId?: number | null;
+  lastContactedAt?: Date | null;
+  note?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 /**
  * ลูกค้าไม่มีบัญชีผู้ใช้และไม่เข้าระบบ (BR-01)
  * ตารางนี้จึงไม่มี password / login ใด ๆ ทั้งสิ้น
  */
 @Table({ tableName: 'customers', underscored: true, timestamps: true, paranoid: true })
-export class Customer extends AuditedModel<Customer> {
+export class Customer extends AuditedModel<Customer, CustomerCreationAttributes> {
   @Column({ type: DataType.STRING(50), allowNull: true })
   code: string | null;
 

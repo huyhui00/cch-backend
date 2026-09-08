@@ -14,13 +14,29 @@ export enum CommunicationChannel {
   OTHER = 'OTHER',
 }
 
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface CommunicationLogCreationAttributes {
+  customerId: number;
+  contactId?: number | null;
+  channel: CommunicationChannel;
+  occurredAt: Date;
+  subject?: string | null;
+  content?: string | null;
+  handledByUserId?: number | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 /**
  * BR-02 — การสื่อสารเกิดนอกระบบ (LINE/โทร) แล้วมาบันทึกย้อนหลัง
  * ทุกบันทึกจึงต้องระบุ channel ได้เสมอ และแนบไฟล์หลักฐานผ่านตาราง attachments
  * (ref_type = 'COMMUNICATION_LOG')
  */
 @Table({ tableName: 'communication_logs', underscored: true, timestamps: true, paranoid: true })
-export class CommunicationLog extends AuditedModel<CommunicationLog> {
+export class CommunicationLog extends AuditedModel<
+  CommunicationLog,
+  CommunicationLogCreationAttributes
+> {
   @ForeignKey(() => Customer)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'customer_id' })
   customerId: number;

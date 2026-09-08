@@ -394,8 +394,8 @@ return true;
 | 1 | Models + Migrations 30 ตาราง + Seeders | ✅ เสร็จ |
 | 2 | Auth + Users + Roles + Permissions + Guards | ✅ เสร็จ |
 | 3 | Audit Log (global hook) | ✅ เสร็จ |
-| 4 | Customers + Contacts + Communication Logs | ⬜ **ถัดไป** |
-| 5 | Projects + Tasks | ⬜ |
+| 4 | Customers + Contacts + Communication Logs | ✅ เสร็จ |
+| 5 | Projects + Tasks | ⬜ **ถัดไป** |
 | 6 | Deliveries + Warranties | ⬜ |
 | 7 | **Tickets + Resolutions** | ⬜ |
 | 8 | MA (Plans, Contracts, Usages, Addons) | ⬜ ติด Q2–Q4 |
@@ -434,7 +434,7 @@ return true;
 
 ---
 
-## 14. สิ่งที่ระบบทำได้แล้ว ณ สิ้น Phase 3
+## 14. สิ่งที่ระบบทำได้แล้ว ณ สิ้น Phase 4
 
 ใช้อ้างอิงเวลาต่อยอด จะได้ไม่เขียนซ้ำ
 
@@ -446,7 +446,19 @@ return true;
 - **ผู้กระทำถูกดึงผ่าน AsyncLocalStorage** — ดู `common/context/request-context.ts`
   ถ้าเขียน DB จาก scheduler ที่ไม่มี request จะได้ `user_id = null` ซึ่งถูกต้องแล้ว
 - **Endpoint ที่มีแล้ว** — auth (login/refresh/logout/me), users (list/create/update/roles/status/
-  me-password), roles (CRUD + permissions), permissions (list), audit-logs (list), health
-  — รวม 18 เส้น
+  me-password), roles (CRUD + permissions), permissions (list), audit-logs (list), health,
+  customers (CRUD + detail), contacts (CRUD), communication-logs (CRUD + detail)
+  — รวม 32 เส้น
+
+**กฎธุรกิจที่ Phase 4 บังคับไว้ อย่าเขียนทับตอนต่อยอด**
+- ผู้ติดต่อหลักมีได้คนเดียวต่อลูกค้า 1 ราย — ตั้งคนใหม่แล้วระบบถอดคนเดิมให้เองในทรานแซกชันเดียว
+- `customers.last_contacted_at` ถูกอัปเดตอัตโนมัติตอนบันทึกการติดต่อ และ**ไม่ถอยหลัง**
+  เมื่อบันทึกย้อนหลัง (BR-02 อนุญาตให้บันทึกย้อนหลัง แต่ห้ามทำให้ลูกค้าดูเหมือนเพิ่งติดต่อไป)
+- บันทึกการติดต่อล่วงหน้าไม่ได้ (เผื่อนาฬิกาคลาดเคลื่อน 5 นาที) และผู้ติดต่อที่ระบุ
+  ต้องอยู่ภายใต้ลูกค้ารายเดียวกัน
+- ลบลูกค้าไม่ได้ถ้ามีโครงการหรือใบแจ้งปัญหาผูกอยู่ → ให้เปลี่ยนสถานะเป็น CHURNED แทน
+  ถ้าลบได้ ผู้ติดต่อและบันทึกการติดต่อจะถูก soft delete ตามไปด้วยในทรานแซกชันเดียว
+- ลบผู้ติดต่อไม่ได้ถ้ายังถูกอ้างอิงในบันทึกการติดต่อ
+- `GET /api/customers?idleDays=N` = หน้าจอ "ลูกค้าที่ถูกลืม" นับคนที่ยังไม่เคยติดต่อเลยรวมด้วย
 - **logout ล้างเฉพาะ refresh token** — access token ใบเดิมยังใช้ได้จนหมดอายุ (15 นาที)
   ถ้าต้องการตัดสิทธิ์ทันที ให้เปลี่ยนสถานะบัญชีเป็น SUSPENDED ซึ่ง JwtStrategy เช็คทุก request

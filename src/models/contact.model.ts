@@ -3,9 +3,24 @@ import { BelongsTo, Column, DataType, ForeignKey, Table } from 'sequelize-typesc
 import { AuditedModel } from './base.model';
 import { Customer } from './customer.model';
 
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface ContactCreationAttributes {
+  customerId: number;
+  name: string;
+  nickname?: string | null;
+  position?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  lineId?: string | null;
+  isPrimary?: boolean;
+  note?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 /** ผู้ติดต่อฝั่งลูกค้า — เป็นแค่ข้อมูลติดต่อ ไม่ใช่บัญชีผู้ใช้ (BR-01) */
 @Table({ tableName: 'contacts', underscored: true, timestamps: true, paranoid: true })
-export class Contact extends AuditedModel<Contact> {
+export class Contact extends AuditedModel<Contact, ContactCreationAttributes> {
   @ForeignKey(() => Customer)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'customer_id' })
   customerId: number;
