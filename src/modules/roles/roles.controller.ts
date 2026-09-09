@@ -18,7 +18,7 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import { type PaginatedResult } from '../../common/dto/pagination.dto';
 import { CreateRoleDto, UpdateRoleDto } from './dto/create-role.dto';
 import { QueryRolesDto } from './dto/query-roles.dto';
-import { RoleDetailDto } from './dto/role.response';
+import { RoleDetailDto, RoleSummaryDto } from './dto/role.response';
 import { SetRolePermissionsDto } from './dto/set-role-permissions.dto';
 import { RolesService } from './roles.service';
 
@@ -28,6 +28,10 @@ import { RolesService } from './roles.service';
  * ประกาศ RequirePermission('role.manage') ไว้ที่ระดับ class — PermissionsGuard
  * ตัดทุกคนที่ไม่ใช่ SUPER_ADMIN ทิ้งเมื่อเจอ code นี้ ต่อให้เป็น ADMIN
  * หรือมีบทบาทที่ถูกติ๊ก role.manage ไว้ก็ไม่ผ่าน
+ *
+ * มีข้อยกเว้นเส้นเดียวคือ GET /assignable ซึ่ง override เป็น user.update
+ * เพราะ ADMIN ต้องเห็นรายชื่อบทบาทถึงจะมอบบทบาทให้ผู้ใช้ได้ตาม CLAUDE.md 4.1
+ * — เส้นนั้นคืนแค่ชื่อบทบาท ไม่ได้คืนสิทธิ์ที่ติ๊กไว้ BR-10 จึงยังอยู่ครบ
  */
 @ApiTags('roles')
 @ApiBearerAuth('access-token')
@@ -35,6 +39,33 @@ import { RolesService } from './roles.service';
 @Controller('roles')
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
+
+  /**
+   * ข้อยกเว้นเดียวของ controller นี้ — override `role.manage` ที่ประกาศไว้ระดับ class
+   *
+   * `getAllAndOverride` ของ PermissionsGuard อ่านจาก handler ก่อน class สิทธิ์ที่ประกาศ
+   * ตรงนี้จึงชนะ ถ้าวันหนึ่งมีคนลบบรรทัด @RequirePermission ข้างล่างทิ้ง เส้นนี้จะตกกลับไป
+   * ใช้ `role.manage` ของ class เอง คือ **แน่นขึ้น ไม่ใช่หลวมลง** ซึ่งเป็นทางที่ปลอดภัยกว่า
+   *
+   * ใช้ `user.update` เพราะเป็นสิทธิ์เดียวกับ PUT /api/users/:id/roles ที่มอบบทบาทจริง
+   * ใครมอบบทบาทได้ก็ต้องเห็นรายการบทบาทได้ ไม่งั้นสิทธิ์ที่ให้ไว้ใช้ไม่ได้จริง
+   * ประกาศไว้ก่อน route ที่มี :id ทุกเส้น เผื่อมีการเพิ่ม GET /:id ภายหลัง
+   */
+  @Get('assignable')
+  @RequirePermission('user.update')
+  @ApiOperation({
+    summary: 'รายการบทบาทสำหรับดรอปดาวน์มอบบทบาท',
+    description:
+      'คืนเฉพาะ id ชื่อ และคำอธิบายของบทบาทที่ยังเปิดใช้งาน ไม่แบ่งหน้า ' +
+      'ADMIN เรียกได้เพราะตาราง CLAUDE.md 4.1 ให้ ADMIN มอบบทบาทให้ผู้ใช้ได้ — ' +
+      'แต่ยังดูไม่ได้ว่าบทบาทนั้นมีสิทธิ์อะไรติ๊กไว้ ต้องใช้ GET /api/roles ซึ่งสงวนให้ ' +
+      'SUPER_ADMIN ตาม BR-10',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [RoleSummaryDto] })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  findAssignable(): Promise<RoleSummaryDto[]> {
+    return this.rolesService.findAssignable();
+  }
 
   @Get()
   @ApiOperation({

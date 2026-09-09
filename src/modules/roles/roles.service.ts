@@ -16,8 +16,10 @@ import { QueryRolesDto } from './dto/query-roles.dto';
 import {
   type PermissionGroupDto,
   type RoleDetailDto,
+  type RoleSummaryDto,
   toPermissionItem,
   toRoleDetail,
+  toRoleSummary,
 } from './dto/role.response';
 import { SetRolePermissionsDto } from './dto/set-role-permissions.dto';
 
@@ -41,6 +43,35 @@ export class RolesService {
     @InjectModel(RolePermission) private readonly rolePermissionModel: typeof RolePermission,
     @InjectConnection() private readonly sequelize: Sequelize,
   ) {}
+
+  /**
+   * รายการบทบาทสำหรับดรอปดาวน์ "มอบบทบาทให้ผู้ใช้"
+   *
+   * แยกจาก `findAll()` เพราะสองอย่างนี้ตอบคนละคำถาม — `GET /api/roles` คือหน้าจอ
+   * จัดการบทบาท สงวนให้ SUPER_ADMIN ตาม BR-10 ส่วนอันนี้คือ picker ที่ ADMIN ต้องใช้
+   * เพราะตาราง CLAUDE.md 4.1 ให้ ADMIN "มอบ Role ให้ user" ได้ ถ้าไม่มีเส้นนี้
+   * ADMIN จะมีสิทธิ์มอบบทบาทแต่มองไม่เห็นว่ามีบทบาทอะไรให้เลือก ซึ่งเท่ากับมอบไม่ได้จริง
+   *
+   * คืนเฉพาะ id / ชื่อ / คำอธิบาย — **ห้ามเพิ่มรายการสิทธิ์ที่ติ๊กไว้ลงมาในนี้**
+   * เพราะ "ดูว่าบทบาทนั้นมีสิทธิ์อะไรบ้าง" เป็นของหน้าจอจัดการบทบาทที่สงวนไว้ให้
+   * SUPER_ADMIN ถ้าเพิ่มเข้ามา เส้นนี้จะกลายเป็น GET /api/roles ที่ข้าม BR-10 ได้
+   *
+   * กรองเฉพาะบทบาทที่ยังเปิดใช้งาน ให้ตรงกับที่ `UsersService.resolveRoleIds()`
+   * ยอมรับจริง — ไม่งั้นผู้ใช้จะเลือกบทบาทที่ปิดอยู่ได้แล้วโดนปฏิเสธตอนกดบันทึก
+   * ไม่แบ่งหน้าเพราะบริษัทขนาดนี้มีบทบาทไม่กี่รายการ
+   */
+  async findAssignable(): Promise<RoleSummaryDto[]> {
+    const roles = await this.roleModel.findAll({
+      attributes: ['id', 'name', 'description'],
+      where: { isActive: true },
+      order: [
+        ['name', 'ASC'],
+        ['id', 'ASC'],
+      ],
+    });
+
+    return roles.map(toRoleSummary);
+  }
 
   async findAll(query: QueryRolesDto): Promise<PaginatedResult<RoleDetailDto>> {
     const where: WhereOptions<Role> = {};

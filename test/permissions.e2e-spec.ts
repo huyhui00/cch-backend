@@ -91,6 +91,23 @@ describe('Permissions (e2e)', () => {
       await api().get('/api/permissions').set('Authorization', `Bearer ${adminToken}`).expect(403);
     });
 
+    it('เห็นรายชื่อบทบาทผ่าน /roles/assignable ได้ เพื่อมอบบทบาทให้ผู้ใช้ (CLAUDE.md 4.1)', async () => {
+      // ADMIN มีสิทธิ์มอบบทบาท แต่เข้า GET /api/roles ไม่ได้ ถ้าไม่มีเส้นนี้
+      // สิทธิ์ที่ให้ไว้จะใช้ไม่ได้จริงเพราะดรอปดาวน์จะว่างเปล่า
+      const response = await api()
+        .get('/api/roles/assignable')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      const roles = (
+        response.body as ApiResponse<{ id: number; name: string; description: string | null }[]>
+      ).data;
+
+      expect(roles.length).toBeGreaterThan(0);
+      // ห้ามมีรายการสิทธิ์ติดมาด้วย ไม่งั้นเส้นนี้จะกลายเป็นช่องข้าม BR-10
+      expect(Object.keys(roles[0]).sort()).toEqual(['description', 'id', 'name']);
+    });
+
     it('รายการสิทธิ์ที่ /auth/me คืน ต้องไม่มีสิทธิ์ที่สงวนให้ SUPER_ADMIN', async () => {
       const me = await api()
         .get('/api/auth/me')
@@ -126,6 +143,21 @@ describe('Permissions (e2e)', () => {
 
     it('จัดการบทบาทไม่ได้เช่นกัน', async () => {
       await api().get('/api/roles').set('Authorization', `Bearer ${userToken}`).expect(403);
+    });
+
+    it('/roles/assignable ยังกั้นด้วย user.update ไม่ได้เปิดให้ทุกคนที่ล็อกอิน', async () => {
+      const me = await api()
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${userToken}`)
+        .expect(200);
+
+      const permissions = (me.body as ApiResponse<{ permissions: string[] }>).data.permissions;
+      const expected = permissions.includes('user.update') ? 200 : 403;
+
+      await api()
+        .get('/api/roles/assignable')
+        .set('Authorization', `Bearer ${userToken}`)
+        .expect(expected);
     });
   });
 });

@@ -86,6 +86,8 @@ users.account_type: 'SUPER_ADMIN' | 'ADMIN' | 'USER'
 | สร้าง / แก้ / ลบ Role | ✅ | ❌ | ❌ |
 | กำหนดว่า Role นั้นทำอะไรได้ (ติ๊กสิทธิ์) | ✅ | ❌ | ❌ |
 | ดูรายการสิทธิ์ทั้งหมด (`GET /api/permissions`) | ✅ | ❌ | ❌ |
+| ดูรายละเอียด Role ว่าติ๊กสิทธิ์อะไรไว้ (`GET /api/roles`) | ✅ | ❌ | ❌ |
+| **ดูรายชื่อ Role เพื่อเลือกมอบ** (`GET /api/roles/assignable`) | ✅ | ✅ | ต้องมี `user.update` |
 | **มอบ Role ให้ user** | ✅ | ✅ | ตามสิทธิ์ |
 | เข้าเมนูทั่วไปโดยไม่ต้องมี Role | ✅ | ✅ | ❌ ต้องรอรับ Role |
 | สร้าง / เลื่อนใครเป็น SUPER_ADMIN | ✅ | ❌ | ❌ |
@@ -94,6 +96,11 @@ users.account_type: 'SUPER_ADMIN' | 'ADMIN' | 'USER'
 
 - ADMIN เลือกได้เฉพาะ Role ที่ SUPER_ADMIN สร้างไว้ — เป็นจริงโดยอัตโนมัติ เพราะมีแต่
   SUPER_ADMIN ที่สร้าง Role ได้ ไม่ต้องเขียนโค้ดบังคับเพิ่ม
+- **สองแถวเรื่อง Role ข้างบนต้องอ่านคู่กัน** — "มอบ Role ได้" ไม่มีความหมายเลยถ้ามองไม่เห็นว่า
+  มี Role อะไรให้เลือก `GET /api/roles` สงวนให้ SUPER_ADMIN ตาม BR-10 จึงต้องมี
+  `GET /api/roles/assignable` แยกออกมา คืนแค่ id/ชื่อ/คำอธิบายของ Role ที่ยังเปิดใช้งาน
+  ใช้สิทธิ์ `user.update` ตัวเดียวกับ `PUT /api/users/:id/roles` ที่มอบบทบาทจริง
+  **ห้ามเพิ่มรายการสิทธิ์ที่ติ๊กไว้ลงในเส้นนี้** ไม่งั้นจะกลายเป็นช่องข้าม BR-10
 - ข้อจำกัดเรื่อง SUPER_ADMIN ถูกบังคับที่ `UsersService.assertCanGrantAccountType()`
   ส่วนข้อจำกัดเรื่อง Role ถูกบังคับที่ `PermissionsGuard` (ดู 9.4)
 
@@ -478,12 +485,12 @@ return true;
   tickets/:id/resolutions (create),
   ma-plans (CRUD), ma-contracts (list/detail/create/update/renew),
   ma-contracts/:id (quota/addons list/addons create),
-  users/assignable
-  — รวม 75 เส้น
-- **เทสต์คุมกฎธุรกิจ 296 เคส 13 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–8
+  users/assignable, roles/assignable
+  — รวม 76 เส้น
+- **เทสต์คุมกฎธุรกิจ 300 เคส 14 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–8
   ทั้งหมดเป็น unit test ที่ mock model ไม่แตะฐานข้อมูลจริง รันจบใน ~19 วินาที
   **ถ้าจะแก้กฎธุรกิจข้อไหน ให้แก้เทสต์ที่คุมข้อนั้นไปพร้อมกัน** ไม่ใช่ลบทิ้งให้ผ่าน
-- **e2e 23 เคส 3 ไฟล์** (`tickets`, `ma`, `permissions`) — รันด้วย `npm run test:e2e`
+- **e2e 25 เคส 3 ไฟล์** (`tickets`, `ma`, `permissions`) — รันด้วย `npm run test:e2e`
   แยกจาก `npm test` เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่
   `test/global-setup.js` สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
   มีไว้พิสูจน์สิ่งที่ mock พิสูจน์แทนไม่ได้ — SQL ที่ Sequelize สร้างรันได้จริง,
@@ -627,11 +634,19 @@ return true;
 - **ราคาเป็น `string` ตลอดสาย ไม่ใช่ `number`** `DECIMAL(15,2)` ละเอียดกว่า `number`
   ของ JavaScript ถ้ารับเป็น number ค่าจะถูกปัดตั้งแต่ยังไม่ถึงฐานข้อมูล และ Sequelize
   ก็คืน DECIMAL มาเป็น string อยู่แล้ว รับเป็น string ตั้งแต่ต้นทางจึงไม่มีจุดแปลงชนิดเลย
-- **`GET /api/users/assignable` ไม่ติด `@RequirePermission` โดยเจตนา** — คนที่มีสิทธิ์
-  มอบหมายงานมักไม่มี `user.view` ถ้ากั้นด้วย `user.view` ดรอปดาวน์ "มอบหมายให้ใคร"
-  จะว่างเปล่าสำหรับพนักงาน support ทั้งทีม ข้อมูลที่คืนคือชื่อเพื่อนร่วมงานซึ่งเห็นได้อยู่แล้ว
-  ทั่วระบบ และลูกค้าไม่มีบัญชี (BR-01) คนที่ล็อกอินได้จึงเป็นพนักงานเสมอ
-  **ห้ามเพิ่มฟิลด์ลงใน `AssignableUserDto`** ไม่งั้นจะกลายเป็น `GET /api/users` ที่ไม่มีสิทธิ์กั้น
+- **มี endpoint แบบ "picker" สองเส้น ที่แยกสิทธิ์ *ใช้งาน* ออกจากสิทธิ์ *จัดการ*** —
+  ทั้งสองเส้นเกิดจากปัญหาเดียวกัน คือสิทธิ์ที่ตาราง 4.1 ให้ไว้ ใช้จริงไม่ได้เพราะดรอปดาวน์ว่าง
+  - `GET /api/users/assignable` **ไม่ติด `@RequirePermission` โดยเจตนา** คนที่มีสิทธิ์
+    มอบหมายงานมักไม่มี `user.view` ข้อมูลที่คืนคือชื่อเพื่อนร่วมงานซึ่งเห็นได้อยู่แล้วทั่วระบบ
+    และลูกค้าไม่มีบัญชี (BR-01) คนที่ล็อกอินได้จึงเป็นพนักงานเสมอ
+  - `GET /api/roles/assignable` ใช้ `user.update` **override `role.manage` ที่ประกาศไว้
+    ระดับ class** ของ `RolesController` — เป็นข้อยกเว้นเส้นเดียวของ controller นั้น
+    `getAllAndOverride` อ่าน handler ก่อน class สิทธิ์ที่ประกาศบน method จึงชนะ
+    ถ้ามีคนลบ decorator บน method ทิ้ง เส้นนี้จะตกกลับไปใช้ `role.manage` คือ**แน่นขึ้น
+    ไม่ใช่หลวมลง** ซึ่งเป็นทางที่ปลอดภัยกว่า
+  - **ห้ามเพิ่มฟิลด์ลงใน `AssignableUserDto` และ `RoleSummaryDto` ของสองเส้นนี้**
+    ไม่งั้นจะกลายเป็น `GET /api/users` และ `GET /api/roles` ฉบับไม่มีสิทธิ์กั้น
+    โดยเฉพาะ **รายการสิทธิ์ที่ติ๊กไว้ห้ามหลุดออกมาเด็ดขาด** เพราะเป็นช่องข้าม BR-10 ตรง ๆ
 - โมดูลนี้ **ไม่มี endpoint สำหรับแก้หรือลบ `ma_usages`** โดยเจตนา — การหักโควตาเกิดจาก
   การบันทึกผลการแก้ปัญหาเท่านั้น (Phase 7) ถ้าเปิดให้แก้มือได้ ตัวเลขโควตากับประวัติ
   การแก้ปัญหาจะไม่ตรงกันโดยไม่มีใครรู้
