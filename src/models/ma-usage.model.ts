@@ -18,8 +18,23 @@ import { Ticket } from './ticket.model';
  * ดังนั้นตอน REOPENED แล้วแก้รอบที่ 2 service ต้องไม่สร้างแถวซ้ำ
  * (ดูหมายเหตุที่ส่งให้ผู้บริหารตรวจ — จุดนี้ขัดกับการอ่าน CLAUDE.md 9.1 แบบตรงตัว)
  */
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface MaUsageCreationAttributes {
+  contractId: number;
+  ticketId: number;
+  resolutionId?: number | null;
+  periodYear: number;
+  periodMonth: number;
+  usedAt: Date;
+  isOverQuota?: boolean;
+  extraCharge?: string;
+  note?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'ma_usages', underscored: true, timestamps: true, paranoid: true })
-export class MaUsage extends AuditedModel<MaUsage> {
+export class MaUsage extends AuditedModel<MaUsage, MaUsageCreationAttributes> {
   @ForeignKey(() => MaContract)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'contract_id' })
   contractId: number;

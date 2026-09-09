@@ -56,8 +56,35 @@ export enum TicketPriority {
  *
  * หน้าจอ "รอรับการแก้ไข" = WHERE status IN ('RECEIVED','REOPENED','IN_PROGRESS')
  */
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface TicketCreationAttributes {
+  ticketNo?: string | null;
+  customerId: number;
+  projectId?: number | null;
+  warrantyId?: number | null;
+  maContractId?: number | null;
+  title: string;
+  description?: string | null;
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  billingType: TicketBillingType;
+  reportedChannel: TicketReportedChannel;
+  reportedAt: Date;
+  reportedByContactId?: number | null;
+  assignedUserId?: number | null;
+  receivedByUserId?: number | null;
+  resolutionCount?: number;
+  firstResponseAt?: Date | null;
+  resolvedAt?: Date | null;
+  closedAt?: Date | null;
+  dueAt?: Date | null;
+  extraCharge?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'tickets', underscored: true, timestamps: true, paranoid: true })
-export class Ticket extends AuditedModel<Ticket> {
+export class Ticket extends AuditedModel<Ticket, TicketCreationAttributes> {
   @Column({ type: DataType.STRING(50), allowNull: true, field: 'ticket_no' })
   ticketNo: string | null;
 

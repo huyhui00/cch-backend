@@ -44,6 +44,19 @@ export function addMonths(dateOnly: string, months: number): string {
   return `${targetYear}-${pad(targetMonth + 1)}-${pad(Math.min(day, lastDayOfTargetMonth))}`;
 }
 
+/**
+ * บวก/ลบวัน
+ *
+ * ใช้ UTC ล้วนเพื่อไม่ให้วันที่ขยับตอนข้ามช่วงปรับเวลาตามฤดูกาล ซึ่งเขตเวลาบางแห่ง
+ * มีวันที่ยาว 23 หรือ 25 ชั่วโมง การบวกด้วยจำนวนมิลลิวินาทีบนเวลาท้องถิ่นจึงเพี้ยนได้
+ */
+export function addDays(dateOnly: string, days: number): string {
+  const [year, month, day] = dateOnly.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
+}
+
 /** จำนวนวันจากวันนี้ถึงวันที่กำหนด — ติดลบเมื่อวันนั้นผ่านไปแล้ว */
 export function daysUntil(dateOnly: string): number {
   const [year, month, day] = dateOnly.split('-').map(Number);

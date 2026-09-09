@@ -19,8 +19,26 @@ export enum ResolutionResult {
  * (ticket_id, round) เป็น UNIQUE ไม่ใช่แค่ index ธรรมดา
  * เพื่อกันการกดบันทึกซ้อนกันสองครั้งพร้อมกันแล้วได้ round ชนกัน
  */
+/** ฟิลด์ที่ส่งได้ตอน create — `round` service คำนวณให้ ไม่ได้รับมาจากผู้ใช้ */
+export interface TicketResolutionCreationAttributes {
+  ticketId: number;
+  round: number;
+  result: ResolutionResult;
+  detail: string;
+  rootCause?: string | null;
+  resolvedByUserId?: number | null;
+  startedAt?: Date | null;
+  resolvedAt: Date;
+  hoursSpent?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'ticket_resolutions', underscored: true, timestamps: true, paranoid: true })
-export class TicketResolution extends AuditedModel<TicketResolution> {
+export class TicketResolution extends AuditedModel<
+  TicketResolution,
+  TicketResolutionCreationAttributes
+> {
   @ForeignKey(() => Ticket)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'ticket_id' })
   ticketId: number;

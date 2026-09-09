@@ -1,7 +1,7 @@
 /// <reference types="jest" />
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
-import { addMonths, daysUntil, toDateOnly, todayAsDateOnly } from './date.util';
+import { addDays, addMonths, daysUntil, toDateOnly, todayAsDateOnly } from './date.util';
 
 /**
  * สูตรวันที่ของระยะประกัน (BR-06)
@@ -73,5 +73,36 @@ describe('toDateOnly', () => {
 
   it('เติมศูนย์หน้าเลขเดือนและวันหลักเดียว', () => {
     expect(toDateOnly(new Date(2026, 0, 5, 0, 0, 0))).toBe('2026-01-05');
+  });
+});
+
+/**
+ * ใช้คิดขอบล่าง/ขอบบนของรอบโควตา MA (Phase 8) และช่วงวันของหน้าจอ "สัญญาใกล้หมดอายุ"
+ */
+describe('addDays', () => {
+  it('บวกวันภายในเดือนเดียวกัน', () => {
+    expect(addDays('2026-09-09', 5)).toBe('2026-09-14');
+  });
+
+  it('ลบวันข้ามเดือนได้', () => {
+    // ใช้จริงตอนหาวันสุดท้ายของรอบ = วันเริ่มรอบถัดไป ลบหนึ่งวัน
+    expect(addDays('2026-10-01', -1)).toBe('2026-09-30');
+  });
+
+  it('ข้ามปีได้', () => {
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
+  });
+
+  it('รู้จักปีอธิกสุรทิน', () => {
+    expect(addDays('2028-02-28', 1)).toBe('2028-02-29');
+    expect(addDays('2026-02-28', 1)).toBe('2026-03-01');
+  });
+
+  it('บวกศูนย์วันได้ค่าเดิม', () => {
+    expect(addDays('2026-09-09', 0)).toBe('2026-09-09');
+  });
+
+  it('เติมศูนย์หน้าเลขเดือนและวันหลักเดียว', () => {
+    expect(addDays('2026-01-09', -1)).toBe('2026-01-08');
   });
 });

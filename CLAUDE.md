@@ -413,8 +413,8 @@ return true;
 | 4 | Customers + Contacts + Communication Logs | ✅ เสร็จ |
 | 5 | Projects + Tasks | ✅ เสร็จ |
 | 6 | Deliveries + Warranties | ✅ เสร็จ |
-| 7 | **Tickets + Resolutions** | ⬜ **ถัดไป** |
-| 8 | MA (Plans, Contracts, Usages, Addons) | ⬜ ติด Q2–Q4 |
+| 7 | **Tickets + Resolutions** | ✅ เสร็จ |
+| 8 | MA (Plans, Contracts, Usages, Addons) | ⬜ **ถัดไป** — ติด Q2–Q4 |
 | 9 | Documents + Files (R2) | ⬜ |
 | 10 | Reports + Analytics | ⬜ |
 | 11 | Notifications + Scheduler + LINE | ⬜ |
@@ -449,11 +449,13 @@ return true;
 >
 > คอลัมน์ที่เพิ่มถูกเปิดใช้แล้วที่ Phase 5 (`tasks.priority`) และ Phase 6
 > (`deliveries.version`, `deliveries.delivered_by_user_id`)
-> เหลือ `tickets.received_by_user_id` (A-3) ที่จะไปเปิดใช้ตอน Phase 7
+> `tickets.received_by_user_id` (A-3) ถูกเปิดใช้แล้วที่ Phase 7 — ผู้รับเรื่องถูกเติม
+> จากผู้ที่กดสร้างใบโดยอัตโนมัติ แยกจาก `assigned_user_id` ที่ต้องมอบหมายทีหลัง
+> คอลัมน์ที่ตกลงกันในที่ประชุมจึงถูกใช้งานจริงครบทุกตัวแล้ว
 
 ---
 
-## 14. สิ่งที่ระบบทำได้แล้ว ณ สิ้น Phase 6
+## 14. สิ่งที่ระบบทำได้แล้ว ณ สิ้น Phase 7
 
 ใช้อ้างอิงเวลาต่อยอด จะได้ไม่เขียนซ้ำ
 
@@ -471,11 +473,18 @@ return true;
   tasks (overdue, status, order),
   projects/:id/deliveries (list/create), deliveries (detail/update/acceptance),
   deliveries/:id/warranties (create), warranties (expiring/detail/update),
-  projects/:id/warranties (list)
-  — รวม 53 เส้น
-- **เทสต์คุมกฎธุรกิจ 174 เคส 9 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–6
-  ทั้งหมดเป็น unit test ที่ mock model ไม่แตะฐานข้อมูลจริง รันจบใน ~10 วินาที
+  projects/:id/warranties (list),
+  tickets (list/pending/detail/create/assign/reopen/close),
+  tickets/:id/resolutions (create)
+  — รวม 61 เส้น
+- **เทสต์คุมกฎธุรกิจ 250 เคส 11 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–7
+  ทั้งหมดเป็น unit test ที่ mock model ไม่แตะฐานข้อมูลจริง รันจบใน ~19 วินาที
   **ถ้าจะแก้กฎธุรกิจข้อไหน ให้แก้เทสต์ที่คุมข้อนั้นไปพร้อมกัน** ไม่ใช่ลบทิ้งให้ผ่าน
+- **e2e 6 เคสที่ `test/tickets.e2e-spec.ts`** — รันด้วย `npm run test:e2e` แยกจาก `npm test`
+  เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่ `test/global-setup.js`
+  สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
+  มีไว้พิสูจน์สิ่งที่ mock พิสูจน์แทนไม่ได้ — SQL ที่ Sequelize สร้างรันได้จริง,
+  unique index `(ticket_id, round)` ไม่ถูกละเมิดตอนแก้หลายรอบ, transaction commit จริง
 
 **กฎธุรกิจที่ Phase 4 บังคับไว้ อย่าเขียนทับตอนต่อยอด**
 - ผู้ติดต่อหลักมีได้คนเดียวต่อลูกค้า 1 ราย — ตั้งคนใหม่แล้วระบบถอดคนเดิมให้เองในทรานแซกชันเดียว
@@ -536,6 +545,47 @@ return true;
   ประกันจะไร้ที่มา ประกันที่ยกเลิกให้เปลี่ยน `status` เป็น VOID แทน
 - ไฟล์แนบของใบส่งมอบ (`attachments.ref_type = 'DELIVERY'`) **อ่านได้อย่างเดียวตอนนี้**
   คืนมาใน endpoint รายละเอียด ส่วนการอัปโหลดจริงเป็นของโมดูล Files ใน Phase 9
+
+**กฎธุรกิจที่ Phase 7 บังคับไว้ (โมดูลที่ห้ามแตะโดยไม่อ่านก่อน)**
+- **ไม่มี endpoint สำหรับ "เปิดใบใหม่จากปัญหาเดิม" และห้ามเพิ่มทีหลัง (BR-03, BR-04)**
+  ปัญหาเดิมกลับมา = `PATCH /api/tickets/:id/reopen` แล้ว `POST /api/tickets/:id/resolutions`
+  ในใบเดิม `round` คิดจาก `COUNT(resolutions ของใบนี้) + 1` เสมอ ไม่ได้รับค่าจาก client
+  (`CreateResolutionDto` จึงไม่มีฟิลด์ `round` โดยเจตนา)
+- **ทุกอย่างของ `POST /resolutions` อยู่ในทรานแซกชันเดียว** และล็อกแถวใบด้วย
+  `lock: transaction.LOCK.UPDATE` ก่อนนับรอบ ถ้าไม่ล็อก การกดบันทึกสองครั้งพร้อมกัน
+  จะได้ `round` ซ้ำแล้วชน unique index `(ticket_id, round)` เป็น error ดิบของ MySQL
+- **ใบที่ CLOSED แล้วเพิ่มรอบไม่ได้** — ต้อง reopen ก่อน สถานะที่เหลือวนกลับได้อิสระ
+  `RESOLVED → REOPENED → IN_PROGRESS` ตาม BR-04
+- **หักโควตา MA ครั้งเดียวต่อใบ ไม่ใช่ต่อรอบการแก้ไข** — `ma_usages.ticket_id` มี UNIQUE
+  index ตั้งแต่ migration Phase 1 การสร้างแถวใหม่ทุกรอบจึงเป็นไปไม่ได้ทางโครงสร้าง
+  และตรงกับ BR-04 ที่ถือว่า "หลายรอบ = ปัญหาเดียว" — ลูกค้าไม่ควรถูกหักโควตาสองครั้ง
+  เพราะเราแก้ไม่จบในรอบแรก `MaQuotaService.recordUsageForTicket()` เช็คแถวเดิมแล้วข้ามเอง
+- **ระบบ *เสนอ* `billing_type` ไม่ได้ *ตัดสิน*** — ค่าที่ผู้ใช้ส่งมาชนะเสมอ
+  ไม่ส่งมาจึงใช้ที่ระบบเสนอ ไม่มีอะไรเลยได้ `ONE_TIME` ลำดับการเสนอคือ
+  **ประกันมาก่อนสัญญา MA** เพราะประกันคือของที่ลูกค้าจ่ายไปแล้ว การไปหักโควตา MA
+  ทั้งที่ยังอยู่ในประกันเท่ากับให้ลูกค้าเสียของฟรี ส่วน BR-07 (งานที่ขอเพิ่มใหม่ต้องคิดเงิน
+  แม้อยู่ในประกัน) ระบบตัดสินแทนคนไม่ได้ จึงเป็นหน้าที่คนเปลี่ยนเป็น `ONE_TIME` เอง
+- `warranty_id` / `ma_contract_id` ถูกบันทึกไว้ตอนเปิดใบ**เสมอ แม้ผู้ใช้เลือกเป็นอย่างอื่น**
+  เพื่อให้ตรวจย้อนหลังได้ว่าตอนนั้นระบบเห็นหลักฐานอะไร
+- **มอบหมายผู้รับผิดชอบแล้วใบที่ยัง RECEIVED เลื่อนเป็น IN_PROGRESS ให้เอง** เพราะทีมขนาดนี้
+  การมอบหมายคือจุดที่งานเริ่มเดินจริง — ถอนการมอบหมายไม่ย้อนสถานะกลับ
+  `received_by_user_id` (A-3) คือผู้รับเรื่อง เติมจากคนที่กดสร้างใบ **คนละคนกับ**
+  `assigned_user_id` ที่มอบหมายทีหลังได้
+- **หน้าจอ "รอรับการแก้ไข"** = `GET /api/tickets/pending` → `status IN
+  ('RECEIVED','REOPENED','IN_PROGRESS')` ค่าคงที่อยู่ที่ `PENDING_TICKET_STATUSES`
+  ที่เดียว ทั้ง query และ flag `isPending` ในผลลัพธ์อ่านจากค่าเดียวกัน
+- **ใบแจ้งปัญหาและรอบการแก้ไขไม่มี DELETE** — เป็นประวัติการให้บริการที่ต้องอ้างอิงได้
+  ใบที่ไม่เอาแล้วให้ปิดงาน (`PATCH /:id/close`)
+- `extra_charge` **ยังต้องกรอกมือ** — ทั้ง schema ไม่มีที่เก็บ "อัตราค่าบริการเมื่อเกินโควตา"
+  ระบบจึงบอกได้แค่ว่า *เกินโควตาแล้ว* (`is_over_quota`) คิดเป็นเงินเท่าไหร่ยังเป็นคนตัดสิน
+- **`MaQuotaService` ถูกสร้างที่ Phase 7 แต่ยังไม่มี controller** — Phase 8 เป็นเจ้าของ
+  CRUD ของ MA ทั้งหมด ที่ทำไว้ก่อนคือเฉพาะส่วนที่ ticket ต้องเรียกใช้ (หาสัญญาที่ยังใช้อยู่,
+  คิดช่วงโควตา, นับที่ใช้ไป, หักโควตา)
+- **ข้อสมมติที่ค้าง Q2–Q4 ถูกเขียนไว้เป็น config ไม่ได้เดาแล้ว hardcode**
+  `MA_QUOTA_RESET_MODE` = `CALENDAR_MONTH` (ค่าเริ่มต้น) หรือ `CONTRACT_ANNIVERSARY` (Q2)
+  โควตานับเป็นรายเดือนเสมอ **ยังไม่ยกยอดข้ามเดือน** (Q3 — ถ้าผู้บริหารตอบว่ายกยอดได้
+  ต้องแก้ `resolvePeriod()` + `countUsed()`) และถ้าเจอสัญญา active ซ้อนกันหลายฉบับ
+  ระบบเลือกฉบับที่หมดช้าที่สุดแล้ว **log warning ไว้** (Q4) ไม่ปฏิเสธคำขอ
 
 **ข้อมูลตัวอย่างสำหรับทดสอบ**
 - `20260908000004-seed-demo-data.js` สร้างลูกค้า 3 ราย ผู้ติดต่อ 5 ราย บันทึกการติดต่อ 5 รายการ
