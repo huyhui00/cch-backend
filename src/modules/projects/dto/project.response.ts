@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+import { todayAsDateOnly } from '../../../common/utils/date.util';
 import {
   Project,
   ProjectPriority,
@@ -207,13 +208,9 @@ export function isTaskOverdue(task: Pick<Task, 'dueDate' | 'status'>): boolean {
   return task.dueDate < todayAsDateOnly();
 }
 
-/** วันที่วันนี้ในรูปแบบ YYYY-MM-DD ตามเวลาเครื่องเซิร์ฟเวอร์ (ตั้ง TZ ไทยไว้ที่ระดับ DB แล้ว) */
-export function todayAsDateOnly(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${month}-${day}`;
-}
+// นิยามจริงอยู่ที่ common/utils/date.util.ts — ปล่อยผ่านต่อไว้ตรงนี้เพื่อไม่ให้
+// ผู้เรียกเดิมต้องแก้ import และไม่ให้มีสูตรวันที่สองชุดในระบบ
+export { todayAsDateOnly };
 
 export function toTaskResponse(task: Task, includeSubTasks = true): TaskResponseDto {
   return {

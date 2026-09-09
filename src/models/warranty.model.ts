@@ -19,8 +19,26 @@ export enum WarrantyStatus {
  *
  * BR-07 — ประกันครอบคลุมเฉพาะ bug ในขอบเขตเดิม ขอบเขตนั้นบันทึกที่ scope_note
  */
+/**
+ * ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes
+ *
+ * startDate / endDate / projectId ไม่ได้รับมาจากผู้ใช้ แต่ service คำนวณจาก delivery
+ * ให้ก่อนแล้วค่อยส่งมาที่นี่ (BR-06)
+ */
+export interface WarrantyCreationAttributes {
+  deliveryId: number;
+  projectId: number;
+  durationMonth: number;
+  startDate: string;
+  endDate: string;
+  status?: WarrantyStatus;
+  scopeNote?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'warranties', underscored: true, timestamps: true, paranoid: true })
-export class Warranty extends AuditedModel<Warranty> {
+export class Warranty extends AuditedModel<Warranty, WarrantyCreationAttributes> {
   @ForeignKey(() => Delivery)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'delivery_id' })
   deliveryId: number;

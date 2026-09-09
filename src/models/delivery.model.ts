@@ -12,8 +12,25 @@ export enum AcceptanceStatus {
   REJECTED = 'REJECTED',
 }
 
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface DeliveryCreationAttributes {
+  projectId: number;
+  deliveryNo?: string | null;
+  title: string;
+  version?: string | null;
+  description?: string | null;
+  deliveredAt: Date;
+  acceptanceStatus?: AcceptanceStatus;
+  acceptedAt?: Date | null;
+  acceptedByContactId?: number | null;
+  deliveredByUserId?: number | null;
+  note?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'deliveries', underscored: true, timestamps: true, paranoid: true })
-export class Delivery extends AuditedModel<Delivery> {
+export class Delivery extends AuditedModel<Delivery, DeliveryCreationAttributes> {
   @ForeignKey(() => Project)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'project_id' })
   projectId: number;
