@@ -436,9 +436,14 @@ export class TicketsService {
               contractId: status.contractId,
               periodYear: status.periodYear,
               periodMonth: status.periodMonth,
+              // ช่วงวันจริงของรอบ — ต้องมีให้ตรงกับ GET /api/ma-contracts/:id/quota
+              // ไม่งั้นหน้าจอ ticket บอกผู้ใช้ไม่ได้ว่าโควตารอบนี้หมดวันไหน
+              periodStart: status.periodStart,
+              periodEnd: status.periodEnd,
               quota: status.quota,
               // status.used คือยอดก่อนหักครั้งนี้ — บวกกลับให้เป็นยอดหลังหักที่คนอ่านคาดหวัง
               used: status.used + 1,
+              remaining: status.quota - (status.used + 1),
               isOverQuota: status.willExceed,
             }
           : null,

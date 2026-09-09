@@ -311,6 +311,62 @@ describe('TicketsService', () => {
       );
     });
 
+    it('คืนสถานะโควตาหน้าตาเดียวกับ GET /api/ma-contracts/:id/quota', async () => {
+      // สองเส้นนี้พูดเรื่องเดียวกัน ถ้าฟิลด์ไม่ตรงกัน frontend ต้องเขียนโค้ดอ่านสองแบบ
+      // และหน้าจอ ticket จะบอกผู้ใช้ไม่ได้ว่าโควตารอบนี้หมดวันไหน
+      resolutionModel.findAll.mockResolvedValue([resolutionRow(1)]);
+      maQuotaService.recordUsageForTicket.mockResolvedValue({
+        usage: { id: 50 },
+        status: {
+          contractId: 2,
+          periodYear: 2026,
+          periodMonth: 11,
+          periodStart: '2026-11-15',
+          periodEnd: '2026-12-14',
+          quota: 5,
+          used: 2,
+          willExceed: false,
+        },
+      });
+
+      const result = await service.addResolution(7, resolutionDto());
+
+      expect(result.quota).toEqual({
+        contractId: 2,
+        periodYear: 2026,
+        periodMonth: 11,
+        periodStart: '2026-11-15',
+        periodEnd: '2026-12-14',
+        quota: 5,
+        // status.used คือยอดก่อนหัก ที่คืนออกไปต้องเป็นยอดหลังหักแล้ว
+        used: 3,
+        remaining: 2,
+        isOverQuota: false,
+      });
+    });
+
+    it('โควตาที่เหลือติดลบได้เมื่อหักเกินไปแล้ว', async () => {
+      resolutionModel.findAll.mockResolvedValue([resolutionRow(1)]);
+      maQuotaService.recordUsageForTicket.mockResolvedValue({
+        usage: { id: 50 },
+        status: {
+          contractId: 2,
+          periodYear: 2026,
+          periodMonth: 11,
+          periodStart: '2026-11-15',
+          periodEnd: '2026-12-14',
+          quota: 3,
+          used: 3,
+          willExceed: true,
+        },
+      });
+
+      const result = await service.addResolution(7, resolutionDto());
+
+      expect(result.quota?.remaining).toBe(-1);
+      expect(result.quota?.isOverQuota).toBe(true);
+    });
+
     it('บันทึกเวลาที่แก้เสร็จเป็นอนาคตไม่ได้', async () => {
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 

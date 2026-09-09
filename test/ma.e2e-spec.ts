@@ -289,6 +289,84 @@ describe('MA (e2e)', () => {
   });
 
   // -------------------------------------------------------------------------
+  // การหักโควตาจาก ticket — จุดที่ Phase 7 กับ Phase 8 ต่อกัน
+  // -------------------------------------------------------------------------
+  it('บันทึกผลการแก้ปัญหาแล้วหักโควตา และคืนรูปเดียวกับ /ma-contracts/:id/quota', async () => {
+    // สัญญาต้องคุ้มครอง "วันนี้" จริง ๆ ไม่งั้น findActiveContract หาไม่เจอแล้วไม่หักโควตา
+    // คำนวณจากวันที่รันเสมอ ไม่ fix ไว้ เทสต์จะได้ไม่เน่าเมื่อเวลาผ่านไป
+    const today = new Date();
+    const dateOnly = (d: Date) => d.toISOString().slice(0, 10);
+    const shiftMonths = (months: number) => {
+      const shifted = new Date(today);
+      shifted.setUTCMonth(shifted.getUTCMonth() + months);
+      return dateOnly(shifted);
+    };
+
+    const created = await createContract({
+      status: 'ACTIVE',
+      startDate: shiftMonths(-2),
+      endDate: shiftMonths(10),
+    }).expect(201);
+    const contractId = (created.body as ApiResponse<ContractPayload>).data.id;
+
+    const ticket = await authed('post', '/api/tickets')
+      .send({
+        customerId,
+        projectId,
+        title: `ปัญหาที่หักโควตา MA ${stamp}`,
+        reportedChannel: 'LINE',
+        reportedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        billingType: 'MA_QUOTA',
+      })
+      .expect(201);
+    const ticketId = (ticket.body as ApiResponse<{ id: number }>).data.id;
+
+    const resolved = await authed('post', `/api/tickets/${ticketId}/resolutions`)
+      .send({
+        result: 'SUCCESS',
+        detail: 'แก้เสร็จแล้ว หักโควตา 1 ครั้ง',
+        resolvedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      })
+      .expect(201);
+
+    const quota = (resolved.body as ApiResponse<{ quota: QuotaPayload | null }>).data.quota;
+
+    expect(quota).not.toBeNull();
+    expect(quota?.used).toBe(1);
+    expect(quota?.remaining).toBe(4);
+
+    // เทียบกับ endpoint ของสัญญาโดยตรง — ฟิลด์ที่บอกว่า "รอบไหน" ต้องตรงกันเป๊ะ
+    const direct = await authed('get', `/api/ma-contracts/${contractId}/quota`).expect(200);
+    const fromContract = (direct.body as ApiResponse<QuotaPayload>).data;
+
+    expect(quota?.periodStart).toBe(fromContract.periodStart);
+    expect(quota?.periodEnd).toBe(fromContract.periodEnd);
+    expect(quota?.periodYear).toBe(fromContract.periodYear);
+    expect(quota?.periodMonth).toBe(fromContract.periodMonth);
+    expect(quota?.quota).toBe(fromContract.quota);
+    expect(quota?.used).toBe(fromContract.used);
+    expect(quota?.remaining).toBe(fromContract.remaining);
+
+    // แก้รอบที่ 2 ของใบเดิมต้องไม่หักซ้ำ (BR-04 + UNIQUE ที่ ma_usages.ticket_id)
+    await authed('patch', `/api/tickets/${ticketId}/reopen`)
+      .send({ reason: 'อาการเดิมกลับมา' })
+      .expect(200);
+
+    const second = await authed('post', `/api/tickets/${ticketId}/resolutions`)
+      .send({
+        result: 'SUCCESS',
+        detail: 'แก้รอบสอง',
+        resolvedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+      })
+      .expect(201);
+
+    expect((second.body as ApiResponse<{ quota: QuotaPayload | null }>).data.quota).toBeNull();
+
+    const after = await authed('get', `/api/ma-contracts/${contractId}/quota`).expect(200);
+    expect((after.body as ApiResponse<QuotaPayload>).data.used).toBe(1);
+  });
+
+  // -------------------------------------------------------------------------
   // endpoint ที่เพิ่มให้ frontend ใช้เติมดรอปดาวน์
   // -------------------------------------------------------------------------
   it('GET /api/users/assignable คืนเฉพาะฟิลด์ที่จำเป็นและไม่มีข้อมูลอ่อนไหว', async () => {

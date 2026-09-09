@@ -126,23 +126,59 @@ export class BillingSuggestionDto {
 }
 
 /** สรุปโควตา MA ของรอบที่การแก้ครั้งนี้ตกอยู่ */
+/**
+ * สถานะโควตาที่พ่วงกลับไปตอนบันทึกผลการแก้ปัญหา
+ *
+ * ฟิลด์ตรงกับ `QuotaStatusResponseDto` ของ `GET /api/ma-contracts/:id/quota`
+ * ทุกตัว **ยกเว้นตัวสุดท้าย** ที่ตั้งใจใช้คนละชื่อ เพราะความหมายต่างกันจริง ๆ
+ * ตามบริบท — อย่า "แก้ให้เหมือนกัน" โดยไม่อ่านคำอธิบายข้างล่างก่อน
+ *
+ *   ที่นี่                `isOverQuota` = **ครั้งนี้** ที่เพิ่งหักไป เกินโควตาหรือไม่
+ *   ฝั่ง ma-contracts     `isExhausted` = โควตาเต็มแล้วหรือยัง ครั้ง**ถัดไป**จะเกิน
+ *
+ * ทั้งสองค่าคำนวณจาก `willExceed` ตัวเดียวกัน (ยอดก่อนหัก >= โควตา) ต่างกันที่
+ * ฝั่งนี้หักไปแล้วหนึ่งครั้ง ประโยคที่ถูกต้องจึงเป็นอดีต ส่วนอีกฝั่งยังไม่หัก เป็นอนาคต
+ */
 export class QuotaSummaryDto {
   @ApiProperty({ example: 2 })
   contractId: number;
 
-  @ApiProperty({ example: 2026 })
+  @ApiProperty({
+    description: 'ปีของรอบโควตา — รอบนับจากวันเริ่มสัญญา ไม่ใช่เดือนปฏิทิน (Q2)',
+    example: 2026,
+  })
   periodYear: number;
 
-  @ApiProperty({ example: 9 })
+  @ApiProperty({ example: 11 })
   periodMonth: number;
 
-  @ApiProperty({ description: 'โควตารวมของรอบ = แผน + addon', example: 5 })
+  @ApiProperty({
+    description: 'วันแรกของรอบ — ใช้แสดงบนหน้าจอเพราะปี/เดือนอย่างเดียวสื่อไม่ครบ',
+    example: '2026-11-15',
+  })
+  periodStart: string;
+
+  @ApiProperty({ description: 'วันสุดท้ายของรอบ นับรวมอยู่ในรอบ', example: '2026-12-14' })
+  periodEnd: string;
+
+  @ApiProperty({ description: 'โควตารวมของรอบ = แผน + addon ที่มีผล', example: 5 })
   quota: number;
 
   @ApiProperty({ description: 'ใช้ไปแล้วกี่ครั้งในรอบนี้ นับรวมครั้งนี้แล้ว', example: 3 })
   used: number;
 
-  @ApiProperty({ description: 'ครั้งนี้เกินโควตาหรือไม่', example: false })
+  @ApiProperty({
+    description: 'เหลืออีกกี่ครั้งหลังหักครั้งนี้ ติดลบได้เมื่อใช้เกินไปแล้ว',
+    example: 2,
+  })
+  remaining: number;
+
+  @ApiProperty({
+    description:
+      'ครั้งนี้เกินโควตาหรือไม่ — ตรงกับ ma_usages.is_over_quota ที่บันทึกไว้ ' +
+      'คนละความหมายกับ isExhausted ของ GET /api/ma-contracts/:id/quota',
+    example: false,
+  })
   isOverQuota: boolean;
 }
 
