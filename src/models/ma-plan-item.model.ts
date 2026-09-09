@@ -4,8 +4,17 @@ import { AuditedModel } from './base.model';
 import { MaPlan } from './ma-plan.model';
 
 /** รายการบริการย่อยที่อยู่ในแผน MA — ส่วนของ "เนื้อหา" ตาม BR-05 */
+export interface MaPlanItemCreationAttributes {
+  planId: number;
+  title: string;
+  detail?: string | null;
+  sortOrder?: number;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'ma_plan_items', underscored: true, timestamps: true, paranoid: true })
-export class MaPlanItem extends AuditedModel<MaPlanItem> {
+export class MaPlanItem extends AuditedModel<MaPlanItem, MaPlanItemCreationAttributes> {
   @ForeignKey(() => MaPlan)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'plan_id' })
   planId: number;

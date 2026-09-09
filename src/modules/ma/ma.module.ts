@@ -1,20 +1,34 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 
-import { MaAddon, MaContract, MaPlan, MaUsage } from '../../models';
+import { Customer, MaAddon, MaContract, MaPlan, MaPlanItem, MaUsage, Project } from '../../models';
+import { MaContractsController } from './ma-contracts.controller';
+import { MaContractsService } from './ma-contracts.service';
+import { MaPlansController } from './ma-plans.controller';
+import { MaPlansService } from './ma-plans.service';
 import { MaQuotaService } from './ma-quota.service';
 
 /**
- * โมดูล MA — **ยังไม่มี controller ในเฟสนี้โดยเจตนา**
+ * โมดูล MA — แผน สัญญา ของเสริม และตรรกะโควตา (Phase 8)
  *
- * CRUD ของแผน สัญญา addon และรายงานการใช้โควตา เป็นขอบเขตของ Phase 8
- * ที่มีอยู่ตอนนี้คือตรรกะโควตาที่ Phase 7 ต้องใช้ตอนบันทึกผลการแก้ปัญหา
- * (CLAUDE.md 9.1 ข้อ 6) วางไว้ที่นี่ตั้งแต่แรกเพื่อไม่ต้องย้ายไฟล์ตอน Phase 8
- * — Phase 8 แค่มาเพิ่ม controller กับ service ตัวอื่นในโมดูลนี้
+ * `MaQuotaService` ถูกสร้างมาก่อนตั้งแต่ Phase 7 เพราะการบันทึกผลการแก้ปัญหา
+ * ต้องหักโควตาในทรานแซกชันเดียวกัน (CLAUDE.md 9.1) จึง export ออกไปให้ TicketsModule
+ * ส่วน `MaContractsService` และ `MaPlansService` เป็นของ Phase 8 ล้วน ไม่มีใครนอกโมดูลใช้
  */
 @Module({
-  imports: [SequelizeModule.forFeature([MaContract, MaPlan, MaAddon, MaUsage])],
-  providers: [MaQuotaService],
+  imports: [
+    SequelizeModule.forFeature([
+      MaContract,
+      MaPlan,
+      MaPlanItem,
+      MaAddon,
+      MaUsage,
+      Project,
+      Customer,
+    ]),
+  ],
+  controllers: [MaPlansController, MaContractsController],
+  providers: [MaQuotaService, MaPlansService, MaContractsService],
   exports: [MaQuotaService],
 })
 export class MaModule {}

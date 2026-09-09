@@ -10,8 +10,21 @@ import { MaPlanItem } from './ma-plan-item.model';
  * ห้ามมีคอลัมน์ราคาที่นี่เด็ดขาด — ราคาอยู่ที่ ma_contracts.price
  * เพราะถ้าเก็บราคาที่นี่ จะต้องก๊อปแผนใหม่ทุกครั้งที่ต่อรองราคาได้ไม่เท่ากัน
  */
+export interface MaPlanCreationAttributes {
+  code: string;
+  name: string;
+  description?: string | null;
+  bugQuotaPerMonth?: number;
+  responseTimeHour?: number | null;
+  onsiteQuotaPerMonth?: number | null;
+  isActive?: boolean;
+  sortOrder?: number;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'ma_plans', underscored: true, timestamps: true, paranoid: true })
-export class MaPlan extends AuditedModel<MaPlan> {
+export class MaPlan extends AuditedModel<MaPlan, MaPlanCreationAttributes> {
   @Column({ type: DataType.STRING(50), allowNull: false })
   code: string;
 

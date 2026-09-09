@@ -31,8 +31,26 @@ export enum MaContractStatus {
  * ถ้าสรุปว่าได้ฉบับเดียว ให้เพิ่ม partial unique ที่ (project_id) where status='ACTIVE'
  * ผ่าน migration ใหม่ ไม่ต้องแก้ตารางนี้
  */
+export interface MaContractCreationAttributes {
+  customerId: number;
+  projectId: number;
+  planId: number;
+  previousContractId?: number | null;
+  contractNo?: string | null;
+  price: string;
+  billingCycle?: MaBillingCycle;
+  startDate: string;
+  endDate: string;
+  status?: MaContractStatus;
+  signedDate?: string | null;
+  signedFileUrl?: string | null;
+  note?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'ma_contracts', underscored: true, timestamps: true, paranoid: true })
-export class MaContract extends AuditedModel<MaContract> {
+export class MaContract extends AuditedModel<MaContract, MaContractCreationAttributes> {
   @ForeignKey(() => Customer)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'customer_id' })
   customerId: number;

@@ -18,7 +18,7 @@ import { AccountType, Role, User, UserRole, UserStatus } from '../../models';
 import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { AssignRolesDto, ChangePasswordDto, UpdateUserStatusDto } from './dto/user-actions.dto';
-import { type UserResponseDto, toUserResponse } from './dto/user.response';
+import { type AssignableUserDto, type UserResponseDto, toUserResponse } from './dto/user.response';
 
 /** ฟิลด์ที่ยอมให้เรียงลำดับได้ — กันค่าแปลกปลอมจาก query string sortBy หลุดเข้า ORDER BY */
 const SORTABLE_FIELDS = new Set([
@@ -49,6 +49,39 @@ export class UsersService {
     @InjectConnection() private readonly sequelize: Sequelize,
     private readonly config: ConfigService,
   ) {}
+
+  /**
+   * รายชื่อพนักงานสำหรับดรอปดาวน์ "มอบหมายให้ใคร"
+   *
+   * แยกจาก `findAll()` เพราะสองอย่างนี้ตอบคนละคำถาม — `GET /api/users` คือหน้าจอ
+   * จัดการผู้ใช้ ต้องมีสิทธิ์ `user.view` ส่วนอันนี้คือ picker ที่พนักงาน support
+   * ซึ่งมีแค่สิทธิ์มอบหมายงานก็ต้องใช้ได้ ถ้าบังคับ `user.view` ด้วย เท่ากับต้องให้
+   * สิทธิ์จัดการผู้ใช้เต็มใบกับทุกคนที่มอบหมายงานเป็น ซึ่งกว้างเกินความจำเป็น
+   *
+   * คืนเฉพาะ id / ชื่อ / ชื่อผู้ใช้ / ตำแหน่ง ของคนที่ยัง ACTIVE เท่านั้น
+   * **ห้ามเพิ่มอีเมล สถานะบัญชี ระดับบัญชี หรือบทบาทลงมาในนี้** ข้อมูลพวกนั้นเป็นของ
+   * หน้าจอจัดการผู้ใช้ที่มีสิทธิ์กั้นอยู่ ไม่แบ่งหน้าเพราะบริษัทมีพนักงาน 2-20 คน
+   *
+   * คนที่ลาออกแล้วไม่อยู่ในรายการนี้ เพราะเป็นการ *มอบหมายงานใหม่* ต่างจากการบันทึก
+   * ข้อเท็จจริงในอดีตอย่างผู้ส่งมอบใน Phase 6 ที่ระบุคนที่ลาออกแล้วได้
+   */
+  async findAssignable(): Promise<AssignableUserDto[]> {
+    const users = await this.userModel.findAll({
+      where: { status: UserStatus.ACTIVE },
+      attributes: ['id', 'username', 'fullName', 'position'],
+      order: [
+        ['fullName', 'ASC'],
+        ['id', 'ASC'],
+      ],
+    });
+
+    return users.map((user) => ({
+      id: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      position: user.position,
+    }));
+  }
 
   async findAll(query: QueryUsersDto): Promise<PaginatedResult<UserResponseDto>> {
     const where: WhereOptions<User> = {};

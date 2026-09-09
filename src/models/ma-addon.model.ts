@@ -15,8 +15,21 @@ export enum MaAddonType {
  * effective_year / effective_month = addon มีผลกับรอบเดือนไหน
  * ถ้าเว้นว่าง = มีผลตลอดอายุสัญญา
  */
+export interface MaAddonCreationAttributes {
+  contractId: number;
+  addonType?: MaAddonType;
+  title: string;
+  extraQuota?: number;
+  price?: string;
+  effectiveYear?: number | null;
+  effectiveMonth?: number | null;
+  note?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'ma_addons', underscored: true, timestamps: true, paranoid: true })
-export class MaAddon extends AuditedModel<MaAddon> {
+export class MaAddon extends AuditedModel<MaAddon, MaAddonCreationAttributes> {
   @ForeignKey(() => MaContract)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'contract_id' })
   contractId: number;

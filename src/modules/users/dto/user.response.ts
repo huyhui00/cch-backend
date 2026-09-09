@@ -81,3 +81,24 @@ export function toUserResponse(user: User): UserResponseDto {
     updatedAt: user.updatedAt,
   };
 }
+
+/**
+ * รูปย่อของพนักงานสำหรับดรอปดาวน์ "มอบหมายให้ใคร"
+ *
+ * ตั้งใจให้มีแค่ 4 ฟิลด์นี้ — พอสำหรับให้คนเลือกชื่อได้ถูกคน แต่ไม่พอที่จะใช้แทน
+ * หน้าจอจัดการผู้ใช้ ถ้าเพิ่มฟิลด์ลงมาเรื่อย ๆ endpoint นี้จะกลายเป็น GET /api/users
+ * ฉบับไม่มีสิทธิ์กั้น ซึ่งเป็นสิ่งที่ตั้งใจหลีกเลี่ยงตั้งแต่แรก
+ */
+export class AssignableUserDto {
+  @ApiProperty({ example: 4 })
+  id: number;
+
+  @ApiProperty({ example: 'somchai' })
+  username: string;
+
+  @ApiProperty({ example: 'สมชาย ใจดี' })
+  fullName: string;
+
+  @ApiProperty({ nullable: true, example: 'หัวหน้าทีมพัฒนา' })
+  position: string | null;
+}

@@ -18,7 +18,7 @@ import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { AssignRolesDto, ChangePasswordDto, UpdateUserStatusDto } from './dto/user-actions.dto';
-import { UserResponseDto } from './dto/user.response';
+import { AssignableUserDto, UserResponseDto } from './dto/user.response';
 import { UsersService } from './users.service';
 
 /**
@@ -54,6 +54,29 @@ export class UsersController {
   ): Promise<{ data: null; message: string }> {
     await this.usersService.changeOwnPassword(userId, dto);
     return { data: null, message: 'เปลี่ยนรหัสผ่านเรียบร้อย กรุณาเข้าสู่ระบบใหม่' };
+  }
+
+  /**
+   * ไม่ติด @RequirePermission โดยเจตนา — ล็อกอินแล้วเรียกได้ทุกคน
+   *
+   * คนที่มีสิทธิ์มอบหมายงาน (ticket.assign, task.assign) มักไม่มี user.view
+   * ถ้ากั้นด้วย user.view ดรอปดาวน์ "มอบหมายให้ใคร" จะว่างเปล่าสำหรับพนักงาน support
+   * ทั้งทีม ข้อมูลที่คืนคือชื่อเพื่อนร่วมงานซึ่งเห็นได้อยู่แล้วทั่วทั้งระบบ
+   * (ชื่อผู้รับผิดชอบบนใบงาน ใบแจ้งปัญหา โครงการ) จึงไม่ได้เปิดเผยอะไรใหม่
+   * และลูกค้าไม่มีบัญชีผู้ใช้อยู่แล้ว (BR-01) คนที่ล็อกอินได้จึงเป็นพนักงานเสมอ
+   */
+  @Get('assignable')
+  @ApiOperation({
+    summary: 'รายชื่อพนักงานสำหรับดรอปดาวน์มอบหมายงาน',
+    description:
+      'คืนเฉพาะพนักงานที่สถานะ ACTIVE พร้อม id ชื่อ ชื่อผู้ใช้ และตำแหน่ง ไม่แบ่งหน้า ' +
+      'ใช้กับช่องเลือกผู้รับผิดชอบของงานย่อยและใบแจ้งปัญหา — ' +
+      'ถ้าต้องการข้อมูลผู้ใช้เต็มให้เรียก GET /api/users ซึ่งต้องมีสิทธิ์ user.view',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [AssignableUserDto] })
+  @ApiResponse({ status: 401, description: 'ยังไม่ได้เข้าสู่ระบบ' })
+  findAssignable(): Promise<AssignableUserDto[]> {
+    return this.usersService.findAssignable();
   }
 
   @Get()
