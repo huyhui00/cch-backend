@@ -15,6 +15,7 @@ import { DeliveriesModule } from './modules/deliveries/deliveries.module';
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { MaModule } from './modules/ma/ma.module';
 import { ProjectsModule } from './modules/projects/projects.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
@@ -44,9 +45,11 @@ import { WarrantiesModule } from './modules/warranties/warranties.module';
     FollowUpsModule,
     SurveysModule,
     TicketsModule,
+    ReportsModule,
 
-    // modules ทางธุรกิจที่เหลือจะถูกเพิ่มที่นี่ตามลำดับ Phase ใน CLAUDE.md ข้อ 12
-    // DocumentsModule, ReportsModule, NotificationsModule, ...
+    // modules ทางธุรกิจที่เหลือจะถูกเพิ่มที่นี่ — M9 เอกสาร/ไฟล์ และ M11 แจ้งเตือน
+    // ถูกเลื่อนไปทำทีหลัง ไม่ได้ตัดออกจากขอบเขต
+    // DocumentsModule, NotificationsModule
   ],
   controllers: [AppController],
   providers: [
