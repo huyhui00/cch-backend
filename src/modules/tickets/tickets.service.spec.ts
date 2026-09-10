@@ -22,7 +22,7 @@ import {
 } from '../../models';
 import type { MaQuotaService } from '../ma/ma-quota.service';
 import type { WarrantiesService } from '../warranties/warranties.service';
-import { TicketsService } from './tickets.service';
+import { CLOSED_TICKET_RESOLUTION_MESSAGE, TicketsService } from './tickets.service';
 import type { QueryTicketsDto } from './dto/ticket.dto';
 
 /**
@@ -231,12 +231,14 @@ describe('TicketsService', () => {
       expect(captured.round).toBe(1);
     });
 
-    it('เพิ่มการแก้ในใบที่ปิดงานแล้วไม่ได้', async () => {
+    it('เพิ่มการแก้ในใบที่ปิดงานแล้วตรง ๆ ไม่ได้ และบอกให้เปิดใบเดิมกลับมาก่อน', async () => {
       ticketModel.findByPk.mockResolvedValue(ticketRow({ status: TicketStatus.CLOSED }));
 
       await expect(service.addResolution(7, resolutionDto())).rejects.toThrow(
-        'ปัญหานี้ปิดงานแล้ว ไม่สามารถเพิ่มการแก้ไขได้',
+        CLOSED_TICKET_RESOLUTION_MESSAGE,
       );
+      // ห้ามชี้ให้ไปเปิดใบใหม่ — ขัด BR-04
+      expect(CLOSED_TICKET_RESOLUTION_MESSAGE).not.toContain('เปิดใบใหม่');
       expect(resolutionModel.create).not.toHaveBeenCalled();
     });
 
@@ -786,10 +788,43 @@ describe('TicketsService', () => {
       await expect(service.reopen(7, {})).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it('ใบที่ปิดงานแล้วเปิดกลับมาไม่ได้', async () => {
-      ticketModel.findByPk.mockResolvedValue(ticketRow({ status: TicketStatus.CLOSED }));
+    // Q9 ตัดสิน 11 ก.ย. — ปัญหาเดิมกลับมาหลังปิดงานแล้วก็ยังต้องเพิ่มรอบในใบเดิม (BR-04)
+    it('ใบที่ปิดงานแล้วเปิดกลับมาในใบเดิมได้ และล้างเวลาปิดงาน', async () => {
+      const ticket = ticketRow({
+        status: TicketStatus.CLOSED,
+        resolutionCount: 1,
+        closedAt: new Date('2026-06-01T10:00:00Z'),
+      });
+      ticketModel.findByPk.mockResolvedValue(ticket);
 
-      await expect(service.reopen(7, {})).rejects.toBeInstanceOf(BadRequestException);
+      let captured: Record<string, unknown> = {};
+      ticket.update.mockImplementation((values: Record<string, unknown>) => {
+        captured = values;
+        return Promise.resolve(ticket);
+      });
+
+      await service.reopen(7, { reason: 'อาการเดิมกลับมาหลังปิดงาน 3 เดือน' });
+
+      expect(captured.status).toBe(TicketStatus.REOPENED);
+      expect(captured.closedAt).toBeNull();
+      // ประวัติรอบเดิมยังอยู่ รอบถัดไปนับต่อจากเดิม
+      expect(captured.resolutionCount).toBeUndefined();
+      expect(captured.resolvedAt).toBeUndefined();
+    });
+
+    it('เปิดกลับมาจาก RESOLVED ไม่แตะเวลาปิดงาน', async () => {
+      const ticket = ticketRow({ status: TicketStatus.RESOLVED });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      let captured: Record<string, unknown> = {};
+      ticket.update.mockImplementation((values: Record<string, unknown>) => {
+        captured = values;
+        return Promise.resolve(ticket);
+      });
+
+      await service.reopen(7, {});
+
+      expect(captured).not.toHaveProperty('closedAt');
     });
   });
 

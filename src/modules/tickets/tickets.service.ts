@@ -45,6 +45,10 @@ import {
  * สถานะที่การมอบหมายจะพาไป IN_PROGRESS ให้เอง — ใบที่ยังไม่มีใครลงมือ
  * RECEIVED = เพิ่งรับเรื่อง, REOPENED = ปัญหาเดิมกลับมาและยังไม่มีใครหยิบรอบใหม่ (BR-04)
  */
+export const CLOSED_TICKET_RESOLUTION_MESSAGE =
+  'ปัญหานี้ปิดงานแล้ว ถ้าอาการเดิมกลับมาให้กด "ปัญหาเดิมกลับมา" เพื่อเปิดใบนี้ก่อน ' +
+  'แล้วจึงบันทึกการแก้ไขรอบถัดไป';
+
 const STARTABLE_TICKET_STATUSES: readonly TicketStatus[] = [
   TicketStatus.RECEIVED,
   TicketStatus.REOPENED,
@@ -460,7 +464,8 @@ export class TicketsService {
       }
 
       if (ticket.status === TicketStatus.CLOSED) {
-        throw new BadRequestException('ปัญหานี้ปิดงานแล้ว ไม่สามารถเพิ่มการแก้ไขได้');
+        // ชี้ทางที่ถูกให้เลย — ปัญหาเดิมกลับมาต้องเปิดใบเดิมกลับมาก่อน ไม่ใช่เปิดใบใหม่ (BR-04)
+        throw new BadRequestException(CLOSED_TICKET_RESOLUTION_MESSAGE);
       }
 
       const round =
@@ -544,16 +549,15 @@ export class TicketsService {
    *
    * ไม่ล้าง `resolvedAt` และ `resolutionCount` ทิ้ง เพราะเป็นประวัติที่เกิดขึ้นจริง
    * ค่าจะถูกเขียนทับเองเมื่อมีการแก้รอบใหม่
+   *
+   * **ใบที่ปิดงานแล้วก็เปิดกลับมาได้** (ตัดสิน 11 ก.ย. — Q9) ปัญหาเดิมที่กลับมาหลังปิดงาน
+   * ยังเป็นปัญหาเดิม ต้องเพิ่มรอบในใบเดิม ห้ามบอกให้เปิดใบใหม่ ไม่จำกัดว่าปิดมานานเท่าไร
+   * เพราะคนเป็นผู้ตัดสินว่าเป็นปัญหาเดิมหรือไม่ — `closedAt` ถูกล้างเพราะใบไม่ได้ปิดแล้ว
+   * ประวัติการปิดครั้งก่อนยังอยู่ใน audit log และหมายเหตุที่ต่อท้ายรายละเอียดไว้
    */
   async reopen(id: number, dto: ReopenTicketDto): Promise<TicketResponseDto> {
     const actorId = getCurrentUserId();
     const ticket = await this.findOrFail(id);
-
-    if (ticket.status === TicketStatus.CLOSED) {
-      throw new BadRequestException(
-        'ปัญหานี้ปิดงานแล้ว ถ้าลูกค้าแจ้งอาการเดิมกลับมาอีกให้เปิดใบใหม่และอ้างถึงใบนี้',
-      );
-    }
 
     if (ticket.status === TicketStatus.REOPENED) {
       throw new ConflictException('ปัญหานี้ถูกเปิดกลับมาอยู่แล้ว');
@@ -561,6 +565,7 @@ export class TicketsService {
 
     await ticket.update({
       status: TicketStatus.REOPENED,
+      ...(ticket.status === TicketStatus.CLOSED ? { closedAt: null } : {}),
       description: this.appendNote(ticket.description, dto.reason, 'เปิดกลับมาอีกครั้ง'),
       updatedBy: actorId,
     });

@@ -150,7 +150,7 @@ export class TicketsController {
     description:
       '1 ปัญหา แก้ได้หลายรอบ (BR-03) — ระบบนับ round ให้เองจากรอบที่มีอยู่ + 1 ห้ามส่งมาเอง ' +
       'ทั้งการสร้างรอบ การอัปเดตสถานะเป็น RESOLVED และการหักโควตา MA อยู่ในทรานแซกชันเดียว ' +
-      'ปัญหาที่ปิดงานแล้วเพิ่มรอบไม่ได้ ' +
+      'ปัญหาที่ปิดงานแล้วเพิ่มรอบตรง ๆ ไม่ได้ ต้อง PATCH /:id/reopen ก่อน ' +
       '⚠ โควตา MA ถูกหักครั้งเดียวต่อใบ ไม่ว่าจะแก้กี่รอบ รอบที่ 2 ขึ้นไปจึงได้ quota เป็น null',
   })
   @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
@@ -161,7 +161,7 @@ export class TicketsController {
   })
   @ApiResponse({
     status: 400,
-    description: 'ปัญหานี้ปิดงานแล้ว ไม่สามารถเพิ่มการแก้ไขได้ หรือเวลาที่แก้เสร็จเป็นอนาคต',
+    description: 'ปัญหานี้ปิดงานแล้ว (ต้องเปิดกลับมาก่อน) หรือเวลาที่แก้เสร็จเป็นอนาคต',
   })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   @ApiResponse({ status: 404, description: 'ไม่พบรายการปัญหานี้' })
@@ -183,11 +183,12 @@ export class TicketsController {
       'BR-04 ปัญหาเดิมกลับมาต้องเพิ่มรอบในใบเดิม **ห้ามเปิดใบใหม่** ' +
       'endpoint นี้พาใบกลับเข้าสถานะ REOPENED เพื่อให้กลับเข้าหน้าจอรอรับการแก้ไข ' +
       'แล้วรอบถัดไปบันทึกผ่าน POST /:id/resolutions ตามปกติ ซึ่งจะได้ round ต่อจากเดิม ' +
-      'ประวัติเดิมไม่ถูกล้าง',
+      'ประวัติเดิมไม่ถูกล้าง — **ใช้กับใบที่ปิดงานแล้ว (CLOSED) ได้ด้วย** ไม่จำกัดว่าปิดมานานเท่าไร ' +
+      'และล้าง closedAt ให้ หน้าจอเรียก PATCH /:id/assign ต่อทันทีเพื่อให้เป็น IN_PROGRESS ' +
+      'ในจังหวะเดียว (ต้องมีทั้งสิทธิ์ ticket.reopen และ ticket.assign)',
   })
   @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
   @ApiResponse({ status: 200, description: 'เปิดปัญหากลับมาเรียบร้อย', type: TicketResponseDto })
-  @ApiResponse({ status: 400, description: 'ปัญหานี้ปิดงานแล้ว' })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   @ApiResponse({ status: 404, description: 'ไม่พบรายการปัญหานี้' })
   @ApiResponse({ status: 409, description: 'ปัญหานี้ถูกเปิดกลับมาอยู่แล้ว' })
@@ -207,7 +208,8 @@ export class TicketsController {
     summary: 'ปิดงาน',
     description:
       'ปิดได้จากทุกสถานะที่ยังไม่ปิด ไม่บังคับว่าต้องมีรอบการแก้ก่อน เพราะมีเคสที่ตรวจแล้ว ' +
-      'ไม่ใช่ปัญหาของเราหรือลูกค้าถอนเรื่อง ปิดแล้วเพิ่มรอบการแก้ไม่ได้อีก',
+      'ไม่ใช่ปัญหาของเราหรือลูกค้าถอนเรื่อง ปิดแล้วเพิ่มรอบตรง ๆ ไม่ได้ ' +
+      'ถ้าปัญหาเดิมกลับมาให้ PATCH /:id/reopen ในใบเดิม (BR-04)',
   })
   @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
   @ApiResponse({ status: 200, description: 'ปิดงานเรียบร้อย', type: TicketResponseDto })

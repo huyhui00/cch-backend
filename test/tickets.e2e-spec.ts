@@ -33,6 +33,7 @@ interface ApiResponse<T> {
 interface TicketPayload {
   id: number;
   status: string;
+  closedAt: string | null;
   isPending: boolean;
   resolutionCount: number;
   billingType: string;
@@ -172,7 +173,7 @@ describe('Tickets (e2e)', () => {
   // -------------------------------------------------------------------------
   // 2. ticket ที่ CLOSED แล้วเพิ่ม resolution ไม่ได้
   // -------------------------------------------------------------------------
-  it('ใบที่ปิดงานแล้วเพิ่มการแก้ไขไม่ได้', async () => {
+  it('ใบที่ปิดงานแล้วเพิ่มการแก้ไขตรง ๆ ไม่ได้ ต้องเปิดใบเดิมกลับมาก่อน', async () => {
     const ticketId = await openTicket(`ปัญหาที่จะปิดงาน ${stamp}`);
 
     await addResolution(ticketId, 'แก้เสร็จแล้ว').expect(201);
@@ -184,7 +185,9 @@ describe('Tickets (e2e)', () => {
     const body = rejected.body as ApiResponse<null>;
 
     expect(body.success).toBe(false);
-    expect(body.message).toBe('ปัญหานี้ปิดงานแล้ว ไม่สามารถเพิ่มการแก้ไขได้');
+    // ชี้ให้เปิดใบเดิมกลับมา ห้ามบอกให้เปิดใบใหม่ (BR-04, Q9)
+    expect(body.message).toContain('ปัญหาเดิมกลับมา');
+    expect(body.message).not.toContain('เปิดใบใหม่');
 
     // ต้องไม่มีรอบที่ 2 หลุดเข้าไป
     const detail = await authed('get', `/api/tickets/${ticketId}`).expect(200);
@@ -270,6 +273,41 @@ describe('Tickets (e2e)', () => {
     expect(body.data.ticket.status).toBe('RESOLVED');
   });
 
+  it('ปัญหาเดิมกลับมาหลังปิดงานแล้ว เปิดใบเดิมกลับมาแก้รอบถัดไปได้ (BR-04, Q9)', async () => {
+    // CLOSED → REOPENED → IN_PROGRESS → RESOLVED → CLOSED อีกครั้ง ทั้งหมดอยู่ในใบเดียว
+    const ticketId = await openTicket(`ปัญหาที่กลับมาหลังปิดงาน ${stamp}`);
+
+    await addResolution(ticketId, 'แก้รอบแรก').expect(201);
+    const closed = await authed('patch', `/api/tickets/${ticketId}/close`).send({}).expect(200);
+    const firstClosedAt = (closed.body as ApiResponse<TicketPayload>).data.closedAt;
+    expect(firstClosedAt).not.toBeNull();
+
+    // กดครั้งเดียวที่หน้าจอ = reopen แล้ว assign ต่อทันที
+    const reopened = await authed('patch', `/api/tickets/${ticketId}/reopen`)
+      .send({ reason: 'อาการเดิมกลับมาหลังปิดงาน' })
+      .expect(200);
+    const afterReopen = (reopened.body as ApiResponse<TicketPayload>).data;
+    expect(afterReopen.status).toBe('REOPENED');
+    expect(afterReopen.closedAt).toBeNull();
+
+    const started = await authed('patch', `/api/tickets/${ticketId}/assign`)
+      .send({ assignedUserId: actorId })
+      .expect(200);
+    expect((started.body as ApiResponse<TicketPayload>).data.status).toBe('IN_PROGRESS');
+
+    const second = await addResolution(ticketId, 'แก้รอบสองหลังเปิดใบเดิมกลับมา').expect(201);
+    expect(
+      (second.body as ApiResponse<{ resolution: { round: number } }>).data.resolution.round,
+    ).toBe(2);
+
+    // ปิดใหม่ได้ และทุกรอบยังอยู่ในใบเดิม
+    const reclosed = await authed('patch', `/api/tickets/${ticketId}/close`).send({}).expect(200);
+    const ticket = (reclosed.body as ApiResponse<TicketPayload>).data;
+    expect(ticket.status).toBe('CLOSED');
+    expect(ticket.closedAt).not.toBeNull();
+    expect(ticket.resolutions.map((item) => item.round)).toEqual([1, 2]);
+  });
+
   // -------------------------------------------------------------------------
   // แก้ไขใบ — ต้องแก้ข้อมูลที่คีย์ผิดได้ แต่ห้ามข้ามกฎสถานะ
   // -------------------------------------------------------------------------
@@ -315,7 +353,7 @@ describe('Tickets (e2e)', () => {
   });
 
   it('ใบที่ปิดงานแล้วยังแก้ข้อมูลได้ แม้เพิ่มรอบการแก้ไขไม่ได้แล้ว', async () => {
-    // การพิมพ์ผิดต้องแก้ได้เสมอ ต่างจากการเพิ่มรอบ ซึ่งใบที่ปิดแล้วทำไม่ได้ (reopen ก็ไม่ได้ ดู Q9)
+    // การพิมพ์ผิดต้องแก้ได้เสมอ ต่างจากการเพิ่มรอบ ซึ่งใบที่ปิดแล้วต้อง reopen ก่อน
     const ticketId = await openTicket(`ปัญหาที่ปิดแล้วแต่ต้องแก้คำผิด ${stamp}`);
 
     await addResolution(ticketId, 'แก้เสร็จแล้ว').expect(201);
