@@ -7,8 +7,19 @@ import { SurveyAssignment } from './survey-assignment.model';
 import { Survey } from './survey.model';
 
 /** 1 assignment ตอบได้ครั้งเดียว — assignment_id เป็น UNIQUE */
+export interface SurveyResponseCreationAttributes {
+  assignmentId: number;
+  surveyId: number;
+  customerId: number;
+  submittedAt: Date;
+  overallScore?: string | null;
+  comment?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'survey_responses', underscored: true, timestamps: true, paranoid: true })
-export class SurveyResponse extends AuditedModel<SurveyResponse> {
+export class SurveyResponse extends AuditedModel<SurveyResponse, SurveyResponseCreationAttributes> {
   @ForeignKey(() => SurveyAssignment)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'assignment_id' })
   assignmentId: number;

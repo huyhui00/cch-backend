@@ -11,8 +11,18 @@ import { SurveyResponse } from './survey-response.model';
  *   CHOICE       -> answer_text
  *   MULTI_CHOICE -> answer_json
  */
+export interface SurveyAnswerCreationAttributes {
+  responseId: number;
+  questionId: number;
+  answerText?: string | null;
+  answerNumber?: string | null;
+  answerJson?: unknown;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'survey_answers', underscored: true, timestamps: true, paranoid: true })
-export class SurveyAnswer extends AuditedModel<SurveyAnswer> {
+export class SurveyAnswer extends AuditedModel<SurveyAnswer, SurveyAnswerCreationAttributes> {
   @ForeignKey(() => SurveyResponse)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'response_id' })
   responseId: number;

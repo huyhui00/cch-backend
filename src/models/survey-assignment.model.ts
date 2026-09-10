@@ -25,8 +25,26 @@ export enum SurveyAssignmentStatus {
  *
  * ไม่ว่าทางไหน ลูกค้าก็ยังไม่มีบัญชีผู้ใช้ (BR-01)
  */
+export interface SurveyAssignmentCreationAttributes {
+  surveyId: number;
+  customerId: number;
+  contactId?: number | null;
+  projectId?: number | null;
+  status?: SurveyAssignmentStatus;
+  accessToken?: string | null;
+  tokenExpiresAt?: Date | null;
+  filledByUserId?: number | null;
+  sentAt?: Date | null;
+  answeredAt?: Date | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'survey_assignments', underscored: true, timestamps: true, paranoid: true })
-export class SurveyAssignment extends AuditedModel<SurveyAssignment> {
+export class SurveyAssignment extends AuditedModel<
+  SurveyAssignment,
+  SurveyAssignmentCreationAttributes
+> {
   @ForeignKey(() => Survey)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'survey_id' })
   surveyId: number;

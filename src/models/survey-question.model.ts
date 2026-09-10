@@ -10,8 +10,21 @@ export enum SurveyQuestionType {
   TEXT = 'TEXT',
 }
 
+export interface SurveyQuestionCreationAttributes {
+  surveyId: number;
+  questionText: string;
+  questionType: SurveyQuestionType;
+  isRequired?: boolean;
+  options?: unknown;
+  minValue?: number | null;
+  maxValue?: number | null;
+  sortOrder?: number;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'survey_questions', underscored: true, timestamps: true, paranoid: true })
-export class SurveyQuestion extends AuditedModel<SurveyQuestion> {
+export class SurveyQuestion extends AuditedModel<SurveyQuestion, SurveyQuestionCreationAttributes> {
   @ForeignKey(() => Survey)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'survey_id' })
   surveyId: number;
