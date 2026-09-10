@@ -54,7 +54,7 @@ interface ContractPayload {
 
 interface PlanPayload {
   id: number;
-  code: string;
+  code: string | null;
   items: { id: number; title: string; sortOrder: number }[];
 }
 
@@ -150,6 +150,25 @@ describe('MA (e2e)', () => {
 
     expect(Object.keys(plan)).not.toContain('price');
     expect(plan.items.map((item) => item.sortOrder)).toEqual([0, 1]);
+  });
+
+  it('สร้างแผนที่ไม่มีรหัสได้หลายแผน — unique index ของ MySQL ยอมให้ NULL ซ้ำ (10 ก.ย.)', async () => {
+    // พิสูจน์สิ่งที่ mock พิสูจน์ไม่ได้ — ว่า migration 20260910000003 ปลด NOT NULL จริง
+    // และ uq_ma_plans_code ไม่ถือว่า NULL สองแถวชนกัน
+    const first = await authed('post', '/api/ma-plans')
+      .send({ name: `แผนไม่มีรหัส ก ${stamp}` })
+      .expect(201);
+    const second = await authed('post', '/api/ma-plans')
+      .send({ name: `แผนไม่มีรหัส ข ${stamp}`, code: '   ' })
+      .expect(201);
+
+    expect((first.body as ApiResponse<PlanPayload>).data.code).toBeNull();
+    expect((second.body as ApiResponse<PlanPayload>).data.code).toBeNull();
+
+    // ใส่รหัสมาแล้วยังห้ามซ้ำเหมือนเดิม
+    await authed('post', '/api/ma-plans')
+      .send({ code: `E2E_PLAN_${stamp}`, name: 'แผนรหัสซ้ำ' })
+      .expect(409);
   });
 
   it('ส่งราคาไปที่แผนถูกปฏิเสธด้วยข้อความภาษาไทย', async () => {

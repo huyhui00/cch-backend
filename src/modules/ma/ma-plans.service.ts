@@ -94,12 +94,15 @@ export class MaPlansService {
   async create(dto: CreateMaPlanDto): Promise<MaPlanResponseDto> {
     const actorId = getCurrentUserId();
 
-    await this.assertCodeIsAvailable(dto.code);
+    // รหัสไม่บังคับแล้ว (ตกลง 10 ก.ย.) — ตรวจซ้ำเฉพาะตอนใส่มา ส่วน NULL ซ้ำกันได้
+    if (dto.code) {
+      await this.assertCodeIsAvailable(dto.code);
+    }
 
     const created = await this.sequelize.transaction(async (transaction) => {
       const plan = await this.planModel.create(
         {
-          code: dto.code,
+          code: dto.code ?? null,
           name: dto.name,
           description: dto.description ?? null,
           bugQuotaPerMonth: dto.bugQuotaPerMonth ?? 0,
@@ -135,7 +138,8 @@ export class MaPlansService {
     const actorId = getCurrentUserId();
     const plan = await this.findOrFail(id);
 
-    if (dto.code !== undefined && dto.code !== plan.code) {
+    // ส่ง null มา = ล้างรหัสออก ไม่ต้องตรวจซ้ำ
+    if (dto.code && dto.code !== plan.code) {
       await this.assertCodeIsAvailable(dto.code, id);
     }
 

@@ -76,20 +76,29 @@ export class MaPlanItemDto {
  * ซึ่งทำให้ "เนื้อหาเหมือนกันทุกโครงการ" เป็นไปไม่ได้ตั้งแต่ต้น
  */
 export class CreateMaPlanDto {
-  @ApiProperty({
-    description: 'รหัสแผน ตัวพิมพ์ใหญ่ ตัวเลข และขีดล่างเท่านั้น ห้ามซ้ำ',
+  @ApiPropertyOptional({
+    description:
+      'รหัสแผน — **ไม่บังคับ** หน้าจอซ่อนช่องนี้โดยตกลงกันแล้ว (10 ก.ย.) ใช้ชื่อแผนแทน ' +
+      'ถ้าใส่มา: ตัวพิมพ์ใหญ่ ตัวเลข และขีดล่างเท่านั้น และห้ามซ้ำ',
     maxLength: 50,
+    nullable: true,
     example: 'MA_STANDARD',
   })
+  @IsOptional()
   @IsString({ message: 'รหัสแผนต้องเป็นข้อความ' })
   @MaxLength(50, { message: 'รหัสแผนยาวเกิน 50 ตัวอักษร' })
   @Matches(/^[A-Z0-9_]+$/, {
     message: 'รหัสแผนใช้ได้เฉพาะตัวพิมพ์ใหญ่ ตัวเลข และขีดล่าง',
   })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
-  code: string;
+  @Transform(({ value }: { value: unknown }) => {
+    if (typeof value !== 'string') {
+      return value;
+    }
+    // ช่องว่างล้วน = ไม่ใส่รหัส ไม่ใช่รหัสที่เป็นสตริงว่าง (ซึ่งจะชน unique กันเอง)
+    const normalized = value.trim().toUpperCase();
+    return normalized.length > 0 ? normalized : null;
+  })
+  code?: string | null;
 
   @ApiProperty({ description: 'ชื่อแผนที่ใช้แสดง', maxLength: 150, example: 'แผนมาตรฐาน' })
   @IsString({ message: 'ชื่อแผนต้องเป็นข้อความ' })
@@ -182,9 +191,12 @@ export class CreateMaPlanDto {
  * ไม่ส่งมา = ไม่แตะรายการย่อยเดิม
  */
 export class UpdateMaPlanDto extends CreateMaPlanDto {
-  @ApiPropertyOptional({ description: 'แก้รหัสแผนได้ถ้ายังไม่ซ้ำกับแผนอื่น' })
+  @ApiPropertyOptional({
+    description: 'แก้รหัสแผนได้ถ้ายังไม่ซ้ำกับแผนอื่น — ส่ง null เพื่อล้างรหัสออก',
+    nullable: true,
+  })
   @IsOptional()
-  declare code: string;
+  declare code?: string | null;
 
   @ApiPropertyOptional({ description: 'ชื่อแผนที่ใช้แสดง' })
   @IsOptional()

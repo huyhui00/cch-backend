@@ -2,9 +2,12 @@
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import type { Sequelize } from 'sequelize-typescript';
 
 import { MaContract, MaPlan, MaPlanItem } from '../../models';
+import { CreateMaPlanDto } from './dto/ma-plan.dto';
 import { MaPlansService } from './ma-plans.service';
 
 /**
@@ -142,6 +145,62 @@ describe('MaPlansService', () => {
       await service.update(2, { code: 'MA_STANDARD', name: 'ชื่อใหม่' });
 
       expect(planModel.findOne).not.toHaveBeenCalled();
+    });
+
+    // รหัสไม่บังคับแล้ว (ตกลง 10 ก.ย.) — หน้าจอซ่อนช่องนี้ ใช้ชื่อแผนแทน
+    it('สร้างแผนโดยไม่ใส่รหัสได้ บันทึกเป็น null และไม่ต้องตรวจซ้ำ', async () => {
+      await service.create({ name: 'แผนไม่มีรหัส' });
+
+      expect(planModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ code: null, name: 'แผนไม่มีรหัส' }),
+        expect.anything(),
+      );
+      expect(planModel.findOne).not.toHaveBeenCalled();
+    });
+
+    it('สร้างแผนที่ไม่มีรหัสได้หลายแผน — NULL ไม่นับว่าซ้ำ', async () => {
+      await expect(service.create({ name: 'แผน ก' })).resolves.toBeDefined();
+      await expect(service.create({ name: 'แผน ข', code: null })).resolves.toBeDefined();
+
+      expect(planModel.create).toHaveBeenCalledTimes(2);
+      expect(planModel.findOne).not.toHaveBeenCalled();
+    });
+
+    it('แก้โดยส่ง code: null = ล้างรหัสออก ไม่ต้องตรวจซ้ำ', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      planModel.findByPk.mockResolvedValue(planRow({ update }));
+
+      await service.update(2, { code: null, name: 'แผนมาตรฐาน' });
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ code: null }),
+        expect.anything(),
+      );
+      expect(planModel.findOne).not.toHaveBeenCalled();
+    });
+
+    it('ใส่รหัสมาแล้วยังซ้ำไม่ได้ — ทั้งตอนสร้างและตอนแก้', async () => {
+      planModel.findOne.mockResolvedValue(planRow({ id: 9, code: 'MA_GOLD' }));
+
+      await expect(service.create({ code: 'MA_GOLD', name: 'x' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await expect(service.update(2, { code: 'MA_GOLD', name: 'x' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+
+    it('DTO: รหัสที่เป็นช่องว่างล้วนถูกแปลงเป็น null และผ่าน validation', async () => {
+      const dto = plainToInstance(CreateMaPlanDto, { name: 'แผน', code: '   ' });
+
+      expect(dto.code).toBeNull();
+      await expect(validate(dto)).resolves.toHaveLength(0);
+    });
+
+    it('DTO: ไม่ส่งรหัสมาเลยก็ผ่าน validation', async () => {
+      await expect(
+        validate(plainToInstance(CreateMaPlanDto, { name: 'แผน' })),
+      ).resolves.toHaveLength(0);
     });
   });
 

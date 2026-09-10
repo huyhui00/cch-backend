@@ -297,11 +297,13 @@ module.exports = {
         website: null,
         line_official_id: null,
         facebook_url: null,
-        status: 'PROSPECT',
+        status: 'INACTIVE',
         source: 'ติดต่อเข้ามาทางเว็บไซต์',
         owner_user_id: null,
         last_contacted_at: null,
-        note: 'ขอใบเสนอราคาระบบติดตามรถ ยังไม่ได้นัดคุยรายละเอียด',
+        note:
+          'เคยจ้างทำระบบติดตามรถปี 2566 ข้อมูลยกมาจากเอกสารกระดาษ ' +
+          'ยังไม่เคยบันทึกการติดต่อในระบบ — กลุ่มที่ควรตามเสนอ MA',
         ...audit,
       },
     ]);

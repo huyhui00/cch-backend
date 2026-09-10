@@ -844,6 +844,35 @@ describe('TicketsService', () => {
       );
     });
 
+    it('ใบที่ปัญหาเดิมกลับมา (REOPENED) ถูกเลื่อนเป็น IN_PROGRESS เมื่อมอบหมาย (BR-04)', async () => {
+      // เดิมไม่มีทางไป IN_PROGRESS เลย ใบจึงค้าง REOPENED จนบันทึกรอบถัดไป
+      // หน้าจอรอรับการแก้ไขแยกไม่ออกว่า "ยังไม่มีใครหยิบ" หรือ "กำลังแก้รอบใหม่"
+      const ticket = ticketRow({ status: TicketStatus.REOPENED, assignedUserId: 4 });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      // หยิบงานรอบใหม่ = มอบหมายซ้ำ แม้เป็นคนเดิม
+      await service.assign(7, { assignedUserId: 4 });
+
+      expect(ticket.update).toHaveBeenCalledWith(
+        expect.objectContaining({ assignedUserId: 4, status: TicketStatus.IN_PROGRESS }),
+      );
+    });
+
+    it('ถอนการมอบหมายใบ REOPENED ไม่ทำให้เลื่อนเป็น IN_PROGRESS', async () => {
+      const ticket = ticketRow({ status: TicketStatus.REOPENED, assignedUserId: 4 });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      let captured: Record<string, unknown> = {};
+      ticket.update.mockImplementation((values: Record<string, unknown>) => {
+        captured = values;
+        return Promise.resolve(ticket);
+      });
+
+      await service.assign(7, { assignedUserId: null });
+
+      expect(captured.status).toBeUndefined();
+    });
+
     it('ไม่ไปแตะสถานะของใบที่เดินไปไกลแล้ว', async () => {
       const ticket = ticketRow({ status: TicketStatus.RESOLVED });
       ticketModel.findByPk.mockResolvedValue(ticket);

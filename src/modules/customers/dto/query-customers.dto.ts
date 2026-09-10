@@ -12,7 +12,7 @@ export class QueryCustomersDto extends PaginationDto {
   })
   @IsOptional()
   @IsEnum(CustomerStatus, {
-    message: 'สถานะลูกค้าต้องเป็น PROSPECT, ACTIVE, INACTIVE หรือ CHURNED',
+    message: 'สถานะลูกค้าต้องเป็น ACTIVE, INACTIVE หรือ CHURNED',
   })
   status?: CustomerStatus;
 

@@ -11,7 +11,7 @@ import { MaPlanItem } from './ma-plan-item.model';
  * เพราะถ้าเก็บราคาที่นี่ จะต้องก๊อปแผนใหม่ทุกครั้งที่ต่อรองราคาได้ไม่เท่ากัน
  */
 export interface MaPlanCreationAttributes {
-  code: string;
+  code?: string | null;
   name: string;
   description?: string | null;
   bugQuotaPerMonth?: number;
@@ -25,8 +25,12 @@ export interface MaPlanCreationAttributes {
 
 @Table({ tableName: 'ma_plans', underscored: true, timestamps: true, paranoid: true })
 export class MaPlan extends AuditedModel<MaPlan, MaPlanCreationAttributes> {
-  @Column({ type: DataType.STRING(50), allowNull: false })
-  code: string;
+  /**
+   * ไม่บังคับ (ตกลง 10 ก.ย. 2026) — หน้าจอซ่อนช่องนี้ ใช้ชื่อแผนแทน
+   * ถ้าใส่มายังห้ามซ้ำ ส่วน NULL ซ้ำกันได้หลายแถว
+   */
+  @Column({ type: DataType.STRING(50), allowNull: true })
+  code: string | null;
 
   @Column({ type: DataType.STRING(150), allowNull: false })
   name: string;

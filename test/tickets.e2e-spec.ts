@@ -47,6 +47,8 @@ interface ListPayload<T> {
 describe('Tickets (e2e)', () => {
   let app: INestApplication;
   let token: string;
+  /** id ของบัญชีที่ล็อกอิน — ใช้เป็นผู้รับผิดชอบตอนทดสอบการมอบหมาย */
+  let actorId: number;
   let customerId: number;
   let projectId: number;
 
@@ -84,8 +86,9 @@ describe('Tickets (e2e)', () => {
       })
       .expect(200);
 
-    const loginBody = login.body as ApiResponse<{ accessToken: string }>;
+    const loginBody = login.body as ApiResponse<{ accessToken: string; user: { id: number } }>;
     token = loginBody.data.accessToken;
+    actorId = loginBody.data.user.id;
     expect(token).toBeTruthy();
 
     // ---- เตรียมลูกค้าและโครงการของรอบนี้ ------------------------------------
@@ -237,6 +240,36 @@ describe('Tickets (e2e)', () => {
     ).toBe(2);
   });
 
+  it('ใบที่กลับมาเป็นซ้ำ มอบหมายแล้วเดินต่อเป็น IN_PROGRESS ครบวงจร BR-04', async () => {
+    // RESOLVED → REOPENED → IN_PROGRESS → RESOLVED (รอบที่ 2) ตามภาพ 6.4
+    const ticketId = await openTicket(`ปัญหาที่กลับมาแล้วต้องมีคนหยิบ ${stamp}`);
+
+    const assignTo = () =>
+      authed('patch', `/api/tickets/${ticketId}/assign`).send({ assignedUserId: actorId });
+
+    const started = await assignTo().expect(200);
+    expect((started.body as ApiResponse<TicketPayload>).data.status).toBe('IN_PROGRESS');
+
+    await addResolution(ticketId, 'แก้รอบแรก').expect(201);
+    await authed('patch', `/api/tickets/${ticketId}/reopen`)
+      .send({ reason: 'อาการเดิมกลับมา' })
+      .expect(200);
+
+    // หยิบงานรอบใหม่ = มอบหมายซ้ำ แม้เป็นคนเดิม
+    const restarted = await assignTo().expect(200);
+    const ticket = (restarted.body as ApiResponse<TicketPayload>).data;
+    expect(ticket.status).toBe('IN_PROGRESS');
+    expect(ticket.isPending).toBe(true);
+
+    const second = await addResolution(ticketId, 'แก้รอบสองด้วยวิธีใหม่').expect(201);
+    const body = second.body as ApiResponse<{
+      resolution: { round: number };
+      ticket: TicketPayload;
+    }>;
+    expect(body.data.resolution.round).toBe(2);
+    expect(body.data.ticket.status).toBe('RESOLVED');
+  });
+
   // -------------------------------------------------------------------------
   // แก้ไขใบ — ต้องแก้ข้อมูลที่คีย์ผิดได้ แต่ห้ามข้ามกฎสถานะ
   // -------------------------------------------------------------------------
@@ -282,7 +315,7 @@ describe('Tickets (e2e)', () => {
   });
 
   it('ใบที่ปิดงานแล้วยังแก้ข้อมูลได้ แม้เพิ่มรอบการแก้ไขไม่ได้แล้ว', async () => {
-    // การพิมพ์ผิดต้องแก้ได้เสมอ ต่างจากการเพิ่มรอบที่ต้อง reopen ก่อน
+    // การพิมพ์ผิดต้องแก้ได้เสมอ ต่างจากการเพิ่มรอบ ซึ่งใบที่ปิดแล้วทำไม่ได้ (reopen ก็ไม่ได้ ดู Q9)
     const ticketId = await openTicket(`ปัญหาที่ปิดแล้วแต่ต้องแก้คำผิด ${stamp}`);
 
     await addResolution(ticketId, 'แก้เสร็จแล้ว').expect(201);

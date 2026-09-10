@@ -126,14 +126,15 @@ export class CreateCustomerDto {
 
   @ApiPropertyOptional({
     enum: CustomerStatus,
-    default: CustomerStatus.PROSPECT,
+    default: CustomerStatus.ACTIVE,
     description:
-      'PROSPECT = ลูกค้าใหม่ที่ยังไม่ปิดการขาย, ACTIVE = ลูกค้าปัจจุบัน, ' +
-      'INACTIVE = ไม่ได้ใช้บริการแล้ว, CHURNED = ยกเลิกไปแล้ว',
+      'ACTIVE = ลูกค้าปัจจุบัน, INACTIVE = ไม่ได้ใช้บริการแล้ว (ยังตามเสนอ MA ได้), ' +
+      'CHURNED = เลิกใช้บริการ / ไม่ติดตามต่อ — ไม่มีสถานะผู้มุ่งหวัง เพราะบันทึกเฉพาะ' +
+      'ลูกค้าที่ใช้บริการจริงแล้ว',
   })
   @IsOptional()
   @IsEnum(CustomerStatus, {
-    message: 'สถานะลูกค้าต้องเป็น PROSPECT, ACTIVE, INACTIVE หรือ CHURNED',
+    message: 'สถานะลูกค้าต้องเป็น ACTIVE, INACTIVE หรือ CHURNED',
   })
   status?: CustomerStatus;
 

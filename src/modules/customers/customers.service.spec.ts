@@ -2,6 +2,8 @@
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { type ClassConstructor, plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
@@ -16,8 +18,8 @@ import {
   UserStatus,
 } from '../../models';
 import { CustomersService } from './customers.service';
-import type { CreateCustomerDto } from './dto/create-customer.dto';
-import type { QueryCustomersDto } from './dto/query-customers.dto';
+import { CreateCustomerDto } from './dto/create-customer.dto';
+import { QueryCustomersDto } from './dto/query-customers.dto';
 
 /**
  * เทสต์กฎธุรกิจของ Phase 4 ที่ CLAUDE.md 14 ระบุว่า "อย่าเขียนทับตอนต่อยอด"
@@ -247,7 +249,7 @@ describe('CustomersService', () => {
   // ผู้ดูแลต้องเป็นพนักงานที่ยังทำงานอยู่ (CLAUDE.md 4.3)
   // -------------------------------------------------------------------------
   describe('ผู้ดูแลลูกค้า', () => {
-    const dto = { name: 'ลูกค้าใหม่', status: CustomerStatus.PROSPECT, ownerUserId: 5 };
+    const dto = { name: 'ลูกค้าใหม่', status: CustomerStatus.ACTIVE, ownerUserId: 5 };
 
     it('มอบหมายให้พนักงานที่ลาออกแล้วไม่ได้', async () => {
       userModel.findByPk.mockResolvedValue({ id: 5, status: UserStatus.RESIGNED });
@@ -271,6 +273,56 @@ describe('CustomersService', () => {
 
       await expect(service.create(dto as CreateCustomerDto, 9)).rejects.toBeInstanceOf(
         BadRequestException,
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // สถานะลูกค้า — ไม่มีผู้มุ่งหวัง บันทึกเฉพาะลูกค้าที่ใช้บริการจริง (ตกลง 10 ก.ย.)
+  // -------------------------------------------------------------------------
+  describe('สถานะลูกค้า', () => {
+    it('ไม่ส่ง status มา = ACTIVE', async () => {
+      customerModel.create.mockResolvedValue({ id: 1 });
+      customerModel.findByPk.mockResolvedValue(customerRow());
+
+      await service.create({ name: 'บริษัท ใหม่ จำกัด' }, 9);
+
+      expect(customerModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: CustomerStatus.ACTIVE }),
+      );
+    });
+
+    it('ส่ง status มาเองได้ตามปกติ', async () => {
+      customerModel.create.mockResolvedValue({ id: 1 });
+      customerModel.findByPk.mockResolvedValue(customerRow());
+
+      await service.create({ name: 'ลูกค้าเก่า', status: CustomerStatus.INACTIVE }, 9);
+
+      expect(customerModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: CustomerStatus.INACTIVE }),
+      );
+    });
+
+    it('enum เหลือแค่ ACTIVE, INACTIVE, CHURNED', () => {
+      expect(Object.values(CustomerStatus).sort()).toEqual(['ACTIVE', 'CHURNED', 'INACTIVE']);
+    });
+
+    // ValidationPipe ที่ระดับ global ใช้ class-validator ตัวเดียวกันนี้ — ถ้าผ่านที่นี่ไม่ได้
+    // request จริงก็ได้ 400 พร้อมข้อความนี้
+    async function statusErrorOf(dtoClass: ClassConstructor<object>, payload: object) {
+      const errors = await validate(plainToInstance(dtoClass, payload));
+      return errors.find((error) => error.property === 'status')?.constraints?.isEnum;
+    }
+
+    it('ฟอร์มเพิ่ม/แก้ลูกค้าปฏิเสธ status = PROSPECT', async () => {
+      await expect(
+        statusErrorOf(CreateCustomerDto, { name: 'ลูกค้า', status: 'PROSPECT' }),
+      ).resolves.toBe('สถานะลูกค้าต้องเป็น ACTIVE, INACTIVE หรือ CHURNED');
+    });
+
+    it('ตัวกรองรายการลูกค้าปฏิเสธ status = PROSPECT', async () => {
+      await expect(statusErrorOf(QueryCustomersDto, { status: 'PROSPECT' })).resolves.toBe(
+        'สถานะลูกค้าต้องเป็น ACTIVE, INACTIVE หรือ CHURNED',
       );
     });
   });

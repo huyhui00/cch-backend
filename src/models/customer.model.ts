@@ -4,8 +4,11 @@ import { AuditedModel } from './base.model';
 import { Contact } from './contact.model';
 import { User } from './user.model';
 
+/**
+ * ไม่มี PROSPECT (ผู้มุ่งหวัง) โดยเจตนา — บริษัทบันทึกเฉพาะลูกค้าที่ใช้บริการจริงแล้ว
+ * (ตกลง 10 ก.ย. 2026 ดู CLAUDE.md กฎ Phase 4)
+ */
 export enum CustomerStatus {
-  PROSPECT = 'PROSPECT',
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',
   CHURNED = 'CHURNED',
@@ -79,7 +82,7 @@ export class Customer extends AuditedModel<Customer, CustomerCreationAttributes>
   @Column({
     type: DataType.ENUM(...Object.values(CustomerStatus)),
     allowNull: false,
-    defaultValue: CustomerStatus.PROSPECT,
+    defaultValue: CustomerStatus.ACTIVE,
   })
   status: CustomerStatus;
 

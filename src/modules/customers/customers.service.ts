@@ -13,6 +13,7 @@ import {
   CommunicationLog,
   Contact,
   Customer,
+  CustomerStatus,
   Project,
   Ticket,
   User,
@@ -178,7 +179,9 @@ export class CustomersService {
       website: dto.website ?? null,
       lineOfficialId: dto.lineOfficialId ?? null,
       facebookUrl: dto.facebookUrl ?? null,
-      status: dto.status,
+      // ไม่ส่งมา = ลูกค้าปัจจุบัน เพราะบันทึกเฉพาะลูกค้าที่ใช้บริการจริงแล้ว (ไม่มีผู้มุ่งหวัง)
+      // เขียนไว้ที่นี่ด้วยแทนที่จะพึ่ง default ของคอลัมน์อย่างเดียว กติกาจะได้อ่านเจอในโค้ด
+      status: dto.status ?? CustomerStatus.ACTIVE,
       source: dto.source ?? null,
       ownerUserId: dto.ownerUserId ?? null,
       note: dto.note ?? null,

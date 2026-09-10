@@ -12,6 +12,7 @@ import {
   MaPlanItem,
   Project,
 } from '../../../models';
+import { MA_CONTRACT_PRICE_DESCRIPTION } from './ma-contract.dto';
 
 export class MaPlanItemResponseDto {
   @ApiProperty({ example: 7 })
@@ -39,8 +40,12 @@ export class MaPlanResponseDto {
   @ApiProperty({ example: 2 })
   id: number;
 
-  @ApiProperty({ example: 'MA_STANDARD' })
-  code: string;
+  @ApiProperty({
+    nullable: true,
+    example: 'MA_STANDARD',
+    description: 'รหัสแผนไม่บังคับ (ตกลง 10 ก.ย.) — หน้าจอใช้ชื่อแผนแทน',
+  })
+  code: string | null;
 
   @ApiProperty({ example: 'แผนมาตรฐาน' })
   name: string;
@@ -161,8 +166,12 @@ export class MaContractPlanSummaryDto {
   @ApiProperty({ example: 2 })
   id: number;
 
-  @ApiProperty({ example: 'MA_STANDARD' })
-  code: string;
+  @ApiProperty({
+    nullable: true,
+    example: 'MA_STANDARD',
+    description: 'รหัสแผนไม่บังคับ (ตกลง 10 ก.ย.) — หน้าจอใช้ชื่อแผนแทน',
+  })
+  code: string | null;
 
   @ApiProperty({ example: 'แผนมาตรฐาน' })
   name: string;
@@ -199,7 +208,7 @@ export class MaContractResponseDto {
   @ApiProperty({ nullable: true, example: 'MA-2026-014' })
   contractNo: string | null;
 
-  @ApiProperty({ description: 'ราคาตามสัญญา (BR-05)', example: '48000.00' })
+  @ApiProperty({ description: MA_CONTRACT_PRICE_DESCRIPTION, example: '48000.00' })
   price: string;
 
   @ApiProperty({ enum: MaBillingCycle })
@@ -319,8 +328,12 @@ export class MaContractPrintProjectDto {
 
 /** เนื้อหาแผนเต็มชุดสำหรับพิมพ์ — ไม่มีราคาเหมือน `MaPlanResponseDto` (BR-05) */
 export class MaContractPrintPlanDto {
-  @ApiProperty({ example: 'MA_STANDARD' })
-  code: string;
+  @ApiProperty({
+    nullable: true,
+    example: 'MA_STANDARD',
+    description: 'รหัสแผนไม่บังคับ (ตกลง 10 ก.ย.) — หน้าจอใช้ชื่อแผนแทน',
+  })
+  code: string | null;
 
   @ApiProperty({ example: 'แผนมาตรฐาน' })
   name: string;
@@ -362,7 +375,12 @@ export class MaContractPrintTermsDto {
   @ApiProperty({ example: 12 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'MA-2026-014' })
+  @ApiProperty({
+    nullable: true,
+    example: 'MA-2026-014',
+    description:
+      'หน้าจอซ่อนช่องนี้ตอนกรอก (ตกลง 10 ก.ย.) — เป็น null ให้ซ่อนบรรทัดนี้บนหน้าพิมพ์ด้วย',
+  })
   contractNo: string | null;
 
   @ApiProperty({
@@ -372,10 +390,7 @@ export class MaContractPrintTermsDto {
   })
   status: MaContractStatus;
 
-  @ApiProperty({
-    description: 'มูลค่าตามสัญญา (BR-05) — เป็นข้อความเพื่อไม่ให้ทศนิยมคลาดเคลื่อน',
-    example: '48000.00',
-  })
+  @ApiProperty({ description: MA_CONTRACT_PRICE_DESCRIPTION, example: '48000.00' })
   price: string;
 
   @ApiProperty({ enum: MaBillingCycle })

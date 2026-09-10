@@ -36,6 +36,19 @@ const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? val
  */
 const MONEY_PATTERN = /^\d{1,13}(\.\d{1,2})?$/;
 
+/**
+ * ความหมายของ `price` — ใช้ร่วมกันทั้งฝั่งรับและฝั่งคืน ข้อความจะได้ไม่หลุดจากกัน
+ *
+ * ตกลงกับพี่เลี้ยง 10 ก.ย. 2026: price = มูลค่ารวมตลอดอายุสัญญา ไม่ใช่ราคาต่อรอบบิล
+ * รายงาน M10 รวมค่านี้ตรง ๆ โดยไม่ดู billing_cycle ถ้ากรอกเป็นราคาต่อเดือน
+ * มูลค่าตามสัญญาจะต่ำกว่าจริงตามจำนวนเดือน
+ */
+export const MA_CONTRACT_PRICE_DESCRIPTION =
+  'มูลค่ารวมตลอดอายุสัญญา (วันเริ่มถึงวันสิ้นสุด) **ไม่ใช่ราคาต่อเดือนหรือต่อรอบบิล** — ' +
+  "เช่น รายเดือน 500 x 12 เดือน ให้ส่ง '6000.00' ส่วน billingCycle บอกแค่ว่าวางบิลแบบไหน " +
+  'ส่งเป็นข้อความทศนิยมไม่เกิน 2 ตำแหน่ง ราคาอยู่ที่สัญญาไม่ใช่ที่แผน เพราะเนื้อหาเหมือนกัน' +
+  'แต่ราคาต่างกันได้ (BR-05)';
+
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export class CreateMaContractDto {
@@ -54,12 +67,7 @@ export class CreateMaContractDto {
   @IsPositive({ message: 'planId ต้องมากกว่า 0' })
   planId: number;
 
-  @ApiProperty({
-    description:
-      'ราคาตามสัญญา ส่งเป็นข้อความทศนิยมไม่เกิน 2 ตำแหน่ง — ' +
-      'ราคาอยู่ที่สัญญาไม่ใช่ที่แผน เพราะเนื้อหาเหมือนกันแต่ราคาต่างกันได้ (BR-05)',
-    example: '48000.00',
-  })
+  @ApiProperty({ description: MA_CONTRACT_PRICE_DESCRIPTION, example: '48000.00' })
   @IsString({ message: 'ราคาต้องส่งมาเป็นข้อความ' })
   @Matches(MONEY_PATTERN, {
     message: 'ราคาต้องเป็นตัวเลขไม่ติดลบ ทศนิยมไม่เกิน 2 ตำแหน่ง',
@@ -156,7 +164,7 @@ export class UpdateMaContractDto {
   @IsPositive({ message: 'planId ต้องมากกว่า 0' })
   planId?: number;
 
-  @ApiPropertyOptional({ description: 'ราคาตามสัญญา', example: '52000.00' })
+  @ApiPropertyOptional({ description: MA_CONTRACT_PRICE_DESCRIPTION, example: '52000.00' })
   @IsOptional()
   @IsString({ message: 'ราคาต้องส่งมาเป็นข้อความ' })
   @Matches(MONEY_PATTERN, { message: 'ราคาต้องเป็นตัวเลขไม่ติดลบ ทศนิยมไม่เกิน 2 ตำแหน่ง' })
@@ -236,7 +244,10 @@ export class RenewMaContractDto {
   @Matches(DATE_ONLY_PATTERN, { message: 'วันสิ้นสุดสัญญาต้องอยู่ในรูปแบบ YYYY-MM-DD' })
   endDate: string;
 
-  @ApiProperty({ description: 'ราคาของฉบับใหม่', example: '52000.00' })
+  @ApiProperty({
+    description: 'ราคาของฉบับใหม่ — ' + MA_CONTRACT_PRICE_DESCRIPTION,
+    example: '52000.00',
+  })
   @IsString({ message: 'ราคาต้องส่งมาเป็นข้อความ' })
   @Matches(MONEY_PATTERN, { message: 'ราคาต้องเป็นตัวเลขไม่ติดลบ ทศนิยมไม่เกิน 2 ตำแหน่ง' })
   @Transform(trim)

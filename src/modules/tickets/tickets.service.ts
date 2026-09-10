@@ -41,6 +41,15 @@ import {
   toTicketResponse,
 } from './dto/ticket.response';
 
+/**
+ * สถานะที่การมอบหมายจะพาไป IN_PROGRESS ให้เอง — ใบที่ยังไม่มีใครลงมือ
+ * RECEIVED = เพิ่งรับเรื่อง, REOPENED = ปัญหาเดิมกลับมาและยังไม่มีใครหยิบรอบใหม่ (BR-04)
+ */
+const STARTABLE_TICKET_STATUSES: readonly TicketStatus[] = [
+  TicketStatus.RECEIVED,
+  TicketStatus.REOPENED,
+];
+
 const SORTABLE_FIELDS = new Set([
   'id',
   'ticketNo',
@@ -383,9 +392,13 @@ export class TicketsService {
   /**
    * มอบหมายผู้รับผิดชอบแก้ไข — แยกจากผู้รับเรื่องที่บันทึกไว้ตอนเปิดใบ (A-3)
    *
-   * ใบที่ยังเป็น RECEIVED จะถูกเลื่อนเป็น IN_PROGRESS ให้อัตโนมัติ เพราะการมอบหมาย
+   * ใบที่เป็น RECEIVED หรือ REOPENED จะถูกเลื่อนเป็น IN_PROGRESS ให้อัตโนมัติ เพราะการมอบหมาย
    * คือจุดที่งานเริ่มเดินจริงในทีมขนาดนี้ ส่วนใบที่อยู่สถานะอื่นแล้วไม่ถูกแตะสถานะ
    * — ถอนการมอบหมาย (ส่ง null) ก็ไม่ย้อนสถานะกลับ เพราะงานที่เริ่มไปแล้วยังเริ่มไปแล้ว
+   *
+   * REOPENED ต้องอยู่ในนี้ด้วย ไม่งั้นใบที่ปัญหาเดิมกลับมาจะไม่มีทางไป IN_PROGRESS เลย
+   * ขัดกับ BR-04 (`RESOLVED → REOPENED → IN_PROGRESS`) หยิบงานรอบใหม่จึงทำด้วยการ
+   * มอบหมายซ้ำ แม้จะเป็นคนเดิมก็ตาม
    */
   async assign(id: number, dto: AssignTicketDto): Promise<TicketResponseDto> {
     const actorId = getCurrentUserId();
@@ -399,7 +412,8 @@ export class TicketsService {
       await this.assertUserIsAssignable(dto.assignedUserId);
     }
 
-    const shouldStart = dto.assignedUserId !== null && ticket.status === TicketStatus.RECEIVED;
+    const shouldStart =
+      dto.assignedUserId !== null && STARTABLE_TICKET_STATUSES.includes(ticket.status);
 
     await ticket.update({
       assignedUserId: dto.assignedUserId,
