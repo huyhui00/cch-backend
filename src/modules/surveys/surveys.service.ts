@@ -10,7 +10,7 @@ import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
-import { todayAsDateOnly } from '../../common/utils/date.util';
+import { addDays, toDateOnly, todayAsDateOnly } from '../../common/utils/date.util';
 import {
   Contact,
   Customer,
@@ -30,6 +30,7 @@ import {
   CreateResponseDto,
   CreateSurveyDto,
   QueryAssignmentsDto,
+  QueryScoreBreakdownDto,
   QuerySurveysDto,
   SurveyAnswerDto,
   SurveyQuestionDto,
@@ -37,9 +38,11 @@ import {
 } from './dto/survey.dto';
 import {
   type AssignmentResponseDto,
+  type MonthScoreDto,
   type QuestionSummaryDto,
   type ResponseDetailDto,
   type SurveyResponseDto,
+  type SurveyScoreBreakdownDto,
   type SurveySummaryDto,
   toAssignmentResponse,
   toOptionList,
@@ -52,6 +55,9 @@ const SORTABLE_FIELDS = new Set(['id', 'title', 'status', 'createdAt', 'updatedA
 /** ค่าเริ่มต้นของช่วงคะแนนเมื่อผู้ใช้ไม่ระบุ — 1 ถึง 5 เป็นแบบที่คนไทยคุ้นที่สุด */
 const DEFAULT_RATING_MIN = 1;
 const DEFAULT_RATING_MAX = 5;
+
+/** สรุปคะแนนรายเดือนได้ไม่เกินนี้ต่อครั้ง — 10 ปีพอสำหรับบริษัทที่เปิดมา 4 ปี และกันคำขอที่ใส่ปีผิด */
+const MAX_SCORE_MONTHS = 120;
 
 /** เผื่อนาฬิกาเครื่องผู้ใช้คลาดเคลื่อน — กติกาเดียวกับบันทึกการติดต่อใน Phase 4 */
 const CLOCK_SKEW_MS = 5 * 60 * 1000;
@@ -537,7 +543,165 @@ export class SurveysService {
     };
   }
 
+  /**
+   * M8-06 สรุปคะแนนของแบบประเมินหนึ่งฉบับ แยกตามลูกค้าและตามเดือน
+   *
+   * ใช้ `overall_score` ของแต่ละคำตอบที่ระบบคำนวณไว้ตอนบันทึก (ค่าเฉลี่ยของคำถาม RATING)
+   * **คำตอบที่ไม่มีคะแนนรวมถูกกันออกจากค่าเฉลี่ย ไม่ได้นับเป็น 0** — กติกาเดียวกับ
+   * overall_score ที่ไม่มี RATING เลยได้ null แล้วแยก responseCount กับ scoredCount
+   * ให้อ่านคู่กัน หน้าจอจะได้บอกได้ว่าค่าเฉลี่ยมาจากคำตอบกี่ชุด
+   *
+   * กรองด้วยวันที่ลูกค้าตอบ ไม่ใช่วันที่คีย์เข้าระบบ เพราะพนักงานคีย์ย้อนหลังได้ (Q1)
+   */
+  async scoreBreakdown(
+    surveyId: number,
+    query: QueryScoreBreakdownDto,
+  ): Promise<SurveyScoreBreakdownDto> {
+    const survey = await this.findOrFail(surveyId);
+    const dateFrom = query.dateFrom ?? null;
+    const dateTo = query.dateTo ?? null;
+
+    if (dateFrom && dateTo && dateTo < dateFrom) {
+      throw new BadRequestException('dateTo ต้องไม่อยู่ก่อน dateFrom');
+    }
+
+    const where: WhereOptions<SurveyResponse> = { surveyId };
+    const submittedAt: { [Op.gte]?: Date; [Op.lt]?: Date } = {};
+
+    if (dateFrom) {
+      submittedAt[Op.gte] = this.startOfLocalDay(dateFrom);
+    }
+
+    if (dateTo) {
+      // รวมทั้งวันของ dateTo — ตัดที่เที่ยงคืนของวันถัดไป
+      submittedAt[Op.lt] = this.startOfLocalDay(addDays(dateTo, 1));
+    }
+
+    if (dateFrom || dateTo) {
+      Object.assign(where, { submittedAt });
+    }
+
+    const responses = await this.responseModel.findAll({
+      where,
+      attributes: ['id', 'customerId', 'submittedAt', 'overallScore'],
+      include: [{ model: Customer, attributes: ['id', 'name'], required: false, paranoid: false }],
+      order: [['submittedAt', 'ASC']],
+    });
+
+    const byCustomer = new Map<number, SurveyResponse[]>();
+    const byMonth = new Map<string, SurveyResponse[]>();
+
+    for (const response of responses) {
+      const customerRows = byCustomer.get(response.customerId) ?? [];
+      customerRows.push(response);
+      byCustomer.set(response.customerId, customerRows);
+
+      const month = this.monthKey(response.submittedAt);
+      const monthRows = byMonth.get(month) ?? [];
+      monthRows.push(response);
+      byMonth.set(month, monthRows);
+    }
+
+    const customers = [...byCustomer.entries()]
+      .map(([customerId, rows]) => ({
+        customerId,
+        customerName: rows[0].customer ? rows[0].customer.name : null,
+        // เรียงจากเก่าไปใหม่มาแล้ว แถวสุดท้ายจึงเป็นครั้งล่าสุด
+        lastSubmittedAt: rows[rows.length - 1].submittedAt,
+        ...this.scoreGroup(rows),
+      }))
+      .sort(
+        (a, b) =>
+          (a.customerName ?? '').localeCompare(b.customerName ?? '', 'th') ||
+          a.customerId - b.customerId,
+      );
+
+    return {
+      surveyId,
+      title: survey.title,
+      dateFrom,
+      dateTo,
+      overall: this.scoreGroup(responses),
+      byCustomer: customers,
+      byMonth: this.monthSeries(byMonth, dateFrom, dateTo),
+    };
+  }
+
   // ---- helpers -------------------------------------------------------------
+
+  private scoreGroup(rows: SurveyResponse[]): {
+    responseCount: number;
+    scoredCount: number;
+    averageScore: number | null;
+  } {
+    const scores = rows
+      .map((row) => row.overallScore)
+      .filter((score): score is string => score !== null && score !== undefined)
+      .map(Number);
+
+    return {
+      responseCount: rows.length,
+      scoredCount: scores.length,
+      averageScore:
+        scores.length === 0
+          ? null
+          : this.round2(scores.reduce((sum, value) => sum + value, 0) / scores.length),
+    };
+  }
+
+  /**
+   * เรียงเดือนต่อเนื่องตั้งแต่ต้นถึงปลายช่วง เติมเดือนที่ไม่มีคำตอบเป็น 0
+   * ต้นช่วง = เดือนของ dateFrom ถ้าระบุ ไม่งั้นเดือนแรกที่มีคำตอบ (ปลายช่วงกลับกัน)
+   */
+  private monthSeries(
+    byMonth: Map<string, SurveyResponse[]>,
+    dateFrom: string | null,
+    dateTo: string | null,
+  ): MonthScoreDto[] {
+    const present = [...byMonth.keys()].sort();
+    const first = dateFrom ? dateFrom.slice(0, 7) : present[0];
+    const last = dateTo ? dateTo.slice(0, 7) : present[present.length - 1];
+
+    if (!first || !last || first > last) {
+      return [];
+    }
+
+    let [year, month] = first.split('-').map(Number);
+    const [lastYear, lastMonth] = last.split('-').map(Number);
+    const span = (lastYear - year) * 12 + (lastMonth - month) + 1;
+
+    if (span > MAX_SCORE_MONTHS) {
+      throw new BadRequestException(
+        `ช่วงเวลากว้างเกินไป (${span} เดือน) — เลือกได้ไม่เกิน ${MAX_SCORE_MONTHS} เดือนต่อครั้ง`,
+      );
+    }
+
+    const series: MonthScoreDto[] = [];
+
+    for (let i = 0; i < span; i += 1) {
+      const key = `${year}-${String(month).padStart(2, '0')}`;
+      series.push({ month: key, ...this.scoreGroup(byMonth.get(key) ?? []) });
+
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+    }
+
+    return series;
+  }
+
+  /** เดือนตามเขตเวลาเครื่อง — ใช้หลักเดียวกับ toDateOnly() ใน date.util */
+  private monthKey(date: Date): string {
+    return toDateOnly(date).slice(0, 7);
+  }
+
+  /** เที่ยงคืนตามเขตเวลาเครื่องของวันที่ระบุ */
+  private startOfLocalDay(dateOnly: string): Date {
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
 
   private summarizeQuestion(question: SurveyQuestion, answers: SurveyAnswer[]): QuestionSummaryDto {
     const base = {

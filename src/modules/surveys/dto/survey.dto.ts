@@ -327,3 +327,19 @@ export class QueryAssignmentsDto extends PaginationDto {
   @IsPositive({ message: 'customerId ต้องมากกว่า 0' })
   customerId?: number;
 }
+
+/** M8-06 ช่วงเวลาของสรุปคะแนน — กรองด้วยวันที่ลูกค้าตอบ (submitted_at) ไม่ใช่วันที่คีย์เข้าระบบ */
+export class QueryScoreBreakdownDto {
+  @ApiPropertyOptional({ description: 'นับตั้งแต่วันที่ (YYYY-MM-DD)', example: '2026-01-01' })
+  @IsOptional()
+  @Matches(DATE_ONLY_PATTERN, { message: 'dateFrom ต้องอยู่ในรูปแบบ YYYY-MM-DD' })
+  dateFrom?: string;
+
+  @ApiPropertyOptional({
+    description: 'นับถึงวันที่ (YYYY-MM-DD) รวมวันนั้นด้วย',
+    example: '2026-12-31',
+  })
+  @IsOptional()
+  @Matches(DATE_ONLY_PATTERN, { message: 'dateTo ต้องอยู่ในรูปแบบ YYYY-MM-DD' })
+  dateTo?: string;
+}

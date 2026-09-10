@@ -482,7 +482,7 @@ return true;
   me-password), roles (CRUD + permissions), permissions (list), audit-logs (list), health,
   customers (CRUD + detail), contacts (CRUD), communication-logs (CRUD + detail),
   projects (list/detail/create/update), projects/:id/tasks (CRUD),
-  tasks (overdue, status, order),
+  tasks (company list/summary/due-soon/overdue, status, order),
   projects/:id/deliveries (list/create), deliveries (detail/update/acceptance),
   deliveries/:id/warranties (create), warranties (expiring/detail/update),
   projects/:id/warranties (list),
@@ -492,15 +492,15 @@ return true;
   ma-contracts/:id (quota/addons list/addons create/print),
   users/assignable, roles/assignable,
   follow-ups (list/detail/create/update/complete/delete),
-  surveys (list/detail/create/update/status/delete + summary/assignments/responses),
+  surveys (list/detail/create/update/status/delete + summary/score-breakdown/assignments/responses),
   survey-assignments/:id/response,
   reports (contract-value by-customer/by-type/upcoming, service-cost, ma-contract-overlaps),
   customers/:id/overview
-  — รวม 100 เส้น
-- **เทสต์คุมกฎธุรกิจ 397 เคส 17 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–8 + M7, M8, M10
+  — รวม 105 เส้น (นับรวม `/api/health`)
+- **เทสต์คุมกฎธุรกิจ 418 เคส 17 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–8 + M7, M8, M10
   ทั้งหมดเป็น unit test ที่ mock model ไม่แตะฐานข้อมูลจริง รันจบใน ~19 วินาที
   **ถ้าจะแก้กฎธุรกิจข้อไหน ให้แก้เทสต์ที่คุมข้อนั้นไปพร้อมกัน** ไม่ใช่ลบทิ้งให้ผ่าน
-- **e2e 64 เคส 6 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`) — รันด้วย `npm run test:e2e`
+- **e2e 72 เคส 7 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`, `tasks`) — รันด้วย `npm run test:e2e`
   แยกจาก `npm test` เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่
   `test/global-setup.js` สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
   มีไว้พิสูจน์สิ่งที่ mock พิสูจน์แทนไม่ได้ — SQL ที่ Sequelize สร้างรันได้จริง,
@@ -531,6 +531,24 @@ return true;
 - งานเกินกำหนด = `due_date < วันนี้` และสถานะไม่ใช่ DONE — งานที่ครบกำหนดวันนี้ยังไม่นับว่าเกิน
 - ย้ายโครงการข้ามลูกค้าไม่ได้ ย้ายงานข้ามโครงการไม่ได้ ลบงานแม่แล้วงานย่อยทุกชั้นถูกลบตาม
 - โครงการไม่มี DELETE — ที่ยกเลิกให้เปลี่ยนสถานะเป็น CANCELLED
+- **M2-06 งานใกล้ครบกำหนด = `GET /api/tasks/due-soon?withinDays=N`** (เพิ่ม 10 ก.ย.
+  ค่าเริ่มต้น 7 สูงสุด 90) ช่วงคือ `วันนี้ <= due_date <= วันนี้ + N` และไม่ใช่ DONE —
+  **ขอบล่างต้องเป็นวันนี้เสมอ** เพื่อต่อกับ `/tasks/overdue` (`due_date < วันนี้`) พอดี
+  ถ้าเลื่อนเป็นพรุ่งนี้ งานที่ครบกำหนดวันนี้จะหายจากทั้งสองรายการ มี e2e ตรึงว่าสองรายการ
+  ไม่ซ้อนและไม่เว้น
+- **M2-07 ภาพรวมงานทั้งบริษัท = `GET /api/tasks` (รายการ) + `GET /api/tasks/summary` (ตัวเลข)**
+  รายการเป็นแบบ **แบน** นับงานย่อยทุกชั้นเป็นหนึ่งงาน ต่างจาก `/projects/:id/tasks` ที่ซ้อน
+  เพราะหน้าจอนี้ใช้ดูว่าอะไรติดอยู่ที่ไหน ถ้าซ้อน งานย่อยที่ค้างจะถูกซ่อนใต้งานแม่
+  - แต่ละแถวพ่วง `project` (id, code, name, status) มาด้วย ผ่าน `CompanyTaskResponseDto`
+    ที่แยกคลาสออกมา **ไม่ได้เพิ่มฟิลด์ลง `TaskResponseDto`** เพื่อไม่เปลี่ยนสัญญาของเส้นเดิม
+  - เรียงด้วย `ISNULL(due_date)` ก่อน งานที่ไม่มีวันครบกำหนดจึงไปอยู่ท้าย (MySQL เรียง NULL ขึ้นก่อน)
+  - `summary` นับ "เกินกำหนด" ด้วย `isTaskOverdue()` ตัวเดียวกับ flag `isOverdue` ทั้งระบบ
+    รวมใน JavaScript ไม่ใช่ GROUP BY เพื่อไม่ให้มีสูตรสองชุด คืนครบทุกสถานะแม้เป็น 0
+    `byAssignee` นับเฉพาะงานที่ยังไม่เสร็จ รวมงานที่ยังไม่มีผู้รับผิดชอบ (`assignedUserId: null`)
+    และหาชื่อคนที่ลาออกไปแล้วด้วย (`paranoid: false`) เพื่อให้รู้ว่างานค้างต้องส่งต่อจากใคร
+  - **ยังไม่กรองตามสถานะโครงการ** งานของโครงการที่ปิด/ยกเลิกไปแล้วยังถูกนับ (กติกาเดียวกับ
+    `/tasks/overdue` เดิม) หน้าจอแยกได้จาก `project.status` — ถ้าผู้บริหารต้องการให้ตัดทิ้ง
+    ต้องตัดสินใจก่อน เพราะเป็นกติกาใหม่
 
 **กฎธุรกิจที่ Phase 6 บังคับไว้**
 - **`warranties.start_date` ไม่เคยรับค่าจาก client** — คำนวณจาก `deliveries.delivered_at`
@@ -774,6 +792,16 @@ return true;
   ถ้าแต่ละหน้าจอนับเอง วันหนึ่งตัวเลขจะไม่ตรงกันแล้วไม่มีใครรู้ว่าอันไหนถูก
   ตัวเลือกที่ยังไม่มีใครเลือกถูกคืนมาพร้อมเลข 0 ด้วย ไม่งั้นกราฟจะดูเหมือนไม่เคยมี
   ตัวเลือกนั้นอยู่ในแบบประเมินเลย
+- **M8-06 สรุปคะแนนแยกตามลูกค้าและตามเดือน = `GET /api/surveys/:id/score-breakdown`**
+  (เพิ่ม 10 ก.ย.) **ผูกกับแบบประเมินฉบับเดียวโดยเจตนา** เพราะแต่ละฉบับตั้งช่วงคะแนนเองได้
+  (1–5 หรือ 1–10) เฉลี่ยข้ามฉบับแล้วตัวเลขไม่มีความหมาย — ห้ามเปลี่ยนเป็นเส้นรวมทุกฉบับ
+  โดยไม่มีกติกาแปลงสเกลที่ผู้บริหารยืนยัน
+  - ค่าเฉลี่ยมาจาก `overall_score` ของแต่ละคำตอบ **คำตอบที่ไม่มีคะแนนรวมไม่ถูกนับเป็น 0**
+    คืน `responseCount` กับ `scoredCount` คู่กันเสมอ (หลักเดียวกับค่าว่างใน M10)
+  - กรองด้วย `submitted_at` (วันที่ลูกค้าตอบ) ไม่ใช่ `created_at` เพราะพนักงานคีย์ย้อนหลังได้
+    `dateTo` รวมทั้งวัน และจัดกลุ่มเดือนตามเขตเวลาเครื่องด้วยหลักเดียวกับ `toDateOnly()`
+  - เดือนที่ไม่มีคำตอบคืนมาด้วยพร้อม 0 และ `averageScore: null` ช่วงกว้างสุด 120 เดือน
+  - **ยังไม่มี M8-07 (ลูกค้าคะแนนต่ำต่อเนื่อง)** ต้องรอผู้บริหารกำหนดเกณฑ์ "ต่ำ" และ "ต่อเนื่อง" ก่อน
 - **ลบแบบประเมินได้เฉพาะฉบับที่ยังไม่เคยส่งให้ลูกค้า** ฉบับที่ส่งไปแล้วให้เปลี่ยนเป็น CLOSED
 - ลำดับคำถามมาจากตำแหน่งในอาเรย์ ไม่รับจาก client (กติกาเดียวกับรายการย่อยของแผน MA)
 

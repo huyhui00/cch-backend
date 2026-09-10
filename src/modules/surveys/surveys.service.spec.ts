@@ -2,6 +2,7 @@
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
 import {
@@ -629,6 +630,118 @@ describe('SurveysService', () => {
       const summary = await service.summarize(3);
 
       expect(summary.questions[0].choiceCounts).toEqual({ ดีมาก: 1, ดี: 0, แย่: 0 });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M8-06 สรุปคะแนนแยกตามลูกค้าและตามเดือน
+  // -------------------------------------------------------------------------
+  describe('scoreBreakdown', () => {
+    /** ใช้เวลาท้องถิ่นเสมอ ผลการจัดกลุ่มรายเดือนจะได้ไม่เปลี่ยนตามเขตเวลาของเครื่องที่รันเทสต์ */
+    function response(
+      customerId: number,
+      customerName: string,
+      submittedAt: Date,
+      overallScore: string | null,
+    ) {
+      return {
+        customerId,
+        customer: { id: customerId, name: customerName },
+        submittedAt,
+        overallScore,
+      };
+    }
+
+    it('คำตอบที่ไม่มีคะแนนรวมไม่ถูกนับเป็น 0 แต่แยกนับไว้ใน scoredCount', async () => {
+      responseModel.findAll.mockResolvedValue([
+        response(1, 'ลูกค้า ก', new Date(2026, 0, 5), '4.00'),
+        response(1, 'ลูกค้า ก', new Date(2026, 0, 6), null),
+        response(1, 'ลูกค้า ก', new Date(2026, 0, 7), '5.00'),
+      ]);
+
+      const result = await service.scoreBreakdown(3, {});
+
+      // ถ้านับ null เป็น 0 จะได้ 3.00 ซึ่งต่ำกว่าความจริงโดยไม่มีใครรู้
+      expect(result.overall).toEqual({ responseCount: 3, scoredCount: 2, averageScore: 4.5 });
+    });
+
+    it('แยกรายลูกค้า เรียงตามชื่อ พร้อมวันที่ตอบล่าสุด', async () => {
+      const latest = new Date(2026, 1, 20);
+      responseModel.findAll.mockResolvedValue([
+        response(2, 'ลูกค้า ข', new Date(2026, 0, 3), '3.00'),
+        response(1, 'ลูกค้า ก', new Date(2026, 0, 4), '5.00'),
+        response(2, 'ลูกค้า ข', latest, '4.00'),
+      ]);
+
+      const result = await service.scoreBreakdown(3, {});
+
+      expect(result.byCustomer.map((row) => row.customerName)).toEqual(['ลูกค้า ก', 'ลูกค้า ข']);
+      expect(result.byCustomer[1]).toMatchObject({
+        customerId: 2,
+        responseCount: 2,
+        averageScore: 3.5,
+        lastSubmittedAt: latest,
+      });
+    });
+
+    it('เดือนที่ไม่มีคำตอบคืนมาด้วยพร้อม 0 และคะแนน null — กราฟจะไม่ข้ามเดือน', async () => {
+      responseModel.findAll.mockResolvedValue([
+        response(1, 'ลูกค้า ก', new Date(2026, 0, 15), '4.00'),
+        response(1, 'ลูกค้า ก', new Date(2026, 2, 15), '2.00'),
+      ]);
+
+      const result = await service.scoreBreakdown(3, {});
+
+      expect(result.byMonth).toEqual([
+        { month: '2026-01', responseCount: 1, scoredCount: 1, averageScore: 4 },
+        { month: '2026-02', responseCount: 0, scoredCount: 0, averageScore: null },
+        { month: '2026-03', responseCount: 1, scoredCount: 1, averageScore: 2 },
+      ]);
+    });
+
+    it('กรองด้วยวันที่ลูกค้าตอบ รวมทั้งวันของ dateTo และคืนทุกเดือนในช่วงที่ขอ', async () => {
+      let where: { submittedAt?: Record<symbol, Date> } = {};
+      responseModel.findAll.mockImplementation((options: { where: typeof where }) => {
+        where = options.where;
+        return Promise.resolve([]);
+      });
+
+      const result = await service.scoreBreakdown(3, {
+        dateFrom: '2026-01-10',
+        dateTo: '2026-03-31',
+      });
+
+      expect(where.submittedAt?.[Op.gte]).toEqual(new Date(2026, 0, 10));
+      // ตัดที่เที่ยงคืนของวันถัดไป — คำตอบตอนบ่ายของวันที่ 31 ต้องยังถูกนับ
+      expect(where.submittedAt?.[Op.lt]).toEqual(new Date(2026, 3, 1));
+      expect(result.byMonth.map((row) => row.month)).toEqual(['2026-01', '2026-02', '2026-03']);
+      expect(result.overall.averageScore).toBeNull();
+    });
+
+    it('ไม่มีคำตอบและไม่ระบุช่วง = ไม่มีเดือนให้แสดง', async () => {
+      const result = await service.scoreBreakdown(3, {});
+
+      expect(result.byMonth).toEqual([]);
+      expect(result.byCustomer).toEqual([]);
+      expect(result.overall).toEqual({ responseCount: 0, scoredCount: 0, averageScore: null });
+    });
+
+    it('dateTo อยู่ก่อน dateFrom → 400', async () => {
+      await expect(
+        service.scoreBreakdown(3, { dateFrom: '2026-05-01', dateTo: '2026-04-01' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('ช่วงเวลากว้างเกิน 120 เดือน → 400 กันคำขอที่พิมพ์ปีผิด', async () => {
+      await expect(
+        service.scoreBreakdown(3, { dateFrom: '2000-01-01', dateTo: '2026-12-31' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('ไม่พบแบบประเมิน → 404', async () => {
+      surveyModel.findByPk.mockResolvedValue(null);
+
+      await expect(service.scoreBreakdown(99, {})).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

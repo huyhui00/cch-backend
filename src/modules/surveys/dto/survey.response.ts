@@ -264,6 +264,78 @@ export class SurveySummaryDto {
   questions: QuestionSummaryDto[];
 }
 
+// ---- M8-06 สรุปคะแนนแยกตามลูกค้าและตามช่วงเวลา -----------------------------------
+
+export class ScoreGroupDto {
+  @ApiProperty({ description: 'จำนวนคำตอบในกลุ่มนี้', example: 4 })
+  responseCount: number;
+
+  @ApiProperty({
+    description: 'จำนวนคำตอบที่มีคะแนนรวม — คำตอบที่ไม่มีคำถามแบบให้คะแนนเลยไม่ถูกนับ',
+    example: 3,
+  })
+  scoredCount: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'ค่าเฉลี่ยของคะแนนรวม (overallScore) ทศนิยม 2 ตำแหน่ง — null เมื่อไม่มีคำตอบที่มีคะแนน ' +
+      'ไม่ใช่ 0 เพราะ 0 แปลว่าลูกค้าให้คะแนนต่ำสุด',
+    example: 4.33,
+  })
+  averageScore: number | null;
+}
+
+export class CustomerScoreDto extends ScoreGroupDto {
+  @ApiProperty({ example: 1 })
+  customerId: number;
+
+  @ApiProperty({ nullable: true, example: 'บริษัท ตัวอย่าง จำกัด' })
+  customerName: string | null;
+
+  @ApiProperty({ description: 'ลูกค้ารายนี้ตอบล่าสุดเมื่อไร' })
+  lastSubmittedAt: Date;
+}
+
+export class MonthScoreDto extends ScoreGroupDto {
+  @ApiProperty({ description: 'เดือนที่ลูกค้าตอบ (YYYY-MM)', example: '2026-09' })
+  month: string;
+}
+
+/**
+ * M8-06 สรุปคะแนนความพึงพอใจของแบบประเมินหนึ่งฉบับ แยกตามลูกค้าและตามเดือน
+ *
+ * ผูกกับแบบประเมินฉบับเดียวโดยเจตนา เพราะแต่ละฉบับตั้งช่วงคะแนนเองได้ (1–5 หรือ 1–10)
+ * ถ้าเอาหลายฉบับมาเฉลี่ยรวมกัน ตัวเลขจะไม่มีความหมาย
+ */
+export class SurveyScoreBreakdownDto {
+  @ApiProperty({ example: 3 })
+  surveyId: number;
+
+  @ApiProperty({ example: 'แบบประเมินความพึงพอใจหลังส่งมอบโครงการ' })
+  title: string;
+
+  @ApiProperty({ nullable: true, example: '2026-01-01' })
+  dateFrom: string | null;
+
+  @ApiProperty({ nullable: true, example: '2026-12-31' })
+  dateTo: string | null;
+
+  @ApiProperty({ type: ScoreGroupDto, description: 'รวมทุกคำตอบในช่วงเวลาที่เลือก' })
+  overall: ScoreGroupDto;
+
+  @ApiProperty({ type: [CustomerScoreDto], description: 'แยกรายลูกค้า เรียงตามชื่อลูกค้า' })
+  byCustomer: CustomerScoreDto[];
+
+  @ApiProperty({
+    type: [MonthScoreDto],
+    description:
+      'แยกรายเดือนเรียงจากเก่าไปใหม่ — เดือนที่ไม่มีคำตอบคืนมาด้วยพร้อม 0 ' +
+      'กราฟจะได้ไม่ข้ามเดือนจนดูเหมือนคะแนนต่อเนื่อง',
+  })
+  byMonth: MonthScoreDto[];
+}
+
 /** ตัวเลือกถูกเก็บเป็น JSON — ต้องกันค่าที่ไม่ใช่อาเรย์ของข้อความก่อนส่งออก */
 export function toOptionList(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) {

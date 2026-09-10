@@ -255,6 +255,71 @@ describe('Surveys (e2e)', () => {
   });
 
   // -------------------------------------------------------------------------
+  // M8-06 สรุปคะแนนแยกตามลูกค้าและตามเดือน
+  // -------------------------------------------------------------------------
+  it('สรุปคะแนนรายเดือนจากวันที่ลูกค้าตอบ เติมเดือนที่ไม่มีคำตอบ และไม่นับคำตอบไร้คะแนนเป็น 0', async () => {
+    const created = await authed('post', '/api/surveys')
+      .send({
+        title: `แบบประเมินรายเดือน ${stamp}`,
+        questions: [
+          { questionText: 'ความพึงพอใจโดยรวม', questionType: 'RATING', minValue: 1, maxValue: 5, isRequired: false },
+          { questionText: 'ข้อเสนอแนะ', questionType: 'TEXT', isRequired: false },
+        ],
+      })
+      .expect(201);
+    const survey = (created.body as ApiResponse<SurveyPayload>).data;
+    await authed('patch', `/api/surveys/${survey.id}/status`).send({ status: 'ACTIVE' }).expect(200);
+
+    // คีย์ย้อนหลังตามวันที่ลูกค้าตอบจริง — กลางเดือนเพื่อไม่ให้ผลขึ้นกับเขตเวลาของเครื่อง
+    const answers = [
+      { submittedAt: '2026-01-15T10:00:00+07:00', answers: [{ questionId: survey.questions[0].id, answerNumber: 5 }] },
+      { submittedAt: '2026-03-15T10:00:00+07:00', answers: [{ questionId: survey.questions[0].id, answerNumber: 3 }] },
+      // ตอบแค่ข้อความ ไม่มีคะแนน — ต้องไม่ถูกนับเป็น 0 ในค่าเฉลี่ย
+      { submittedAt: '2026-03-20T10:00:00+07:00', answers: [{ questionId: survey.questions[1].id, answerText: 'ดีครับ' }] },
+    ];
+
+    for (const body of answers) {
+      const assignment = await authed('post', `/api/surveys/${survey.id}/assignments`)
+        .send({ customerId, sentAt: '2026-01-01T09:00:00+07:00' })
+        .expect(201);
+      const assignmentId = (assignment.body as ApiResponse<AssignmentPayload>).data.id;
+      await authed('post', `/api/survey-assignments/${assignmentId}/response`).send(body).expect(201);
+    }
+
+    const result = await authed(
+      'get',
+      `/api/surveys/${survey.id}/score-breakdown?dateFrom=2026-01-01&dateTo=2026-03-31`,
+    ).expect(200);
+    const data = (
+      result.body as ApiResponse<{
+        overall: { responseCount: number; scoredCount: number; averageScore: number | null };
+        byCustomer: { customerId: number; responseCount: number; averageScore: number | null }[];
+        byMonth: { month: string; responseCount: number; scoredCount: number; averageScore: number | null }[];
+      }>
+    ).data;
+
+    // (5 + 3) / 2 = 4 — ถ้านับคำตอบไร้คะแนนเป็น 0 จะได้ 2.67
+    expect(data.overall).toEqual({ responseCount: 3, scoredCount: 2, averageScore: 4 });
+    expect(data.byCustomer).toHaveLength(1);
+    expect(data.byCustomer[0]).toMatchObject({ customerId, responseCount: 3, averageScore: 4 });
+    expect(data.byMonth).toEqual([
+      { month: '2026-01', responseCount: 1, scoredCount: 1, averageScore: 5 },
+      { month: '2026-02', responseCount: 0, scoredCount: 0, averageScore: null },
+      { month: '2026-03', responseCount: 2, scoredCount: 1, averageScore: 3 },
+    ]);
+
+    // ช่วงที่ไม่ครอบคำตอบใดเลย — ได้เดือนครบแต่ไม่มีตัวเลข
+    const empty = await authed(
+      'get',
+      `/api/surveys/${survey.id}/score-breakdown?dateFrom=2025-06-01&dateTo=2025-07-31`,
+    ).expect(200);
+    const emptyData = (empty.body as ApiResponse<{ overall: { responseCount: number } }>).data;
+    expect(emptyData.overall.responseCount).toBe(0);
+
+    await api().get(`/api/surveys/${survey.id}/score-breakdown`).expect(401);
+  });
+
+  // -------------------------------------------------------------------------
   // ตรวจคำตอบให้ตรงชนิดคำถาม
   // -------------------------------------------------------------------------
   it('คะแนนนอกช่วงถูกปฏิเสธด้วยข้อความภาษาไทย', async () => {

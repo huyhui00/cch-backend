@@ -18,6 +18,7 @@ import {
   CreateResponseDto,
   CreateSurveyDto,
   QueryAssignmentsDto,
+  QueryScoreBreakdownDto,
   QuerySurveysDto,
   UpdateSurveyDto,
   UpdateSurveyStatusDto,
@@ -26,6 +27,7 @@ import {
   AssignmentResponseDto,
   ResponseDetailDto,
   SurveyResponseDto,
+  SurveyScoreBreakdownDto,
   SurveySummaryDto,
 } from './dto/survey.response';
 import { SurveysService } from './surveys.service';
@@ -83,6 +85,26 @@ export class SurveysController {
   @ApiResponse({ status: 404, description: 'ไม่พบแบบประเมินนี้' })
   summarize(@Param('id', ParseIntPipe) id: number): Promise<SurveySummaryDto> {
     return this.surveysService.summarize(id);
+  }
+
+  @Get(':id/score-breakdown')
+  @RequirePermission('survey.view')
+  @ApiOperation({
+    summary: 'M8-06 — สรุปคะแนนความพึงพอใจแยกตามลูกค้าและตามเดือน',
+    description:
+      'สำหรับวาดกราฟ ผูกกับแบบประเมินฉบับเดียวเพราะแต่ละฉบับตั้งช่วงคะแนนต่างกันได้ ' +
+      'คำตอบที่ไม่มีคะแนนรวมไม่ถูกนับเป็น 0 — ดู scoredCount คู่กับ averageScore เสมอ ' +
+      'กรองช่วงเวลาด้วยวันที่ลูกค้าตอบ และเดือนที่ไม่มีคำตอบคืนมาด้วยพร้อม 0',
+  })
+  @ApiParam({ name: 'id', description: 'id ของแบบประเมิน', example: 3 })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: SurveyScoreBreakdownDto })
+  @ApiResponse({ status: 400, description: 'ช่วงวันที่ไม่ถูกต้อง หรือกว้างเกิน 120 เดือน' })
+  @ApiResponse({ status: 404, description: 'ไม่พบแบบประเมินนี้' })
+  scoreBreakdown(
+    @Param('id', ParseIntPipe) id: number,
+    @Query() query: QueryScoreBreakdownDto,
+  ): Promise<SurveyScoreBreakdownDto> {
+    return this.surveysService.scoreBreakdown(id, query);
   }
 
   @Get(':id/assignments')
