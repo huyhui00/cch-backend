@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { daysUntil, todayAsDateOnly } from '../../../common/utils/date.util';
 import {
+  Customer,
   MaAddon,
   MaAddonType,
   MaBillingCycle,
@@ -9,6 +10,7 @@ import {
   MaContractStatus,
   MaPlan,
   MaPlanItem,
+  Project,
 } from '../../../models';
 
 export class MaPlanItemResponseDto {
@@ -259,6 +261,191 @@ export class MaContractResponseDto {
   updatedAt: Date;
 }
 
+// ---- M6-08 ข้อมูลสำหรับพิมพ์ร่างสัญญา ----------------------------------------
+
+export class MaContractPrintCustomerDto {
+  @ApiProperty({ example: 1 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'CUS-001' })
+  code: string | null;
+
+  @ApiProperty({ example: 'บริษัท ตัวอย่าง จำกัด' })
+  name: string;
+
+  @ApiProperty({ nullable: true, example: '0105561234567' })
+  taxId: string | null;
+
+  @ApiProperty({ nullable: true, example: '99/1 ถนนสุขุมวิท แขวงคลองเตย เขตคลองเตย' })
+  address: string | null;
+
+  @ApiProperty({ nullable: true, example: 'กรุงเทพมหานคร' })
+  province: string | null;
+
+  @ApiProperty({ nullable: true, example: '10110' })
+  postalCode: string | null;
+
+  @ApiProperty({ nullable: true, example: '02-123-4567' })
+  phone: string | null;
+
+  @ApiProperty({ nullable: true, example: 'contact@example.co.th' })
+  email: string | null;
+}
+
+export class MaContractPrintContactDto {
+  @ApiProperty({ example: 'คุณสมศรี ใจดี' })
+  name: string;
+
+  @ApiProperty({ nullable: true, example: 'ผู้จัดการฝ่ายไอที' })
+  position: string | null;
+
+  @ApiProperty({ nullable: true, example: '081-234-5678' })
+  phone: string | null;
+
+  @ApiProperty({ nullable: true, example: 'somsri@example.co.th' })
+  email: string | null;
+}
+
+export class MaContractPrintProjectDto {
+  @ApiProperty({ example: 3 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'PRJ-2026-003' })
+  code: string | null;
+
+  @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
+  name: string;
+}
+
+/** เนื้อหาแผนเต็มชุดสำหรับพิมพ์ — ไม่มีราคาเหมือน `MaPlanResponseDto` (BR-05) */
+export class MaContractPrintPlanDto {
+  @ApiProperty({ example: 'MA_STANDARD' })
+  code: string;
+
+  @ApiProperty({ example: 'แผนมาตรฐาน' })
+  name: string;
+
+  @ApiProperty({ nullable: true })
+  description: string | null;
+
+  @ApiProperty({ description: 'โควตาแก้บั๊กต่อเดือน', example: 5 })
+  bugQuotaPerMonth: number;
+
+  @ApiProperty({ nullable: true, description: 'เวลาตอบกลับตามสัญญา (ชั่วโมง)', example: 24 })
+  responseTimeHour: number | null;
+
+  @ApiProperty({ nullable: true, example: 1 })
+  onsiteQuotaPerMonth: number | null;
+
+  @ApiProperty({
+    type: [MaPlanItemResponseDto],
+    description: 'รายการบริการในแผน เรียงตาม sortOrder แล้ว',
+  })
+  items: MaPlanItemResponseDto[];
+}
+
+export class MaContractPrintPreviousDto {
+  @ApiProperty({ example: 8 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'MA-2025-009' })
+  contractNo: string | null;
+
+  @ApiProperty({ example: '2025-10-01' })
+  startDate: string;
+
+  @ApiProperty({ example: '2026-09-30' })
+  endDate: string;
+}
+
+export class MaContractPrintTermsDto {
+  @ApiProperty({ example: 12 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'MA-2026-014' })
+  contractNo: string | null;
+
+  @ApiProperty({
+    enum: MaContractStatus,
+    description:
+      'ระบบไม่กั้นการพิมพ์ตามสถานะ — หน้าจอใช้ค่านี้ตัดสินเองว่าจะใส่ลายน้ำ "ร่าง" หรือ "ยกเลิก"',
+  })
+  status: MaContractStatus;
+
+  @ApiProperty({
+    description: 'มูลค่าตามสัญญา (BR-05) — เป็นข้อความเพื่อไม่ให้ทศนิยมคลาดเคลื่อน',
+    example: '48000.00',
+  })
+  price: string;
+
+  @ApiProperty({ enum: MaBillingCycle })
+  billingCycle: MaBillingCycle;
+
+  @ApiProperty({ example: '2026-10-01' })
+  startDate: string;
+
+  @ApiProperty({ example: '2027-09-30' })
+  endDate: string;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'วันที่เซ็นมือ (BR-12) — ว่างแปลว่ายังไม่ได้เซ็น เอกสารที่พิมพ์คือร่างสำหรับเซ็น',
+    example: null,
+  })
+  signedDate: string | null;
+
+  @ApiProperty({ nullable: true })
+  note: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: MaContractPrintPreviousDto,
+    description:
+      'สัญญาฉบับก่อนหน้า ถ้าฉบับนี้เกิดจากการต่อสัญญา — ใช้พิมพ์ "ต่อจากสัญญาเลขที่ ..."',
+  })
+  previousContract: MaContractPrintPreviousDto | null;
+}
+
+/**
+ * M6-08 ข้อมูลสำหรับพิมพ์ร่างสัญญา MA
+ *
+ * **backend คืนข้อมูลที่ประกอบเสร็จแล้ว ไม่ได้สร้างไฟล์ PDF หรือ HTML** — repo นี้ห้ามสร้าง
+ * ไฟล์หน้าเว็บ (CLAUDE.md ข้อ 1) การจัดหน้ากระดาษ ข้อความข้อกำหนดของบริษัท
+ * และช่องลงลายมือชื่อเป็นงานของ frontend
+ *
+ * ข้อมูลฝั่งบริษัทผู้ให้บริการ (ชื่อ ที่อยู่ เลขผู้เสียภาษี) **ไม่อยู่ในนี้** เพราะ schema
+ * ไม่มีตารางเก็บค่าพวกนี้ และห้ามเพิ่มตารางโดยไม่จำเป็น
+ */
+export class MaContractPrintDto {
+  @ApiProperty({ description: 'เวลาที่ดึงข้อมูลชุดนี้ — พิมพ์กำกับไว้ท้ายเอกสาร' })
+  generatedAt: Date;
+
+  @ApiProperty({ type: MaContractPrintTermsDto })
+  contract: MaContractPrintTermsDto;
+
+  @ApiProperty({ type: MaContractPrintCustomerDto })
+  customer: MaContractPrintCustomerDto;
+
+  @ApiProperty({
+    nullable: true,
+    type: MaContractPrintContactDto,
+    description: 'ผู้ติดต่อหลักของลูกค้า — ไม่มีผู้ติดต่อหลักได้ null ไม่ได้หยิบคนแรกมาแทน',
+  })
+  primaryContact: MaContractPrintContactDto | null;
+
+  @ApiProperty({ type: MaContractPrintProjectDto })
+  project: MaContractPrintProjectDto;
+
+  @ApiProperty({ type: MaContractPrintPlanDto })
+  plan: MaContractPrintPlanDto;
+
+  @ApiProperty({
+    type: [MaAddonResponseDto],
+    description: 'ของเสริมของสัญญานี้ แสดงแยกรายการ — ระบบไม่รวมเป็นยอดเดียวให้',
+  })
+  addons: MaAddonResponseDto[];
+}
+
 export function toMaPlanItemResponse(item: MaPlanItem): MaPlanItemResponseDto {
   return {
     id: item.id,
@@ -364,4 +551,82 @@ export function toMaContractResponse(
   }
 
   return response;
+}
+
+/**
+ * ประกอบข้อมูลพิมพ์ร่างสัญญา (M6-08)
+ *
+ * รับลูกค้า/โครงการ/แผนแยกเข้ามา แทนที่จะอ่านจาก `contract.customer` ตรง ๆ
+ * เพื่อให้ service เป็นคนตัดสินว่าข้อมูลขาดแล้วต้องทำยังไง ฟังก์ชันนี้แค่จัดรูป
+ */
+export function toMaContractPrint(input: {
+  contract: MaContract;
+  customer: Customer;
+  project: Project;
+  plan: MaPlan;
+  addons: MaAddon[];
+  generatedAt?: Date;
+}): MaContractPrintDto {
+  const { contract, customer, project, plan, addons } = input;
+
+  // ไม่มีผู้ติดต่อหลัก = null ไม่หยิบคนแรกมาแทน เพราะคนที่ถูกพิมพ์ลงสัญญาต้องเป็นคนที่
+  // ลูกค้าตั้งเป็นผู้ติดต่อหลักจริง ๆ ถ้าเดาให้ อาจพิมพ์ชื่อคนที่ไม่มีอำนาจลงนามลงไป
+  const primary = (customer.contacts ?? []).find((contact) => contact.isPrimary) ?? null;
+
+  const items = [...(plan.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+
+  const previous = contract.previousContract ?? null;
+
+  return {
+    generatedAt: input.generatedAt ?? new Date(),
+    contract: {
+      id: contract.id,
+      contractNo: contract.contractNo,
+      status: contract.status,
+      price: contract.price,
+      billingCycle: contract.billingCycle,
+      startDate: contract.startDate,
+      endDate: contract.endDate,
+      signedDate: contract.signedDate,
+      note: contract.note,
+      previousContract: previous
+        ? {
+            id: previous.id,
+            contractNo: previous.contractNo,
+            startDate: previous.startDate,
+            endDate: previous.endDate,
+          }
+        : null,
+    },
+    customer: {
+      id: customer.id,
+      code: customer.code,
+      name: customer.name,
+      taxId: customer.taxId,
+      address: customer.address,
+      province: customer.province,
+      postalCode: customer.postalCode,
+      phone: customer.phone,
+      email: customer.email,
+    },
+    primaryContact: primary
+      ? {
+          name: primary.name,
+          position: primary.position,
+          phone: primary.phone,
+          email: primary.email,
+        }
+      : null,
+    project: { id: project.id, code: project.code, name: project.name },
+    plan: {
+      code: plan.code,
+      name: plan.name,
+      description: plan.description,
+      bugQuotaPerMonth: plan.bugQuotaPerMonth,
+      responseTimeHour: plan.responseTimeHour,
+      onsiteQuotaPerMonth: plan.onsiteQuotaPerMonth,
+      items: items.map(toMaPlanItemResponse),
+    },
+    addons: addons.map(toMaAddonResponse),
+  };
 }

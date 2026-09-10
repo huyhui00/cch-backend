@@ -13,6 +13,7 @@ import {
 } from './dto/ma-contract.dto';
 import {
   MaAddonResponseDto,
+  MaContractPrintDto,
   MaContractResponseDto,
   QuotaStatusResponseDto,
 } from './dto/ma.response';
@@ -57,6 +58,22 @@ export class MaContractsController {
   @ApiResponse({ status: 404, description: 'ไม่พบสัญญา MA นี้' })
   findOne(@Param('id', ParseIntPipe) id: number): Promise<MaContractResponseDto> {
     return this.contractsService.findOne(id);
+  }
+
+  @Get(':id/print')
+  @RequirePermission('ma.view')
+  @ApiOperation({
+    summary: 'M6-08 — ข้อมูลสำหรับพิมพ์ร่างสัญญา MA',
+    description:
+      'คืน JSON ที่ประกอบครบ (สัญญา ลูกค้า ผู้ติดต่อหลัก โครงการ เนื้อหาแผนพร้อมรายการบริการ ' +
+      'และของเสริม) ให้หน้าจอจัดหน้าแล้วสั่งพิมพ์เอง — backend ไม่ได้สร้างไฟล์ PDF ' +
+      'ไม่กั้นตามสถานะ หน้าจอใช้ contract.status ตัดสินเรื่องลายน้ำเอง ' +
+      'ข้อมูลฝั่งบริษัทผู้ให้บริการไม่อยู่ในนี้เพราะระบบไม่มีที่เก็บ',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: MaContractPrintDto })
+  @ApiResponse({ status: 404, description: 'ไม่พบสัญญา MA นี้' })
+  getPrintData(@Param('id', ParseIntPipe) id: number): Promise<MaContractPrintDto> {
+    return this.contractsService.getPrintData(id);
   }
 
   @Get(':id/quota')

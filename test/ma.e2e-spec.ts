@@ -20,6 +20,7 @@ import { createValidationPipe } from '../src/common/pipes/validation.pipe';
  *   - โควตาจาก addon ถูกบวกเข้ากับโควตาของแผนจริงตอน query
  *   - สายการต่อสัญญา (previous_contract_id + RENEWED) commit ครบทั้งสองแถว
  *   - GET /api/users/assignable เรียกได้โดยไม่ต้องมีสิทธิ์ user.view
+ *   - GET /:id/print (M6-08) join ซ้อนสองชั้นและ self-join ของฉบับก่อนหน้ารันได้จริง
  */
 
 interface ApiResponse<T> {
@@ -280,6 +281,74 @@ describe('MA (e2e)', () => {
       .expect(400);
 
     expect((response.body as ApiResponse<null>).message).toContain('ตั้งเองไม่ได้');
+  });
+
+  // -------------------------------------------------------------------------
+  // M6-08 พิมพ์ร่างสัญญา
+  // -------------------------------------------------------------------------
+  it('GET /:id/print ประกอบข้อมูลครบจาก join จริง รวมผู้ติดต่อหลักและฉบับก่อนหน้า', async () => {
+    // include ซ้อนสองชั้น (ลูกค้า→ผู้ติดต่อ, แผน→รายการ) และ self-join ของ previousContract
+    // เป็นสิ่งที่ mock พิสูจน์แทนไม่ได้ว่า Sequelize สร้าง SQL ที่รันได้จริง
+    await authed('post', '/api/contacts')
+      .send({ customerId, name: `ผู้ติดต่อรอง ${stamp}`, isPrimary: false })
+      .expect(201);
+    await authed('post', '/api/contacts')
+      .send({ customerId, name: `ผู้ติดต่อหลัก ${stamp}`, position: 'ผู้จัดการ', isPrimary: true })
+      .expect(201);
+
+    const created = await createContract({
+      status: 'ACTIVE',
+      contractNo: `E2E-PRINT-${stamp}`,
+    }).expect(201);
+    const previousId = (created.body as ApiResponse<ContractPayload>).data.id;
+
+    const renewed = await authed('post', `/api/ma-contracts/${previousId}/renew`)
+      .send({ startDate: '2027-10-15', endDate: '2028-10-14', price: '52000.00' })
+      .expect(201);
+    const renewalId = (renewed.body as ApiResponse<ContractPayload>).data.id;
+
+    const response = await authed('get', `/api/ma-contracts/${renewalId}/print`).expect(200);
+    const print = (
+      response.body as ApiResponse<{
+        contract: {
+          status: string;
+          price: string;
+          previousContract: { id: number; contractNo: string | null } | null;
+        };
+        customer: { id: number };
+        primaryContact: { name: string; position: string | null } | null;
+        project: { id: number };
+        plan: Record<string, unknown> & { items: { title: string }[] };
+        addons: unknown[];
+      }>
+    ).data;
+
+    expect(print.contract.status).toBe('DRAFT');
+    expect(print.contract.price).toBe('52000.00');
+    expect(print.contract.previousContract).toEqual({
+      id: previousId,
+      contractNo: `E2E-PRINT-${stamp}`,
+      startDate: '2026-10-15',
+      endDate: '2027-10-14',
+    });
+    expect(print.customer.id).toBe(customerId);
+    expect(print.project.id).toBe(projectId);
+    expect(print.primaryContact).toEqual({
+      name: `ผู้ติดต่อหลัก ${stamp}`,
+      position: 'ผู้จัดการ',
+      phone: null,
+      email: null,
+    });
+    expect(print.plan.items.map((item) => item.title)).toEqual([
+      'ตรวจสุขภาพระบบรายเดือน',
+      'สำรองข้อมูลรายสัปดาห์',
+    ]);
+    expect(Object.keys(print.plan)).not.toContain('price');
+    expect(print.addons).toEqual([]);
+  });
+
+  it('GET /:id/print ของสัญญาที่ไม่มีอยู่ได้ 404', async () => {
+    await authed('get', '/api/ma-contracts/999999999/print').expect(404);
   });
 
   it('แผนที่มีสัญญาอ้างอยู่ลบไม่ได้', async () => {

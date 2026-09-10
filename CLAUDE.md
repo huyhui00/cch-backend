@@ -489,18 +489,18 @@ return true;
   tickets (list/pending/detail/create/update/assign/reopen/close),
   tickets/:id/resolutions (create),
   ma-plans (CRUD), ma-contracts (list/detail/create/update/renew),
-  ma-contracts/:id (quota/addons list/addons create),
+  ma-contracts/:id (quota/addons list/addons create/print),
   users/assignable, roles/assignable,
   follow-ups (list/detail/create/update/complete/delete),
   surveys (list/detail/create/update/status/delete + summary/assignments/responses),
   survey-assignments/:id/response,
   reports (contract-value by-customer/by-type/upcoming, service-cost, ma-contract-overlaps),
   customers/:id/overview
-  — รวม 99 เส้น
-- **เทสต์คุมกฎธุรกิจ 386 เคส 17 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–8 + M7, M8, M10
+  — รวม 100 เส้น
+- **เทสต์คุมกฎธุรกิจ 397 เคส 17 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–8 + M7, M8, M10
   ทั้งหมดเป็น unit test ที่ mock model ไม่แตะฐานข้อมูลจริง รันจบใน ~19 วินาที
   **ถ้าจะแก้กฎธุรกิจข้อไหน ให้แก้เทสต์ที่คุมข้อนั้นไปพร้อมกัน** ไม่ใช่ลบทิ้งให้ผ่าน
-- **e2e 62 เคส 6 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`) — รันด้วย `npm run test:e2e`
+- **e2e 64 เคส 6 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`) — รันด้วย `npm run test:e2e`
   แยกจาก `npm test` เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่
   `test/global-setup.js` สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
   มีไว้พิสูจน์สิ่งที่ mock พิสูจน์แทนไม่ได้ — SQL ที่ Sequelize สร้างรันได้จริง,
@@ -679,6 +679,22 @@ return true;
   - **ห้ามเพิ่มฟิลด์ลงใน `AssignableUserDto` และ `RoleSummaryDto` ของสองเส้นนี้**
     ไม่งั้นจะกลายเป็น `GET /api/users` และ `GET /api/roles` ฉบับไม่มีสิทธิ์กั้น
     โดยเฉพาะ **รายการสิทธิ์ที่ติ๊กไว้ห้ามหลุดออกมาเด็ดขาด** เพราะเป็นช่องข้าม BR-10 ตรง ๆ
+- **M6-08 พิมพ์ร่างสัญญา = `GET /api/ma-contracts/:id/print` คืน JSON ไม่ใช่ไฟล์**
+  (เพิ่ม 10 ก.ย. — ตกหล่นไปตอนปิด Phase 8) backend ประกอบข้อมูลครบชุด ได้แก่
+  เงื่อนไขสัญญา ลูกค้า ผู้ติดต่อหลัก โครงการ เนื้อหาแผนพร้อมรายการบริการ และของเสริม
+  ส่วนการจัดหน้ากระดาษ ข้อความข้อกำหนด และช่องลงลายมือชื่อเป็นงานของ frontend
+  **ห้ามเปลี่ยนไปสร้าง HTML/PDF ใน repo นี้** (ข้อ 1) ถ้าวันหนึ่งต้องการ PDF จาก
+  server จริง ให้เสนอก่อนเพราะต้องเพิ่ม dependency
+  - **ไม่กั้นตามสถานะ** พิมพ์ฉบับ DRAFT ไปเซ็น (BR-12) หรือฉบับที่ยกเลิกแล้วเพื่อเข้าแฟ้มได้
+    หน้าจอใช้ `contract.status` ตัดสินเรื่องลายน้ำเอง
+  - **ไม่มีผู้ติดต่อหลัก = `primaryContact: null` ห้ามหยิบคนแรกมาแทน** เพราะอาจพิมพ์
+    ชื่อคนที่ไม่มีอำนาจลงนามลงสัญญา
+  - **ของเสริมแสดงแยกรายการ ไม่รวมกับ `price` เป็นยอดเดียว** — ไม่มีกติกาว่ายอดในสัญญา
+    ต้องรวมของเสริมไหม จึงไม่สร้างขึ้นเอง
+  - เนื้อหาแผนอ่านสดจาก `ma_plans` (BR-05 ไม่ก๊อปเก็บ) ถ้าแก้แผนทีหลัง
+    พิมพ์ใหม่จะได้เนื้อหาใหม่ — ฉบับที่เซ็นแล้วของจริงอยู่ที่ไฟล์สแกน `signed_file_url`
+  - **ข้อมูลฝั่งบริษัทผู้ให้บริการไม่อยู่ในผลลัพธ์** เพราะ schema ไม่มีที่เก็บ
+    frontend ใส่ในแม่แบบเอง ถ้าต้องแก้ได้จากหน้าจอ ให้เสนอเพิ่มตารางก่อน
 - โมดูลนี้ **ไม่มี endpoint สำหรับแก้หรือลบ `ma_usages`** โดยเจตนา — การหักโควตาเกิดจาก
   การบันทึกผลการแก้ปัญหาเท่านั้น (Phase 7) ถ้าเปิดให้แก้มือได้ ตัวเลขโควตากับประวัติ
   การแก้ปัญหาจะไม่ตรงกันโดยไม่มีใครรู้

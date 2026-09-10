@@ -12,11 +12,13 @@ import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import { addDays, todayAsDateOnly } from '../../common/utils/date.util';
 import {
+  Contact,
   Customer,
   MaAddon,
   MaContract,
   MaContractStatus,
   MaPlan,
+  MaPlanItem,
   MaUsage,
   Project,
 } from '../../models';
@@ -29,9 +31,11 @@ import {
 } from './dto/ma-contract.dto';
 import {
   type MaAddonResponseDto,
+  type MaContractPrintDto,
   type MaContractResponseDto,
   type QuotaStatusResponseDto,
   toMaAddonResponse,
+  toMaContractPrint,
   toMaContractResponse,
 } from './dto/ma.response';
 import { MaQuotaService } from './ma-quota.service';
@@ -139,6 +143,72 @@ export class MaContractsService {
     ]);
 
     return toMaContractResponse(contract, { addons, quota });
+  }
+
+  /**
+   * M6-08 ข้อมูลสำหรับพิมพ์ร่างสัญญา
+   *
+   * อ่านอย่างเดียว คืน JSON ที่ประกอบครบ ให้ frontend จัดหน้ากระดาษเอง — repo นี้
+   * ไม่สร้าง PDF/HTML (CLAUDE.md ข้อ 1) เนื้อหาแผนอ่านสดจาก `ma_plans` ตาม BR-05
+   * ไม่ได้ก๊อปเก็บไว้ในสัญญา จึงเป็นเนื้อหาปัจจุบันของแผนเสมอ
+   *
+   * **ไม่กั้นตามสถานะ** — พิมพ์ฉบับ DRAFT เพื่อไปเซ็น (BR-12) หรือพิมพ์ฉบับที่ยกเลิกแล้ว
+   * เพื่อเก็บเข้าแฟ้มก็ได้ `contract.status` ถูกส่งไปให้หน้าจอตัดสินใจเรื่องลายน้ำเอง
+   *
+   * include ทุกตัวประกาศในนี้ใหม่ทุกครั้ง ไม่ใช้ร่วมกับ `findOrFail()`
+   * เพราะ Sequelize แก้ object ของ include ในที่ตอน normalize
+   */
+  async getPrintData(id: number): Promise<MaContractPrintDto> {
+    const contract = await this.contractModel.findByPk(id, {
+      include: [
+        {
+          model: Customer,
+          required: false,
+          paranoid: false,
+          // ผู้ติดต่อที่ถูกลบไปแล้วไม่ควรไปโผล่ในสัญญาใหม่ จึงไม่ปิด paranoid ของชั้นนี้
+          include: [{ model: Contact, required: false }],
+        },
+        {
+          model: Project,
+          attributes: ['id', 'code', 'name'],
+          required: false,
+          paranoid: false,
+        },
+        {
+          model: MaPlan,
+          required: false,
+          paranoid: false,
+          include: [{ model: MaPlanItem, required: false }],
+        },
+        {
+          model: MaContract,
+          as: 'previousContract',
+          attributes: ['id', 'contractNo', 'startDate', 'endDate'],
+          required: false,
+          paranoid: false,
+        },
+      ],
+    });
+
+    if (!contract) {
+      throw new NotFoundException('ไม่พบสัญญา MA นี้');
+    }
+
+    // ทั้งสามคอลัมน์เป็น NOT NULL และ include ปิด paranoid แล้ว ถ้ายังหาไม่เจอแปลว่า
+    // ข้อมูลอ้างอิงหายไปจริง พิมพ์ต่อไม่ได้ เพราะเอกสารจะขาดคู่สัญญาหรือเนื้อหาบริการ
+    if (!contract.customer || !contract.project || !contract.plan) {
+      throw new NotFoundException(
+        'ข้อมูลลูกค้า โครงการ หรือแผน MA ของสัญญานี้ไม่ครบ จึงพิมพ์ร่างสัญญาไม่ได้',
+      );
+    }
+
+    return toMaContractPrint({
+      contract,
+      customer: contract.customer,
+      project: contract.project,
+      plan: contract.plan,
+      addons: await this.findAddons(id),
+    });
   }
 
   /**

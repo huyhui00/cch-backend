@@ -438,4 +438,172 @@ describe('MaContractsService', () => {
       await expect(service.getQuota(99)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // M6-08 ข้อมูลสำหรับพิมพ์ร่างสัญญา
+  // -------------------------------------------------------------------------
+  describe('getPrintData', () => {
+    function printableContract(overrides: Record<string, unknown> = {}): MaContract {
+      return contractRow({
+        status: MaContractStatus.DRAFT,
+        customer: {
+          id: 1,
+          code: 'CUS-001',
+          name: 'บริษัท ตัวอย่าง จำกัด',
+          taxId: '0105561234567',
+          address: '99/1 ถนนสุขุมวิท',
+          province: 'กรุงเทพมหานคร',
+          postalCode: '10110',
+          phone: '02-123-4567',
+          email: 'contact@example.co.th',
+          contacts: [
+            { name: 'คุณเอ', position: 'พนักงาน', phone: null, email: null, isPrimary: false },
+            {
+              name: 'คุณสมศรี',
+              position: 'ผู้จัดการฝ่ายไอที',
+              phone: '081-234-5678',
+              email: null,
+              isPrimary: true,
+            },
+          ],
+        },
+        project: { id: 3, code: 'PRJ-003', name: 'ระบบคลังสินค้า' },
+        plan: {
+          id: 2,
+          code: 'MA_STANDARD',
+          name: 'แผนมาตรฐาน',
+          description: null,
+          bugQuotaPerMonth: 5,
+          responseTimeHour: 24,
+          onsiteQuotaPerMonth: 1,
+          items: [
+            { id: 9, title: 'สำรองข้อมูล', detail: null, sortOrder: 1 },
+            { id: 7, title: 'ตรวจสุขภาพระบบ', detail: null, sortOrder: 0 },
+          ],
+        },
+        previousContract: null,
+        ...overrides,
+      });
+    }
+
+    beforeEach(() => {
+      contractModel.findByPk.mockResolvedValue(printableContract());
+    });
+
+    it('ประกอบคู่สัญญา โครงการ เนื้อหาแผน และราคาไว้ในชุดเดียว', async () => {
+      const print = await service.getPrintData(12);
+
+      expect(print.contract.contractNo).toBe('MA-2026-014');
+      expect(print.contract.price).toBe('48000.00');
+      expect(print.customer.name).toBe('บริษัท ตัวอย่าง จำกัด');
+      expect(print.customer.taxId).toBe('0105561234567');
+      expect(print.project.name).toBe('ระบบคลังสินค้า');
+      expect(print.plan.bugQuotaPerMonth).toBe(5);
+    });
+
+    it('รายการบริการในแผนเรียงตาม sortOrder ไม่ใช่ตามที่ฐานข้อมูลคืนมา', async () => {
+      const print = await service.getPrintData(12);
+
+      expect(print.plan.items.map((item) => item.title)).toEqual(['ตรวจสุขภาพระบบ', 'สำรองข้อมูล']);
+    });
+
+    it('หยิบผู้ติดต่อหลักตัวจริง ไม่ใช่คนแรกในรายการ', async () => {
+      const print = await service.getPrintData(12);
+
+      expect(print.primaryContact).toEqual({
+        name: 'คุณสมศรี',
+        position: 'ผู้จัดการฝ่ายไอที',
+        phone: '081-234-5678',
+        email: null,
+      });
+    });
+
+    it('ไม่มีผู้ติดต่อหลักได้ null — ไม่เดาเอาคนแรกมาใส่แทน', async () => {
+      // คนที่ถูกพิมพ์ลงสัญญาต้องเป็นคนที่ลูกค้าตั้งไว้จริง ถ้าเดาอาจได้คนที่ไม่มีอำนาจลงนาม
+      const base = printableContract();
+      contractModel.findByPk.mockResolvedValue(
+        printableContract({
+          customer: {
+            ...(base.customer as unknown as Record<string, unknown>),
+            contacts: [{ name: 'คุณเอ', isPrimary: false }],
+          },
+        }),
+      );
+
+      const print = await service.getPrintData(12);
+
+      expect(print.primaryContact).toBeNull();
+    });
+
+    it('เนื้อหาแผนไม่มีฟิลด์ราคา ราคาอยู่ที่สัญญาที่เดียว (BR-05)', async () => {
+      const print = await service.getPrintData(12);
+
+      expect(Object.keys(print.plan)).not.toContain('price');
+      expect(JSON.stringify(print.plan)).not.toMatch(/price/i);
+    });
+
+    it('แนบของเสริมเป็นรายการแยก ไม่รวมเป็นยอดเดียวให้', async () => {
+      addonModel.findAll.mockResolvedValue([
+        { id: 3, contractId: 12, title: 'โควตาเพิ่ม 3 ครั้ง', price: '4500.00', extraQuota: 3 },
+      ]);
+
+      const print = await service.getPrintData(12);
+
+      expect(print.addons).toHaveLength(1);
+      expect(print.addons[0].price).toBe('4500.00');
+      // ราคาหลักต้องไม่ถูกบวกของเสริมเข้าไปเงียบ ๆ
+      expect(print.contract.price).toBe('48000.00');
+    });
+
+    it('สัญญาที่เกิดจากการต่อ พ่วงเลขที่ฉบับก่อนหน้ามาให้พิมพ์อ้างอิง', async () => {
+      contractModel.findByPk.mockResolvedValue(
+        printableContract({
+          previousContractId: 8,
+          previousContract: {
+            id: 8,
+            contractNo: 'MA-2025-009',
+            startDate: '2025-10-01',
+            endDate: '2026-09-30',
+          },
+        }),
+      );
+
+      const print = await service.getPrintData(12);
+
+      expect(print.contract.previousContract?.contractNo).toBe('MA-2025-009');
+    });
+
+    it('ไม่กั้นตามสถานะ — ฉบับที่ยกเลิกแล้วยังพิมพ์ได้ และส่งสถานะไปให้หน้าจอตัดสินเอง', async () => {
+      contractModel.findByPk.mockResolvedValue(
+        printableContract({ status: MaContractStatus.CANCELLED }),
+      );
+
+      const print = await service.getPrintData(12);
+
+      expect(print.contract.status).toBe(MaContractStatus.CANCELLED);
+    });
+
+    it('อ่านอย่างเดียว ไม่เขียนอะไรลงฐานข้อมูล', async () => {
+      const row = printableContract();
+      const update = jest.fn();
+      contractModel.findByPk.mockResolvedValue({ ...row, update });
+
+      await service.getPrintData(12);
+
+      expect(update).not.toHaveBeenCalled();
+      expect(contractModel.create).not.toHaveBeenCalled();
+    });
+
+    it('ไม่พบสัญญา → 404', async () => {
+      contractModel.findByPk.mockResolvedValue(null);
+
+      await expect(service.getPrintData(99)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('ข้อมูลอ้างอิงหาย → 404 แทนที่จะพิมพ์เอกสารที่ขาดคู่สัญญา', async () => {
+      contractModel.findByPk.mockResolvedValue(printableContract({ customer: null }));
+
+      await expect(service.getPrintData(12)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
 });
