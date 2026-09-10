@@ -12,6 +12,7 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module';
+import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { MaModule } from './modules/ma/ma.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { RolesModule } from './modules/roles/roles.module';
@@ -39,6 +40,7 @@ import { WarrantiesModule } from './modules/warranties/warranties.module';
     WarrantiesModule,
     DeliveriesModule,
     MaModule,
+    FollowUpsModule,
     TicketsModule,
 
     // modules ทางธุรกิจที่เหลือจะถูกเพิ่มที่นี่ตามลำดับ Phase ใน CLAUDE.md ข้อ 12

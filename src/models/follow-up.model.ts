@@ -12,8 +12,21 @@ export enum FollowUpStatus {
 }
 
 /** งานติดตามลูกค้า — ป้อนเข้า notification rule แบบ FOLLOWUP_DUE */
+export interface FollowUpCreationAttributes {
+  customerId: number;
+  title: string;
+  detail?: string | null;
+  dueDate: string;
+  status?: FollowUpStatus;
+  assignedUserId?: number | null;
+  completedAt?: Date | null;
+  resultNote?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 @Table({ tableName: 'follow_ups', underscored: true, timestamps: true, paranoid: true })
-export class FollowUp extends AuditedModel<FollowUp> {
+export class FollowUp extends AuditedModel<FollowUp, FollowUpCreationAttributes> {
   @ForeignKey(() => Customer)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'customer_id' })
   customerId: number;
