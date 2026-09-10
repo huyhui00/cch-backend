@@ -3,8 +3,19 @@ import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@ne
 
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { type PaginatedResult } from '../../common/dto/pagination.dto';
-import { TaskResponseDto } from './dto/project.response';
-import { QueryOverdueTasksDto, UpdateTaskOrderDto, UpdateTaskStatusDto } from './dto/task.dto';
+import {
+  CompanyTaskResponseDto,
+  TaskBoardSummaryDto,
+  TaskResponseDto,
+} from './dto/project.response';
+import {
+  QueryCompanyTasksDto,
+  QueryDueSoonTasksDto,
+  QueryOverdueTasksDto,
+  QueryTaskBoardDto,
+  UpdateTaskOrderDto,
+  UpdateTaskStatusDto,
+} from './dto/task.dto';
 import { TasksService } from './tasks.service';
 
 /**
@@ -16,6 +27,51 @@ import { TasksService } from './tasks.service';
 @Controller('tasks')
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
+
+  @Get()
+  @RequirePermission('task.view')
+  @ApiOperation({
+    summary: 'M2-07 — รายการงานทั้งบริษัท (ข้ามโครงการ)',
+    description:
+      'รายการแบบแบน นับงานย่อยทุกชั้นเป็นหนึ่งงาน พร้อมโครงการที่งานสังกัด ' +
+      'ใช้เจาะดูจากหน้าจอภาพรวม เช่น ?status=WAITING เพื่อดูว่าอะไรค้างอยู่ ' +
+      'เรียงตามวันครบกำหนดใกล้สุดก่อน งานที่ไม่มีวันครบกำหนดอยู่ท้าย',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [CompanyTaskResponseDto] })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  findCompanyTasks(
+    @Query() query: QueryCompanyTasksDto,
+  ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
+    return this.tasksService.findCompanyTasks(query);
+  }
+
+  @Get('summary')
+  @RequirePermission('task.view')
+  @ApiOperation({
+    summary: 'M2-07 — ภาพรวมงานทั้งบริษัท',
+    description:
+      'จำนวนงานแยกตามสถานะ งานเกินกำหนดแยกตามสถานะ และภาระงานที่ยังไม่เสร็จของแต่ละคน ' +
+      'ใช้ดูว่างานติดขัดอยู่ที่ขั้นตอนไหนและอยู่กับใคร — สถานะที่ไม่มีงานคืนมาเป็น 0',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: TaskBoardSummaryDto })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  summarizeBoard(@Query() query: QueryTaskBoardDto): Promise<TaskBoardSummaryDto> {
+    return this.tasksService.summarizeBoard(query);
+  }
+
+  @Get('due-soon')
+  @RequirePermission('task.view')
+  @ApiOperation({
+    summary: 'M2-06 — งานใกล้ครบกำหนด',
+    description:
+      'งานที่ครบกำหนดตั้งแต่วันนี้ถึงอีก withinDays วัน (ค่าเริ่มต้น 7) และยังไม่ใช่ DONE ' +
+      'ต่อกับ /api/tasks/overdue พอดี — งานที่ครบกำหนดวันนี้อยู่ในรายการนี้ ยังไม่นับว่าเกินกำหนด',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [TaskResponseDto] })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  findDueSoon(@Query() query: QueryDueSoonTasksDto): Promise<PaginatedResult<TaskResponseDto>> {
+    return this.tasksService.findDueSoon(query);
+  }
 
   /**
    * ต้องประกาศก่อน route ที่มี :id ทุกเส้น ไม่งั้นคำว่า "overdue" จะถูกจับเป็นค่าของ :id

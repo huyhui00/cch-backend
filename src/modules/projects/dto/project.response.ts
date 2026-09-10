@@ -97,6 +97,89 @@ export class TaskResponseDto {
   updatedAt: Date;
 }
 
+export class TaskProjectSummaryDto {
+  @ApiProperty({ example: 1 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'PRJ-2026-001' })
+  code: string | null;
+
+  @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
+  name: string;
+
+  @ApiProperty({
+    enum: ProjectStatus,
+    description: 'สถานะของโครงการ — ให้หน้าจอแยกงานที่ค้างอยู่ในโครงการที่ปิดหรือยกเลิกไปแล้วได้',
+  })
+  status: ProjectStatus;
+}
+
+/**
+ * งานในรายการรวมทั้งบริษัท (M2-07) — เหมือน TaskResponseDto ทุกฟิลด์ เพิ่มโครงการที่งานสังกัด
+ * เพราะหน้าจอรวมแสดงงานหลายโครงการปนกัน ถ้าไม่มีชื่อโครงการจะแยกไม่ออกว่างานไหนของใคร
+ * แยกเป็นคลาสใหม่ ไม่ได้เพิ่มฟิลด์ลงใน TaskResponseDto เพื่อไม่เปลี่ยนสัญญาของ endpoint เดิม
+ */
+export class CompanyTaskResponseDto extends TaskResponseDto {
+  @ApiProperty({ type: TaskProjectSummaryDto, nullable: true })
+  project: TaskProjectSummaryDto | null;
+}
+
+export class TaskAssigneeLoadDto {
+  @ApiProperty({ nullable: true, description: 'null = งานที่ยังไม่มีผู้รับผิดชอบ', example: 3 })
+  assignedUserId: number | null;
+
+  @ApiProperty({ nullable: true, example: 'สมชาย ใจดี' })
+  fullName: string | null;
+
+  @ApiProperty({ description: 'จำนวนงานที่ยังไม่เสร็จ (ไม่นับ DONE)', example: 6 })
+  openTasks: number;
+
+  @ApiProperty({ description: 'จำนวนงานที่เกินกำหนดในงานที่ยังไม่เสร็จ', example: 2 })
+  overdueTasks: number;
+
+  @ApiProperty({
+    description: 'งานที่ยังไม่เสร็จแยกตามสถานะ',
+    example: { TODO: 2, DOING: 2, WAITING: 1, REVIEW: 1 },
+  })
+  byStatus: Record<string, number>;
+}
+
+/**
+ * M2-07 ภาพรวมงานทั้งบริษัท — ดูว่างานติดขัดอยู่ที่ขั้นตอนไหนและอยู่กับใคร
+ *
+ * นับงานทุกชั้นแบบแบน (งานย่อยนับเป็นหนึ่งงาน) กติกาเดียวกับความคืบหน้าโครงการ
+ * สถานะที่ไม่มีงานเลยคืนมาเป็น 0 เสมอ หน้าจอจะวาดคอลัมน์ได้ครบทุกสถานะโดยไม่ต้องเติมเอง
+ */
+export class TaskBoardSummaryDto {
+  @ApiProperty({ description: 'จำนวนงานทั้งหมด', example: 40 })
+  totalTasks: number;
+
+  @ApiProperty({ description: 'จำนวนงานที่ยังไม่เสร็จ', example: 28 })
+  openTasks: number;
+
+  @ApiProperty({ description: 'จำนวนงานที่เกินกำหนดและยังไม่เสร็จ', example: 5 })
+  overdueTasks: number;
+
+  @ApiProperty({
+    description: 'จำนวนงานแยกตามสถานะ ครบทุกสถานะ',
+    example: { TODO: 10, DOING: 8, WAITING: 6, REVIEW: 4, DONE: 12 },
+  })
+  byStatus: Record<string, number>;
+
+  @ApiProperty({
+    description:
+      'งานที่เกินกำหนดแยกตามสถานะ — บอกว่างานที่ช้าติดอยู่ที่ขั้นไหน (DONE ไม่มีวันเกินกำหนด)',
+    example: { TODO: 1, DOING: 1, WAITING: 3, REVIEW: 0 },
+  })
+  overdueByStatus: Record<string, number>;
+
+  @ApiProperty({
+    type: [TaskAssigneeLoadDto],
+    description: 'ภาระงานที่ยังไม่เสร็จของแต่ละคน เรียงคนที่มีงานเกินกำหนดมากที่สุดขึ้นก่อน',
+  })
+  byAssignee: TaskAssigneeLoadDto[];
+}
+
 /** สรุปความคืบหน้าของโครงการ — นับ task ทุกชั้นแบบแบน ไม่แยกงานแม่งานย่อย */
 export class ProjectProgressDto {
   @ApiProperty({ description: 'จำนวนงานทั้งหมดในโครงการ (นับรวมงานย่อยทุกชั้น)', example: 12 })
@@ -237,6 +320,20 @@ export function toTaskResponse(task: Task, includeSubTasks = true): TaskResponse
         : [],
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
+  };
+}
+
+export function toCompanyTaskResponse(task: Task): CompanyTaskResponseDto {
+  return {
+    ...toTaskResponse(task, false),
+    project: task.project
+      ? {
+          id: task.project.id,
+          code: task.project.code,
+          name: task.project.name,
+          status: task.project.status,
+        }
+      : null,
   };
 }
 

@@ -8,6 +8,7 @@ import type { Sequelize } from 'sequelize-typescript';
 import { Task, TaskPriority, TaskStatus, User, UserStatus } from '../../models';
 import { TasksService } from './tasks.service';
 import type { ProjectsService } from './projects.service';
+import { addDays } from '../../common/utils/date.util';
 import { todayAsDateOnly } from './dto/project.response';
 
 /**
@@ -348,6 +349,245 @@ describe('TasksService', () => {
       // เทียบเป็นวัน ไม่ใช่เวลา — งานที่ครบกำหนดวันนี้ยังไม่นับว่าเกิน
       expect(captured.dueDate[Op.lt]).toBe(todayAsDateOnly());
       expect(captured.status[Op.ne]).toBe(TaskStatus.DONE);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M2-06 งานใกล้ครบกำหนด
+  // -------------------------------------------------------------------------
+  describe('findDueSoon', () => {
+    type DueSoonWhere = {
+      dueDate: Record<symbol, string[]>;
+      status: Record<symbol, TaskStatus>;
+      projectId?: number;
+      assignedUserId?: number;
+    };
+
+    function captureWhere(): () => DueSoonWhere {
+      let captured: DueSoonWhere = { dueDate: {}, status: {} };
+      taskModel.findAndCountAll.mockImplementation((options: { where: DueSoonWhere }) => {
+        captured = options.where;
+        return Promise.resolve({ rows: [], count: 0 });
+      });
+      return () => captured;
+    }
+
+    it('นับตั้งแต่วันนี้ถึงอีก N วัน และไม่เอางานที่เสร็จแล้ว', async () => {
+      const where = captureWhere();
+
+      await service.findDueSoon({ page: 1, limit: 20, offset: 0, withinDays: 7 } as never);
+
+      const today = todayAsDateOnly();
+      expect(where().dueDate[Op.between]).toEqual([today, addDays(today, 7)]);
+      expect(where().status[Op.ne]).toBe(TaskStatus.DONE);
+    });
+
+    it('ขอบล่างคือวันนี้ ต่อกับงานเกินกำหนดพอดี — งานที่ครบกำหนดวันนี้อยู่ในรายการนี้', async () => {
+      // findOverdue ใช้ dueDate < วันนี้ ถ้าที่นี่เริ่มจากพรุ่งนี้ งานที่ครบกำหนดวันนี้จะหายจากทั้งสองรายการ
+      const where = captureWhere();
+
+      await service.findDueSoon({ page: 1, limit: 20, offset: 0, withinDays: 0 } as never);
+
+      expect(where().dueDate[Op.between]).toEqual([todayAsDateOnly(), todayAsDateOnly()]);
+    });
+
+    it('กรองตามโครงการและผู้รับผิดชอบได้', async () => {
+      const where = captureWhere();
+
+      await service.findDueSoon({
+        page: 1,
+        limit: 20,
+        offset: 0,
+        withinDays: 7,
+        projectId: 4,
+        assignedUserId: 3,
+      } as never);
+
+      expect(where().projectId).toBe(4);
+      expect(where().assignedUserId).toBe(3);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M2-07 รายการงานทั้งบริษัท
+  // -------------------------------------------------------------------------
+  describe('findCompanyTasks', () => {
+    it('พ่วงโครงการที่งานสังกัดมาด้วย และไม่คืนงานย่อยซ้อน', async () => {
+      taskModel.findAndCountAll.mockResolvedValue({
+        rows: [
+          taskRow({
+            id: 7,
+            project: { id: 2, code: 'PRJ-2', name: 'ระบบคลัง', status: 'IN_PROGRESS' },
+            subTasks: [taskRow({ id: 8 })],
+          } as never),
+        ],
+        count: 1,
+      });
+
+      const result = await service.findCompanyTasks({ page: 1, limit: 20, offset: 0 } as never);
+
+      expect(result.items[0].project).toEqual({
+        id: 2,
+        code: 'PRJ-2',
+        name: 'ระบบคลัง',
+        status: 'IN_PROGRESS',
+      });
+      // รายการแบบแบน — งานย่อยมีแถวของตัวเองอยู่แล้ว ไม่ต้องซ้อนซ้ำใต้งานแม่
+      expect(result.items[0].subTasks).toEqual([]);
+    });
+
+    it('ไม่ระบุการเรียง = วันครบกำหนดใกล้สุดก่อน โดยงานที่ไม่มีวันครบกำหนดไปอยู่ท้าย', async () => {
+      let order: unknown[] = [];
+      taskModel.findAndCountAll.mockImplementation((options: { order: unknown[] }) => {
+        order = options.order;
+        return Promise.resolve({ rows: [], count: 0 });
+      });
+
+      await service.findCompanyTasks({ page: 1, limit: 20, offset: 0 } as never);
+
+      // ตัวแรกคือ ISNULL(due_date) — ถ้าหายไป MySQL จะเอางานที่ไม่มีวันครบกำหนดขึ้นก่อน
+      expect(Array.isArray(order[0]) && typeof (order[0] as unknown[])[0]).toBe('object');
+      expect(order[1]).toEqual(['dueDate', 'ASC']);
+    });
+
+    it('ชื่อฟิลด์เรียงที่ไม่อยู่ในรายการอนุญาตถูกเมิน ไม่ส่งต่อให้ฐานข้อมูล', async () => {
+      let order: unknown[] = [];
+      taskModel.findAndCountAll.mockImplementation((options: { order: unknown[] }) => {
+        order = options.order;
+        return Promise.resolve({ rows: [], count: 0 });
+      });
+
+      await service.findCompanyTasks({
+        page: 1,
+        limit: 20,
+        offset: 0,
+        sortBy: 'password_hash',
+        sortOrder: 'ASC',
+      } as never);
+
+      expect(JSON.stringify(order)).not.toContain('password_hash');
+    });
+
+    it('กรองตามสถานะและความสำคัญได้', async () => {
+      let where: Record<string, unknown> = {};
+      taskModel.findAndCountAll.mockImplementation(
+        (options: { where: Record<string, unknown> }) => {
+          where = options.where;
+          return Promise.resolve({ rows: [], count: 0 });
+        },
+      );
+
+      await service.findCompanyTasks({
+        page: 1,
+        limit: 20,
+        offset: 0,
+        status: TaskStatus.WAITING,
+        priority: TaskPriority.HIGH,
+      } as never);
+
+      expect(where.status).toBe(TaskStatus.WAITING);
+      expect(where.priority).toBe(TaskPriority.HIGH);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M2-07 ภาพรวมงานทั้งบริษัท
+  // -------------------------------------------------------------------------
+  describe('summarizeBoard', () => {
+    const today = todayAsDateOnly();
+    const yesterday = addDays(today, -1);
+
+    function row(status: TaskStatus, dueDate: string | null, assignedUserId: number | null) {
+      return { id: Math.random(), status, dueDate, assignedUserId };
+    }
+
+    it('คืนครบทุกสถานะแม้ไม่มีงาน หน้าจอจะวาดคอลัมน์ได้ครบโดยไม่ต้องเติมเอง', async () => {
+      taskModel.findAll.mockResolvedValue([]);
+
+      const summary = await service.summarizeBoard({});
+
+      expect(summary.byStatus).toEqual({ TODO: 0, DOING: 0, WAITING: 0, REVIEW: 0, DONE: 0 });
+      expect(summary.overdueByStatus).toEqual({ TODO: 0, DOING: 0, WAITING: 0, REVIEW: 0 });
+      expect(summary.byAssignee).toEqual([]);
+    });
+
+    it('นับเกินกำหนดด้วยกติกาเดียวกับทั้งระบบ — ครบกำหนดวันนี้ไม่เกิน และงานที่เสร็จแล้วไม่เกิน', async () => {
+      taskModel.findAll.mockResolvedValue([
+        row(TaskStatus.WAITING, yesterday, 3), // เกิน
+        row(TaskStatus.DOING, today, 3), // ครบกำหนดวันนี้ ยังไม่เกิน
+        row(TaskStatus.DONE, yesterday, 3), // เสร็จแล้ว ไม่นับ
+        row(TaskStatus.TODO, null, 3), // ไม่มีวันครบกำหนด ไม่เกิน
+      ]);
+      userModel.findAll.mockResolvedValue([{ id: 3, fullName: 'สมชาย' }]);
+
+      const summary = await service.summarizeBoard({});
+
+      expect(summary.totalTasks).toBe(4);
+      expect(summary.openTasks).toBe(3);
+      expect(summary.overdueTasks).toBe(1);
+      expect(summary.overdueByStatus.WAITING).toBe(1);
+      expect(summary.overdueByStatus.DOING).toBe(0);
+    });
+
+    it('ภาระงานรายคนนับเฉพาะงานที่ยังไม่เสร็จ รวมงานที่ยังไม่มีผู้รับผิดชอบ และเรียงคนที่เกินกำหนดมากสุดก่อน', async () => {
+      taskModel.findAll.mockResolvedValue([
+        row(TaskStatus.DOING, today, 3),
+        row(TaskStatus.DONE, today, 3),
+        row(TaskStatus.WAITING, yesterday, 5),
+        row(TaskStatus.REVIEW, yesterday, 5),
+        row(TaskStatus.TODO, null, null),
+      ]);
+      userModel.findAll.mockResolvedValue([
+        { id: 3, fullName: 'สมชาย' },
+        { id: 5, fullName: 'ปราณี' },
+      ]);
+
+      const summary = await service.summarizeBoard({});
+
+      expect(summary.byAssignee.map((load) => load.assignedUserId)).toEqual([5, 3, null]);
+      expect(summary.byAssignee[0]).toMatchObject({
+        fullName: 'ปราณี',
+        openTasks: 2,
+        overdueTasks: 2,
+        byStatus: { TODO: 0, DOING: 0, WAITING: 1, REVIEW: 1 },
+      });
+      // งาน DONE ของสมชายไม่ถูกนับเป็นภาระ
+      expect(summary.byAssignee[1]).toMatchObject({ fullName: 'สมชาย', openTasks: 1 });
+      expect(summary.byAssignee[2]).toMatchObject({ fullName: null, openTasks: 1 });
+    });
+
+    it('หาชื่อพนักงานที่ลาออกไปแล้วด้วย เพื่อให้รู้ว่างานค้างอยู่กับใครต้องส่งต่อ', async () => {
+      taskModel.findAll.mockResolvedValue([row(TaskStatus.DOING, null, 9)]);
+      let options: { paranoid?: boolean } = {};
+      userModel.findAll.mockImplementation((given: { paranoid?: boolean }) => {
+        options = given;
+        return Promise.resolve([{ id: 9, fullName: 'อดีตพนักงาน' }]);
+      });
+
+      const summary = await service.summarizeBoard({});
+
+      expect(options.paranoid).toBe(false);
+      expect(summary.byAssignee[0].fullName).toBe('อดีตพนักงาน');
+    });
+
+    it('ไม่มีงานที่มีผู้รับผิดชอบเลย = ไม่ต้องไปค้นตารางผู้ใช้', async () => {
+      taskModel.findAll.mockResolvedValue([row(TaskStatus.TODO, null, null)]);
+
+      await service.summarizeBoard({});
+
+      expect(userModel.findAll).not.toHaveBeenCalled();
+    });
+
+    it('สรุปเฉพาะโครงการเดียวได้', async () => {
+      let where: Record<string, unknown> = {};
+      taskModel.findAll.mockImplementation((options: { where: Record<string, unknown> }) => {
+        where = options.where;
+        return Promise.resolve([]);
+      });
+
+      await service.summarizeBoard({ projectId: 4 });
+
+      expect(where).toEqual({ projectId: 4 });
     });
   });
 

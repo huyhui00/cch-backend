@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -171,4 +172,50 @@ export class QueryOverdueTasksDto extends PaginationDto {
   @IsInt({ message: 'assignedUserId ต้องเป็นจำนวนเต็ม' })
   @IsPositive({ message: 'assignedUserId ต้องมากกว่า 0' })
   assignedUserId?: number;
+}
+
+export const DEFAULT_DUE_SOON_DAYS = 7;
+export const MAX_DUE_SOON_DAYS = 90;
+
+/** M2-06 งานใกล้ครบกำหนด — ใช้ตัวกรองชุดเดียวกับงานเกินกำหนด เพิ่มแค่จำนวนวัน */
+export class QueryDueSoonTasksDto extends QueryOverdueTasksDto {
+  @ApiPropertyOptional({
+    description:
+      'ครบกำหนดภายในกี่วันนับจากวันนี้ — 0 = เฉพาะที่ครบกำหนดวันนี้ ' +
+      `ไม่ระบุ = ${DEFAULT_DUE_SOON_DAYS} วัน`,
+    minimum: 0,
+    maximum: MAX_DUE_SOON_DAYS,
+    default: DEFAULT_DUE_SOON_DAYS,
+    example: DEFAULT_DUE_SOON_DAYS,
+  })
+  @IsOptional()
+  @IsInt({ message: 'withinDays ต้องเป็นจำนวนเต็ม' })
+  @Min(0, { message: 'withinDays ต้องไม่ติดลบ' })
+  @Max(MAX_DUE_SOON_DAYS, { message: `withinDays ต้องไม่เกิน ${MAX_DUE_SOON_DAYS}` })
+  withinDays: number = DEFAULT_DUE_SOON_DAYS;
+}
+
+/** M2-07 รายการงานทั้งบริษัท — ข้ามโครงการ ใช้เจาะดูจากหน้าจอภาพรวม */
+export class QueryCompanyTasksDto extends QueryOverdueTasksDto {
+  @ApiPropertyOptional({
+    enum: TaskStatus,
+    description: 'กรองตามสถานะ เช่น ดูว่าอะไรค้างอยู่ที่ WAITING',
+  })
+  @IsOptional()
+  @IsEnum(TaskStatus, { message: 'สถานะงานต้องเป็น TODO, DOING, WAITING, REVIEW หรือ DONE' })
+  status?: TaskStatus;
+
+  @ApiPropertyOptional({ enum: TaskPriority, description: 'กรองตามความสำคัญ' })
+  @IsOptional()
+  @IsEnum(TaskPriority, { message: 'ความสำคัญต้องเป็น LOW, NORMAL, HIGH หรือ URGENT' })
+  priority?: TaskPriority;
+}
+
+/** M2-07 สรุปภาพรวมงานทั้งบริษัท */
+export class QueryTaskBoardDto {
+  @ApiPropertyOptional({ description: 'สรุปเฉพาะโครงการนี้ — ไม่ระบุ = ทั้งบริษัท', example: 1 })
+  @IsOptional()
+  @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
+  projectId?: number;
 }

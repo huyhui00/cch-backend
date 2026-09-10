@@ -5,12 +5,25 @@ import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
-import { Task, TaskStatus, User, UserStatus } from '../../models';
+import { addDays } from '../../common/utils/date.util';
+import { Project, Task, TaskStatus, User, UserStatus } from '../../models';
 import { ProjectsService } from './projects.service';
-import { type TaskResponseDto, toTaskResponse, todayAsDateOnly } from './dto/project.response';
+import {
+  type CompanyTaskResponseDto,
+  isTaskOverdue,
+  type TaskAssigneeLoadDto,
+  type TaskBoardSummaryDto,
+  type TaskResponseDto,
+  toCompanyTaskResponse,
+  toTaskResponse,
+  todayAsDateOnly,
+} from './dto/project.response';
 import {
   CreateTaskDto,
+  QueryCompanyTasksDto,
+  QueryDueSoonTasksDto,
   QueryOverdueTasksDto,
+  QueryTaskBoardDto,
   QueryTasksDto,
   UpdateTaskDto,
   UpdateTaskOrderDto,
@@ -44,6 +57,15 @@ function assigneeInclude() {
     required: false,
     // งานเก่าที่มอบหมายให้คนที่ลาออกไปแล้ว ต้องยังเห็นชื่อได้ (BR-09)
     paranoid: false,
+  };
+}
+
+/** โครงการที่งานสังกัด — ใช้กับรายการรวมทั้งบริษัทที่มีงานหลายโครงการปนกัน */
+function projectInclude() {
+  return {
+    model: Project,
+    attributes: ['id', 'code', 'name', 'status'],
+    required: false,
   };
 }
 
@@ -301,6 +323,192 @@ export class TasksService {
       count,
       query,
     );
+  }
+
+  /**
+   * M2-06 งานใกล้ครบกำหนด — ครบกำหนดตั้งแต่วันนี้ถึงอีก N วัน และยังไม่ DONE
+   *
+   * ขอบล่างคือ "วันนี้" ไม่ใช่เมื่อวาน เพื่อให้ต่อกับ findOverdue() พอดีไม่ซ้อนไม่เว้น —
+   * งานที่ครบกำหนดวันนี้ยังไม่เกินกำหนด (กติกา Phase 5) จึงต้องมาอยู่ในรายการนี้แทน
+   */
+  async findDueSoon(query: QueryDueSoonTasksDto): Promise<PaginatedResult<TaskResponseDto>> {
+    const today = todayAsDateOnly();
+    const where: WhereOptions<Task> = {
+      dueDate: { [Op.between]: [today, addDays(today, query.withinDays)] },
+      status: { [Op.ne]: TaskStatus.DONE },
+    };
+
+    if (query.projectId !== undefined) {
+      Object.assign(where, { projectId: query.projectId });
+    }
+
+    if (query.assignedUserId !== undefined) {
+      Object.assign(where, { assignedUserId: query.assignedUserId });
+    }
+
+    const { rows, count } = await this.taskModel.findAndCountAll({
+      where,
+      include: [assigneeInclude()],
+      // ใกล้ครบกำหนดที่สุดขึ้นก่อน แล้วงานด่วนขึ้นก่อนในวันเดียวกัน — ลำดับเดียวกับงานเกินกำหนด
+      order: [
+        ['dueDate', 'ASC'],
+        ['priority', 'DESC'],
+      ],
+      limit: query.limit,
+      offset: query.offset,
+    });
+
+    return toPaginatedResult(
+      rows.map((task) => toTaskResponse(task, false)),
+      count,
+      query,
+    );
+  }
+
+  /**
+   * M2-07 รายการงานทั้งบริษัท (ข้ามโครงการ) — แบบแบน นับงานย่อยทุกชั้นเป็นหนึ่งงาน
+   *
+   * ต่างจาก findAllByProject() ที่คืนโครงสร้างซ้อน เพราะหน้าจอรวมใช้ดูว่า "อะไรติดอยู่ที่ไหน"
+   * ไม่ได้ใช้ดูโครงสร้างงาน ถ้าคืนแบบซ้อน งานย่อยที่ค้างจะถูกซ่อนอยู่ใต้งานแม่ที่อาจเสร็จไปแล้ว
+   */
+  async findCompanyTasks(
+    query: QueryCompanyTasksDto,
+  ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
+    const where: WhereOptions<Task> = {};
+
+    if (query.projectId !== undefined) {
+      Object.assign(where, { projectId: query.projectId });
+    }
+
+    if (query.assignedUserId !== undefined) {
+      Object.assign(where, { assignedUserId: query.assignedUserId });
+    }
+
+    if (query.status) {
+      Object.assign(where, { status: query.status });
+    }
+
+    if (query.priority) {
+      Object.assign(where, { priority: query.priority });
+    }
+
+    if (query.search) {
+      const like = '%' + query.search + '%';
+      Object.assign(where, {
+        [Op.or]: [{ title: { [Op.like]: like } }, { description: { [Op.like]: like } }],
+      });
+    }
+
+    const order: Order = SORTABLE_FIELDS.has(query.sortBy ?? '')
+      ? [
+          [query.sortBy as string, query.sortOrder],
+          ['id', 'ASC'],
+        ]
+      : [
+          // งานที่ไม่มีวันครบกำหนดไปไว้ท้าย — MySQL เรียง NULL ขึ้นก่อนเสมอถ้าไม่บอก
+          [Sequelize.fn('ISNULL', Sequelize.col('Task.due_date')), 'ASC'],
+          ['dueDate', 'ASC'],
+          ['priority', 'DESC'],
+          ['id', 'ASC'],
+        ];
+
+    const { rows, count } = await this.taskModel.findAndCountAll({
+      where,
+      include: [assigneeInclude(), projectInclude()],
+      order,
+      limit: query.limit,
+      offset: query.offset,
+    });
+
+    return toPaginatedResult(rows.map(toCompanyTaskResponse), count, query);
+  }
+
+  /**
+   * M2-07 สรุปภาพรวมงานทั้งบริษัท — แยกตามสถานะ งานเกินกำหนดแยกตามสถานะ และภาระงานรายคน
+   *
+   * รวมใน JavaScript จากแถวที่ดึงมาเฉพาะคอลัมน์ที่ใช้ แทนการ GROUP BY หลายชั้นใน SQL
+   * เพราะปริมาณงานของบริษัทขนาดนี้ไม่มากพอให้คุ้ม และสูตร "เกินกำหนด" จะมาจาก
+   * isTaskOverdue() ตัวเดียวกับที่ใช้ทั้งระบบ ไม่มีโอกาสนับไม่ตรงกับ flag isOverdue ในรายการ
+   */
+  async summarizeBoard(query: QueryTaskBoardDto): Promise<TaskBoardSummaryDto> {
+    const where: WhereOptions<Task> = {};
+
+    if (query.projectId !== undefined) {
+      Object.assign(where, { projectId: query.projectId });
+    }
+
+    const tasks = await this.taskModel.findAll({
+      where,
+      attributes: ['id', 'status', 'dueDate', 'assignedUserId'],
+    });
+
+    const openStatuses = Object.values(TaskStatus).filter((status) => status !== TaskStatus.DONE);
+    const zeroes = (statuses: TaskStatus[]) =>
+      Object.fromEntries(statuses.map((status) => [status, 0])) as Record<string, number>;
+
+    const byStatus = zeroes(Object.values(TaskStatus));
+    const overdueByStatus = zeroes(openStatuses);
+    const loads = new Map<
+      number | null,
+      { openTasks: number; overdueTasks: number; byStatus: Record<string, number> }
+    >();
+
+    let overdueTasks = 0;
+
+    for (const task of tasks) {
+      byStatus[task.status] += 1;
+
+      if (task.status === TaskStatus.DONE) {
+        continue;
+      }
+
+      const overdue = isTaskOverdue(task);
+      const load = loads.get(task.assignedUserId) ?? {
+        openTasks: 0,
+        overdueTasks: 0,
+        byStatus: zeroes(openStatuses),
+      };
+
+      load.openTasks += 1;
+      load.byStatus[task.status] += 1;
+
+      if (overdue) {
+        overdueTasks += 1;
+        overdueByStatus[task.status] += 1;
+        load.overdueTasks += 1;
+      }
+
+      loads.set(task.assignedUserId, load);
+    }
+
+    const userIds = [...loads.keys()].filter((id): id is number => id !== null);
+    const users =
+      userIds.length === 0
+        ? []
+        : await this.userModel.findAll({
+            where: { id: userIds },
+            attributes: ['id', 'fullName'],
+            // งานเก่าที่ค้างอยู่กับคนที่ลาออกไปแล้วต้องยังเห็นชื่อ ไม่งั้นจะหาไม่เจอว่าใครต้องส่งต่อ
+            paranoid: false,
+          });
+    const names = new Map(users.map((user) => [user.id, user.fullName]));
+
+    const byAssignee: TaskAssigneeLoadDto[] = [...loads.entries()]
+      .map(([assignedUserId, load]) => ({
+        assignedUserId,
+        fullName: assignedUserId === null ? null : (names.get(assignedUserId) ?? null),
+        ...load,
+      }))
+      .sort((a, b) => b.overdueTasks - a.overdueTasks || b.openTasks - a.openTasks);
+
+    return {
+      totalTasks: tasks.length,
+      openTasks: tasks.length - byStatus[TaskStatus.DONE],
+      overdueTasks,
+      byStatus,
+      overdueByStatus,
+      byAssignee,
+    };
   }
 
   /** ลบงาน — soft delete พร้อมงานย่อยทุกชั้นที่อยู่ใต้มัน */
