@@ -1,7 +1,7 @@
 /// <reference types="jest" />
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
@@ -608,6 +608,98 @@ describe('TicketsService', () => {
   // -------------------------------------------------------------------------
   // หน้าจอรอรับการแก้ไข
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // แก้ไขใบ — สำหรับกรณีคีย์ผิดตอนเปิดใบ
+  // -------------------------------------------------------------------------
+  describe('update', () => {
+    it('ไม่เขียนสถานะหรือจำนวนรอบลงฐานข้อมูลเลย', async () => {
+      // สถานะมีเจ้าของคือ assign / resolutions / reopen / close
+      // ถ้าเส้นนี้แก้ได้ด้วย จะตั้งเป็น CLOSED โดยไม่เคยมีรอบการแก้ไขเลยก็ได้ (ขัด BR-04)
+      const ticket = ticketRow();
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      let captured: Record<string, unknown> = {};
+      ticket.update.mockImplementation((values: Record<string, unknown>) => {
+        captured = values;
+        return Promise.resolve(undefined);
+      });
+
+      await service.update(7, { title: 'หัวข้อใหม่' });
+
+      expect(Object.keys(captured)).not.toContain('status');
+      expect(Object.keys(captured)).not.toContain('resolutionCount');
+      expect(Object.keys(captured)).not.toContain('resolvedAt');
+      expect(Object.keys(captured)).not.toContain('closedAt');
+      expect(Object.keys(captured)).not.toContain('customerId');
+    });
+
+    it('ย้ายไปโครงการของลูกค้ารายอื่นไม่ได้', async () => {
+      projectModel.findByPk.mockResolvedValue({ id: 9, customerId: 99 });
+
+      await expect(service.update(7, { projectId: 9 })).rejects.toThrow(
+        'โครงการที่ระบุไม่ได้เป็นของลูกค้ารายนี้',
+      );
+    });
+
+    it('แก้เวลาที่ลูกค้าแจ้งเป็นเวลาในอนาคตไม่ได้', async () => {
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+      await expect(service.update(7, { reportedAt: tomorrow })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('บันทึกย้อนหลังยังทำได้ตามปกติ (BR-02)', async () => {
+      const ticket = ticketRow();
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await service.update(7, { reportedAt: pastIso() });
+
+      expect(ticket.update).toHaveBeenCalled();
+    });
+
+    it('ใบที่ปิดงานแล้วยังแก้ข้อมูลได้', async () => {
+      // การพิมพ์หัวข้อผิดต้องแก้ได้เสมอ ไม่ว่าใบจะอยู่สถานะไหน
+      // ต่างจากการ *เพิ่มรอบการแก้ไข* ที่ต้อง reopen ก่อน
+      const ticket = ticketRow({ status: TicketStatus.CLOSED });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await service.update(7, { title: 'แก้คำผิดหลังปิดงาน' });
+
+      expect(ticket.update).toHaveBeenCalled();
+    });
+
+    it('เปลี่ยนประเภทการคิดเงินได้ เพราะ BR-07 ให้คนเป็นผู้ตัดสิน', async () => {
+      const ticket = ticketRow();
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      let captured: { billingType?: TicketBillingType } = {};
+      ticket.update.mockImplementation((values: { billingType?: TicketBillingType }) => {
+        captured = values;
+        return Promise.resolve(undefined);
+      });
+
+      await service.update(7, { billingType: TicketBillingType.ONE_TIME });
+
+      expect(captured.billingType).toBe(TicketBillingType.ONE_TIME);
+    });
+
+    it('ส่งเลขที่ใบเดิมมาไม่นับว่าเป็นการเปลี่ยน จึงไม่ต้องเช็คซ้ำ', async () => {
+      const ticket = ticketRow({ ticketNo: 'TK-2026-001' });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await service.update(7, { ticketNo: 'TK-2026-001' });
+
+      expect(ticketModel.findOne).not.toHaveBeenCalled();
+    });
+
+    it('ไม่พบใบ → 404', async () => {
+      ticketModel.findByPk.mockResolvedValue(null);
+
+      await expect(service.update(99, { title: 'x' })).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   describe('findPending', () => {
     it('เอาเฉพาะสามสถานะที่ยังไม่จบ', async () => {
       let captured: { status: Record<symbol, TicketStatus[]> } = { status: {} };

@@ -29,6 +29,7 @@ import {
   CloseTicketDto,
   CreateTicketDto,
   QueryPendingTicketsDto,
+  UpdateTicketDto,
   QueryTicketsDto,
   ReopenTicketDto,
 } from './dto/ticket.dto';
@@ -316,6 +317,67 @@ export class TicketsService {
     });
 
     return this.findOne(ticket.id);
+  }
+
+  /**
+   * แก้ไขใบแจ้งปัญหา — สำหรับกรณีคีย์ผิดตอนเปิดใบ
+   *
+   * **ไม่ให้แก้ `status` ที่นี่** เพราะสถานะมีเจ้าของอยู่แล้วคือ assign / resolutions /
+   * reopen / close ถ้าแก้ตรง ๆ ได้ จะข้ามกฎ BR-04 ทั้งหมด — ตั้งเป็น CLOSED
+   * โดยไม่เคยมีรอบการแก้ไขเลยก็ได้ แล้วประวัติการให้บริการจะเชื่อไม่ได้อีกต่อไป
+   * ด้วยเหตุผลเดียวกัน `resolutionCount` และเวลาต่าง ๆ ก็ไม่รับจาก client
+   *
+   * ใบที่ปิดงานแล้วยังแก้ได้ เพราะการพิมพ์หัวข้อผิดต้องแก้ได้เสมอ ไม่ว่าใบจะอยู่สถานะไหน
+   * — ต่างจากการ *เพิ่มรอบการแก้ไข* ที่ต้อง reopen ก่อน
+   */
+  async update(id: number, dto: UpdateTicketDto): Promise<TicketResponseDto> {
+    const actorId = getCurrentUserId();
+    const ticket = await this.findOrFail(id);
+
+    // ย้ายข้ามลูกค้าไม่ได้ — โครงการใหม่ต้องเป็นของลูกค้าเจ้าของใบเดิมเท่านั้น
+    if (dto.projectId) {
+      await this.assertProjectBelongsToCustomer(dto.projectId, ticket.customerId);
+    }
+
+    if (dto.reportedByContactId) {
+      await this.assertContactBelongsToCustomer(dto.reportedByContactId, ticket.customerId);
+    }
+
+    if (dto.receivedByUserId) {
+      await this.assertUserExists(dto.receivedByUserId);
+    }
+
+    if (dto.ticketNo && dto.ticketNo !== ticket.ticketNo) {
+      await this.assertTicketNoIsAvailable(dto.ticketNo);
+    }
+
+    let reportedAt: Date | undefined;
+
+    if (dto.reportedAt !== undefined) {
+      reportedAt = new Date(dto.reportedAt);
+      this.assertNotInFuture(reportedAt, 'เวลาที่ลูกค้าแจ้งต้องไม่เป็นเวลาในอนาคต');
+    }
+
+    await ticket.update({
+      ...(dto.title !== undefined ? { title: dto.title } : {}),
+      ...(dto.description !== undefined ? { description: dto.description } : {}),
+      ...(dto.priority !== undefined ? { priority: dto.priority } : {}),
+      ...(dto.billingType !== undefined ? { billingType: dto.billingType } : {}),
+      ...(dto.reportedChannel !== undefined ? { reportedChannel: dto.reportedChannel } : {}),
+      ...(reportedAt !== undefined ? { reportedAt } : {}),
+      ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
+      ...(dto.reportedByContactId !== undefined
+        ? { reportedByContactId: dto.reportedByContactId }
+        : {}),
+      ...(dto.receivedByUserId !== undefined ? { receivedByUserId: dto.receivedByUserId } : {}),
+      ...(dto.dueAt !== undefined
+        ? { dueAt: dto.dueAt === null ? null : new Date(dto.dueAt) }
+        : {}),
+      ...(dto.ticketNo !== undefined ? { ticketNo: dto.ticketNo } : {}),
+      updatedBy: actorId,
+    });
+
+    return this.findOne(id);
   }
 
   /**

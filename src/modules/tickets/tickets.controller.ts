@@ -9,6 +9,7 @@ import {
   CloseTicketDto,
   CreateTicketDto,
   QueryPendingTicketsDto,
+  UpdateTicketDto,
   QueryTicketsDto,
   ReopenTicketDto,
 } from './dto/ticket.dto';
@@ -92,6 +93,31 @@ export class TicketsController {
     return {
       data: await this.ticketsService.create(dto),
       message: 'เปิดใบแจ้งปัญหาเรียบร้อย',
+    };
+  }
+
+  @Patch(':id')
+  @RequirePermission('ticket.update')
+  @ApiOperation({
+    summary: 'แก้ไขใบแจ้งปัญหา',
+    description:
+      'สำหรับกรณีคีย์ผิดตอนเปิดใบ — **แก้สถานะที่นี่ไม่ได้** เพราะสถานะมีเจ้าของอยู่แล้ว ' +
+      'คือ assign / resolutions / reopen / close ถ้าแก้ตรง ๆ ได้จะข้ามกฎ BR-04 ทั้งหมด ' +
+      'ย้ายลูกค้าไม่ได้ ย้ายโครงการได้เฉพาะโครงการของลูกค้ารายเดิม ' +
+      'ใบที่ปิดงานแล้วยังแก้ข้อมูลได้ เพราะการพิมพ์ผิดต้องแก้ได้เสมอ',
+  })
+  @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
+  @ApiResponse({ status: 200, description: 'แก้ไขเรียบร้อย', type: TicketResponseDto })
+  @ApiResponse({ status: 400, description: 'โครงการหรือผู้ติดต่อไม่ใช่ของลูกค้ารายนี้' })
+  @ApiResponse({ status: 404, description: 'ไม่พบรายการปัญหานี้' })
+  @ApiResponse({ status: 409, description: 'เลขที่ใบแจ้งปัญหาซ้ำ' })
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateTicketDto,
+  ): Promise<{ data: TicketResponseDto; message: string }> {
+    return {
+      data: await this.ticketsService.update(id, dto),
+      message: 'แก้ไขใบแจ้งปัญหาเรียบร้อย',
     };
   }
 

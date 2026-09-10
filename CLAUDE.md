@@ -485,17 +485,17 @@ return true;
   projects/:id/deliveries (list/create), deliveries (detail/update/acceptance),
   deliveries/:id/warranties (create), warranties (expiring/detail/update),
   projects/:id/warranties (list),
-  tickets (list/pending/detail/create/assign/reopen/close),
+  tickets (list/pending/detail/create/update/assign/reopen/close),
   tickets/:id/resolutions (create),
   ma-plans (CRUD), ma-contracts (list/detail/create/update/renew),
   ma-contracts/:id (quota/addons list/addons create),
   users/assignable, roles/assignable,
   follow-ups (list/detail/create/update/complete/delete)
-  — รวม 82 เส้น
-- **เทสต์คุมกฎธุรกิจ 322 เคส 15 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–8 + M7
+  — รวม 83 เส้น
+- **เทสต์คุมกฎธุรกิจ 330 เคส 15 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–8 + M7
   ทั้งหมดเป็น unit test ที่ mock model ไม่แตะฐานข้อมูลจริง รันจบใน ~19 วินาที
   **ถ้าจะแก้กฎธุรกิจข้อไหน ให้แก้เทสต์ที่คุมข้อนั้นไปพร้อมกัน** ไม่ใช่ลบทิ้งให้ผ่าน
-- **e2e 38 เคส 4 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`) — รันด้วย `npm run test:e2e`
+- **e2e 43 เคส 4 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`) — รันด้วย `npm run test:e2e`
   แยกจาก `npm test` เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่
   `test/global-setup.js` สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
   มีไว้พิสูจน์สิ่งที่ mock พิสูจน์แทนไม่ได้ — SQL ที่ Sequelize สร้างรันได้จริง,
@@ -593,6 +593,20 @@ return true;
   ที่เดียว ทั้ง query และ flag `isPending` ในผลลัพธ์อ่านจากค่าเดียวกัน
 - **ใบแจ้งปัญหาและรอบการแก้ไขไม่มี DELETE** — เป็นประวัติการให้บริการที่ต้องอ้างอิงได้
   ใบที่ไม่เอาแล้วให้ปิดงาน (`PATCH /:id/close`)
+- **`PATCH /api/tickets/:id` มีไว้แก้ของที่คีย์ผิดตอนเปิดใบเท่านั้น** (เพิ่ม 10 ก.ย. —
+  เดิมตกหล่นไป ทั้งที่สิทธิ์ `ticket.update` มีอยู่ใน seeder แล้ว) แก้ได้เฉพาะ
+  หัวข้อ รายละเอียด ความสำคัญ ประเภทการคิดเงิน ช่องทาง/เวลาที่แจ้ง โครงการ ผู้แจ้ง
+  ผู้รับเรื่อง กำหนดส่ง และเลขที่ใบ
+  **ห้ามให้แก้ `status`, `resolution_count`, เวลาต่าง ๆ, `customer_id`,
+  `warranty_id`, `ma_contract_id` เด็ดขาด** — สถานะมีเจ้าของอยู่แล้วคือ assign /
+  resolutions / reopen / close ถ้าเส้นนี้แก้ได้ด้วย จะตั้งเป็น CLOSED โดยไม่เคยมี
+  รอบการแก้ไขเลยก็ได้ ซึ่งข้ามกฎ BR-04 ทั้งหมด `UpdateTicketDto` จึงไม่มีฟิลด์พวกนี้
+  และ `forbidNonWhitelisted` ปฏิเสธให้เองถ้าใครส่งมา — มีเทสต์ตรึงไว้ทั้ง unit และ e2e
+- **ใบที่ปิดงานแล้วยังแก้ข้อมูลได้** เพราะการพิมพ์หัวข้อผิดต้องแก้ได้เสมอไม่ว่าใบจะอยู่
+  สถานะไหน ต่างจากการ *เพิ่มรอบการแก้ไข* ที่ต้อง reopen ก่อน
+- **เปลี่ยน `billing_type` ได้ตลอด** เพราะ BR-07 ให้คนเป็นผู้ตัดสิน ไม่ใช่ระบบ —
+  งานที่ตอนแรกคิดว่าเป็น bug ในประกัน พอดูจริงแล้วเป็นของขอเพิ่มใหม่ ต้องแก้เป็น
+  ONE_TIME ได้ (การหักโควตาที่เกิดไปแล้วไม่ย้อนกลับ เพราะเป็นเหตุการณ์ที่เกิดจริง)
 - `extra_charge` **ยังต้องกรอกมือ** — ทั้ง schema ไม่มีที่เก็บ "อัตราค่าบริการเมื่อเกินโควตา"
   ระบบจึงบอกได้แค่ว่า *เกินโควตาแล้ว* (`is_over_quota`) คิดเป็นเงินเท่าไหร่ยังเป็นคนตัดสิน
 - **`MaQuotaService` ถูกสร้างที่ Phase 7 แต่ยังไม่มี controller** — Phase 8 เป็นเจ้าของ

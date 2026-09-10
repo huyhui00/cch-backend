@@ -152,6 +152,101 @@ export class CreateTicketDto {
   dueAt?: string | null;
 }
 
+/**
+ * แก้ไขใบแจ้งปัญหา — สำหรับกรณีคีย์ผิดตอนเปิดใบ
+ *
+ * **ฟิลด์ที่จงใจไม่ให้แก้ที่นี่ และห้ามเพิ่มเข้ามาทีหลัง**
+ *
+ *   `status`           มีเจ้าของคือ assign / resolutions / reopen / close
+ *                      ถ้าแก้ตรง ๆ ได้ จะข้ามกฎ BR-04 ทั้งหมด เช่นตั้งเป็น CLOSED
+ *                      โดยไม่เคยมีรอบการแก้ไขเลย
+ *   `resolutionCount`  นับจากจำนวนแถวจริงใน ticket_resolutions ไม่ใช่ค่าที่ตั้งเอง
+ *   `resolvedAt` / `firstResponseAt` / `closedAt`  ระบบใส่ให้ตามเหตุการณ์จริง
+ *   `customerId`       ย้ายลูกค้าไม่ได้ ด้วยเหตุผลเดียวกับโครงการใน Phase 5 —
+ *                      ใบที่หักโควตาหรือผูกประกันไปแล้วจะพาประวัติไปโผล่ผิดราย
+ *   `warrantyId` / `maContractId`  เป็นหลักฐานว่าตอนเปิดใบระบบเห็นอะไร
+ *                      ต้องคงไว้ตามที่บันทึกจริง
+ *
+ * ส่วน `projectId` แก้ได้ แต่ต้องเป็นโครงการของลูกค้ารายเดิมเท่านั้น
+ */
+export class UpdateTicketDto {
+  @ApiPropertyOptional({ description: 'หัวข้อปัญหา', maxLength: 255 })
+  @IsOptional()
+  @IsString({ message: 'หัวข้อปัญหาต้องเป็นข้อความ' })
+  @MaxLength(255, { message: 'หัวข้อปัญหายาวเกิน 255 ตัวอักษร' })
+  @Transform(trim)
+  title?: string;
+
+  @ApiPropertyOptional({ description: 'รายละเอียดปัญหา' })
+  @IsOptional()
+  @IsString({ message: 'รายละเอียดต้องเป็นข้อความ' })
+  @Transform(trimToNull)
+  description?: string | null;
+
+  @ApiPropertyOptional({ enum: TicketPriority })
+  @IsOptional()
+  @IsEnum(TicketPriority, { message: 'ระดับความสำคัญไม่ถูกต้อง' })
+  priority?: TicketPriority;
+
+  @ApiPropertyOptional({
+    description:
+      'แก้ประเภทการคิดเงินได้ตลอด เพราะ BR-07 ให้คนเป็นผู้ตัดสิน ไม่ใช่ระบบ — ' +
+      'งานที่ตอนแรกคิดว่าเป็น bug ในประกัน พอดูจริงแล้วเป็นของขอเพิ่มใหม่ ต้องแก้เป็น ONE_TIME ได้',
+    enum: TicketBillingType,
+  })
+  @IsOptional()
+  @IsEnum(TicketBillingType, {
+    message: 'ประเภทการคิดเงินต้องเป็น WARRANTY, MA_QUOTA, ADDON, ONE_TIME หรือ FREE',
+  })
+  billingType?: TicketBillingType;
+
+  @ApiPropertyOptional({ enum: TicketReportedChannel, description: 'ช่องทางที่ลูกค้าแจ้งมา' })
+  @IsOptional()
+  @IsEnum(TicketReportedChannel, {
+    message: 'ช่องทางที่แจ้งต้องเป็น LINE, PHONE, EMAIL, FACEBOOK หรือ OTHER',
+  })
+  reportedChannel?: TicketReportedChannel;
+
+  @ApiPropertyOptional({
+    description: 'เวลาที่ลูกค้าแจ้งจริง — บันทึกล่วงหน้าไม่ได้เหมือนตอนเปิดใบ (BR-02)',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: false }, { message: 'reportedAt ต้องเป็นวันที่เวลาตามรูปแบบ ISO 8601' })
+  reportedAt?: string;
+
+  @ApiPropertyOptional({
+    description: 'ย้ายไปโครงการอื่นของลูกค้ารายเดิมได้ ส่ง null เพื่อถอดโครงการออก',
+  })
+  @IsOptional()
+  @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
+  projectId?: number | null;
+
+  @ApiPropertyOptional({ description: 'ผู้ติดต่อฝั่งลูกค้าที่เป็นคนแจ้ง ต้องอยู่ใต้ลูกค้ารายเดิม' })
+  @IsOptional()
+  @IsInt({ message: 'reportedByContactId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'reportedByContactId ต้องมากกว่า 0' })
+  reportedByContactId?: number | null;
+
+  @ApiPropertyOptional({ description: 'พนักงานที่รับเรื่อง (A-3) แยกจากผู้รับผิดชอบแก้ไข' })
+  @IsOptional()
+  @IsInt({ message: 'receivedByUserId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'receivedByUserId ต้องมากกว่า 0' })
+  receivedByUserId?: number | null;
+
+  @ApiPropertyOptional({ description: 'กำหนดเวลาที่ต้องแก้ให้เสร็จ' })
+  @IsOptional()
+  @IsISO8601({ strict: false }, { message: 'dueAt ต้องเป็นวันที่เวลาตามรูปแบบ ISO 8601' })
+  dueAt?: string | null;
+
+  @ApiPropertyOptional({ description: 'เลขที่ใบแจ้งปัญหา ห้ามซ้ำ', maxLength: 50 })
+  @IsOptional()
+  @IsString({ message: 'เลขที่ใบแจ้งปัญหาต้องเป็นข้อความ' })
+  @MaxLength(50, { message: 'เลขที่ใบแจ้งปัญหายาวเกิน 50 ตัวอักษร' })
+  @Transform(trimToNull)
+  ticketNo?: string | null;
+}
+
 /** มอบหมายผู้รับผิดชอบแก้ไข */
 export class AssignTicketDto {
   @ApiProperty({

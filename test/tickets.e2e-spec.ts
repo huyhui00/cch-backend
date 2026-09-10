@@ -237,6 +237,69 @@ describe('Tickets (e2e)', () => {
     ).toBe(2);
   });
 
+  // -------------------------------------------------------------------------
+  // แก้ไขใบ — ต้องแก้ข้อมูลที่คีย์ผิดได้ แต่ห้ามข้ามกฎสถานะ
+  // -------------------------------------------------------------------------
+  it('แก้หัวข้อและประเภทการคิดเงินที่คีย์ผิดตอนเปิดใบได้', async () => {
+    const ticketId = await openTicket(`ปัญหาที่พิมพ์หัวข้อผิด ${stamp}`);
+
+    const response = await authed('patch', `/api/tickets/${ticketId}`)
+      .send({ title: 'หัวข้อที่แก้ให้ถูกแล้ว', billingType: 'FREE', priority: 'HIGH' })
+      .expect(200);
+
+    const ticket = (response.body as ApiResponse<TicketPayload & { title: string }>).data;
+
+    expect(ticket.title).toBe('หัวข้อที่แก้ให้ถูกแล้ว');
+    expect(ticket.billingType).toBe('FREE');
+    // สถานะต้องไม่ขยับจากการแก้ข้อมูล
+    expect(ticket.status).toBe('RECEIVED');
+  });
+
+  it('แก้สถานะผ่านเส้นแก้ไขไม่ได้ — ต้องใช้ assign / resolutions / reopen / close เท่านั้น', async () => {
+    // ถ้าเส้นนี้แก้สถานะได้ จะตั้งเป็น CLOSED โดยไม่เคยมีรอบการแก้ไขเลยก็ได้ ซึ่งขัด BR-04
+    const ticketId = await openTicket(`ปัญหาที่จะลองข้ามกฎ ${stamp}`);
+
+    const response = await authed('patch', `/api/tickets/${ticketId}`)
+      .send({ status: 'CLOSED' })
+      .expect(400);
+
+    expect((response.body as ApiResponse<null>).message).toContain('ไม่รู้จักฟิลด์');
+
+    const detail = await authed('get', `/api/tickets/${ticketId}`).expect(200);
+    expect((detail.body as ApiResponse<TicketPayload>).data.status).toBe('RECEIVED');
+  });
+
+  it('แก้จำนวนรอบการแก้ไขเองไม่ได้', async () => {
+    const ticketId = await openTicket(`ปัญหาที่จะลองแก้จำนวนรอบ ${stamp}`);
+
+    await authed('patch', `/api/tickets/${ticketId}`).send({ resolutionCount: 99 }).expect(400);
+  });
+
+  it('ย้ายลูกค้าไม่ได้', async () => {
+    const ticketId = await openTicket(`ปัญหาที่จะลองย้ายลูกค้า ${stamp}`);
+
+    await authed('patch', `/api/tickets/${ticketId}`).send({ customerId: 1 }).expect(400);
+  });
+
+  it('ใบที่ปิดงานแล้วยังแก้ข้อมูลได้ แม้เพิ่มรอบการแก้ไขไม่ได้แล้ว', async () => {
+    // การพิมพ์ผิดต้องแก้ได้เสมอ ต่างจากการเพิ่มรอบที่ต้อง reopen ก่อน
+    const ticketId = await openTicket(`ปัญหาที่ปิดแล้วแต่ต้องแก้คำผิด ${stamp}`);
+
+    await addResolution(ticketId, 'แก้เสร็จแล้ว').expect(201);
+    await authed('patch', `/api/tickets/${ticketId}/close`).send({}).expect(200);
+
+    const response = await authed('patch', `/api/tickets/${ticketId}`)
+      .send({ title: 'แก้คำผิดหลังปิดงาน' })
+      .expect(200);
+
+    expect((response.body as ApiResponse<TicketPayload & { title: string }>).data.title).toBe(
+      'แก้คำผิดหลังปิดงาน',
+    );
+
+    // แต่เพิ่มรอบยังไม่ได้เหมือนเดิม
+    await addResolution(ticketId, 'พยายามเพิ่มหลังปิดงาน').expect(400);
+  });
+
   it('ต้องล็อกอินก่อนถึงจะเรียกได้', async () => {
     await api().get('/api/tickets').expect(401);
   });
