@@ -2,10 +2,20 @@
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
 import { runWithRequestContext } from '../../common/context/request-context';
-import { AcceptanceStatus, Attachment, Contact, Delivery, User, Warranty } from '../../models';
+import {
+  AcceptanceStatus,
+  Attachment,
+  Contact,
+  Delivery,
+  ProjectStatus,
+  User,
+  Warranty,
+  WarrantyStatus,
+} from '../../models';
 import { DeliveriesService } from './deliveries.service';
 import type { ProjectsService } from '../projects/projects.service';
 import type { WarrantiesService } from '../warranties/warranties.service';
@@ -24,6 +34,7 @@ interface ModelMock {
   findAll: jest.Mock;
   findAndCountAll: jest.Mock;
   create: jest.Mock;
+  count: jest.Mock;
 }
 
 function modelMock(): ModelMock {
@@ -33,6 +44,7 @@ function modelMock(): ModelMock {
     findAll: jest.fn(),
     findAndCountAll: jest.fn(),
     create: jest.fn(),
+    count: jest.fn(),
   };
 }
 
@@ -52,6 +64,7 @@ function baseDeliveryRow() {
     acceptedAt: null as Date | null,
     acceptedByContactId: null as number | null,
     acceptedByContact: null,
+    isFinal: false,
     deliveredByUserId: null as number | null,
     deliveredByUser: null,
     note: null as string | null,
@@ -65,6 +78,17 @@ type DeliveryRow = ReturnType<typeof baseDeliveryRow>;
 
 function deliveryRow(overrides: Partial<DeliveryRow> = {}): DeliveryRow {
   return { ...baseDeliveryRow(), ...overrides };
+}
+
+function projectRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    customerId: 1,
+    status: ProjectStatus.IN_PROGRESS,
+    actualEndDate: null as string | null,
+    update: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
 }
 
 function queryDto(overrides: Record<string, unknown> = {}): QueryDeliveriesDto {
@@ -102,7 +126,7 @@ describe('DeliveriesService', () => {
     sequelize = {
       transaction: jest.fn((callback: (t: unknown) => Promise<unknown>) => callback(TRANSACTION)),
     };
-    projectsService = { findOrFail: jest.fn().mockResolvedValue({ id: 1, customerId: 1 }) };
+    projectsService = { findOrFail: jest.fn().mockResolvedValue(projectRow()) };
     warrantiesService = { resyncByDelivery: jest.fn().mockResolvedValue(0) };
 
     deliveryModel.findByPk.mockResolvedValue(deliveryRow());
@@ -110,6 +134,7 @@ describe('DeliveriesService', () => {
     deliveryModel.create.mockResolvedValue(deliveryRow());
     deliveryModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
     warrantyModel.findAll.mockResolvedValue([]);
+    warrantyModel.count.mockResolvedValue(0);
     attachmentModel.findAll.mockResolvedValue([]);
     contactModel.findByPk.mockResolvedValue({ id: 2, customerId: 1 });
     userModel.findByPk.mockResolvedValue({ id: 3 });
@@ -242,7 +267,10 @@ describe('DeliveriesService', () => {
 
       await service.updateAcceptance(5, { acceptanceStatus: AcceptanceStatus.ACCEPTED });
 
-      expect(delivery.update).toHaveBeenCalledWith(expect.objectContaining({ acceptedAt }));
+      expect(delivery.update).toHaveBeenCalledWith(
+        expect.objectContaining({ acceptedAt }),
+        expect.anything(),
+      );
     });
 
     it('ล้างเวลาที่รับมอบเมื่อถอยกลับเป็น REJECTED', async () => {
@@ -260,6 +288,187 @@ describe('DeliveriesService', () => {
           acceptanceStatus: AcceptanceStatus.REJECTED,
           acceptedAt: null,
         }),
+        { transaction: TRANSACTION },
+      );
+    });
+
+    // ตกลง 11 ก.ย. — ใบที่ออกประกันแล้ว (ครั้งสุดท้าย + ยอมรับ) ถอยไม่ได้จนกว่าประกันจะถูก VOID
+    it('ใบที่ออกประกันแล้ว ถอยออกจาก ACCEPTED ไม่ได้ และบอกให้ VOID ประกันก่อน', async () => {
+      const delivery = deliveryRow({ acceptanceStatus: AcceptanceStatus.ACCEPTED, isFinal: true });
+      deliveryModel.findByPk.mockResolvedValue(delivery);
+      warrantyModel.count.mockResolvedValue(1);
+
+      for (const next of [AcceptanceStatus.REJECTED, AcceptanceStatus.PENDING]) {
+        await expect(
+          service.updateAcceptance(5, { acceptanceStatus: next }),
+        ).rejects.toBeInstanceOf(ConflictException);
+      }
+      await expect(
+        service.updateAcceptance(5, { acceptanceStatus: AcceptanceStatus.REJECTED }),
+      ).rejects.toThrow(/VOID/);
+      expect(delivery.update).not.toHaveBeenCalled();
+    });
+
+    it('ใบที่ออกประกันแล้ว เอาเครื่องหมายครั้งสุดท้ายออกไม่ได้', async () => {
+      const delivery = deliveryRow({ acceptanceStatus: AcceptanceStatus.ACCEPTED, isFinal: true });
+      deliveryModel.findByPk.mockResolvedValue(delivery);
+      warrantyModel.count.mockResolvedValue(1);
+
+      await expect(
+        service.updateAcceptance(5, {
+          acceptanceStatus: AcceptanceStatus.ACCEPTED,
+          isFinal: false,
+        }),
+      ).rejects.toThrow(/VOID/);
+      expect(delivery.update).not.toHaveBeenCalled();
+    });
+
+    it('นับเฉพาะประกันที่ยังไม่ VOID', async () => {
+      deliveryModel.findByPk.mockResolvedValue(
+        deliveryRow({ acceptanceStatus: AcceptanceStatus.ACCEPTED, isFinal: true }),
+      );
+
+      let captured: { where: Record<string, unknown> } = { where: {} };
+      warrantyModel.count.mockImplementation((options: { where: Record<string, unknown> }) => {
+        captured = options;
+        return Promise.resolve(0);
+      });
+
+      await service.updateAcceptance(5, { acceptanceStatus: AcceptanceStatus.REJECTED });
+
+      expect(captured.where.deliveryId).toBe(5);
+      expect(captured.where.status).toEqual({ [Op.ne]: WarrantyStatus.VOID });
+    });
+
+    it('แก้ข้อมูลอื่นของใบที่ยัง ACCEPTED อยู่ได้ แม้มีประกันแล้ว', async () => {
+      // ACCEPTED → ACCEPTED (เช่นแก้ผู้รับมอบ) ไม่ใช่การถอยสถานะ ต้องไม่ถูกกั้น
+      deliveryModel.findByPk.mockResolvedValue(
+        deliveryRow({ acceptanceStatus: AcceptanceStatus.ACCEPTED }),
+      );
+      warrantyModel.count.mockResolvedValue(2);
+
+      await expect(
+        service.updateAcceptance(5, { acceptanceStatus: AcceptanceStatus.ACCEPTED }),
+      ).resolves.toBeDefined();
+      expect(warrantyModel.count).not.toHaveBeenCalled();
+    });
+
+    // ---- การส่งมอบครั้งสุดท้าย (ตกลง 11 ก.ย.) -----------------------------------
+    it('ยอมรับ + ครั้งสุดท้าย → โครงการเป็น DELIVERED และวันปิดจริง = วันส่งมอบ ในทรานแซกชันเดียว', async () => {
+      const delivery = deliveryRow({ deliveredAt: new Date(2026, 8, 8, 10, 30) });
+      deliveryModel.findByPk.mockResolvedValue(delivery);
+      const project = projectRow({ status: ProjectStatus.IN_PROGRESS });
+      projectsService.findOrFail.mockResolvedValue(project);
+
+      await service.updateAcceptance(5, {
+        acceptanceStatus: AcceptanceStatus.ACCEPTED,
+        isFinal: true,
+      });
+
+      expect(delivery.update).toHaveBeenCalledWith(
+        expect.objectContaining({ acceptanceStatus: AcceptanceStatus.ACCEPTED, isFinal: true }),
+        { transaction: TRANSACTION },
+      );
+      expect(project.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: ProjectStatus.DELIVERED, actualEndDate: '2026-09-08' }),
+        { transaction: TRANSACTION },
+      );
+    });
+
+    it('ยอมรับแต่ไม่ใช่ครั้งสุดท้าย (ส่งเป็นเฟส) → โครงการไม่ถูกแตะ', async () => {
+      const delivery = deliveryRow();
+      deliveryModel.findByPk.mockResolvedValue(delivery);
+      const project = projectRow({ status: ProjectStatus.IN_PROGRESS });
+      projectsService.findOrFail.mockResolvedValue(project);
+
+      await service.updateAcceptance(5, {
+        acceptanceStatus: AcceptanceStatus.ACCEPTED,
+        isFinal: false,
+      });
+
+      expect(delivery.update).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: false }),
+        expect.anything(),
+      );
+      expect(project.update).not.toHaveBeenCalled();
+    });
+
+    it('ไม่ส่ง isFinal มา = คงค่าเดิม', async () => {
+      const delivery = deliveryRow({ acceptanceStatus: AcceptanceStatus.ACCEPTED, isFinal: true });
+      deliveryModel.findByPk.mockResolvedValue(delivery);
+
+      await service.updateAcceptance(5, { acceptanceStatus: AcceptanceStatus.ACCEPTED });
+
+      expect(delivery.update).toHaveBeenCalledWith(
+        expect.objectContaining({ isFinal: true }),
+        expect.anything(),
+      );
+    });
+
+    it.each([ProjectStatus.CLOSED, ProjectStatus.CANCELLED, ProjectStatus.DELIVERED])(
+      'โครงการที่เป็น %s แล้ว ไม่ถูกเปลี่ยนสถานะ',
+      async (status) => {
+        deliveryModel.findByPk.mockResolvedValue(deliveryRow());
+        const project = projectRow({ status });
+        projectsService.findOrFail.mockResolvedValue(project);
+
+        await service.updateAcceptance(5, {
+          acceptanceStatus: AcceptanceStatus.ACCEPTED,
+          isFinal: true,
+        });
+
+        expect(project.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('1 โครงการมีครั้งสุดท้ายที่ยอมรับแล้วได้ใบเดียว', async () => {
+      const delivery = deliveryRow();
+      deliveryModel.findByPk.mockResolvedValue(delivery);
+      deliveryModel.findOne.mockResolvedValue({ id: 3, title: 'ส่งงานรอบที่ 2', version: '1.0' });
+
+      await expect(
+        service.updateAcceptance(5, { acceptanceStatus: AcceptanceStatus.ACCEPTED, isFinal: true }),
+      ).rejects.toThrow(/ส่งมอบ #3/);
+      expect(delivery.update).not.toHaveBeenCalled();
+    });
+
+    it('ตรวจหาครั้งสุดท้ายซ้ำเฉพาะในโครงการเดียวกัน ไม่นับใบตัวเอง', async () => {
+      deliveryModel.findByPk.mockResolvedValue(deliveryRow({ projectId: 7 }));
+      projectsService.findOrFail.mockResolvedValue(projectRow({ id: 7 }));
+
+      let captured: { where: Record<string, unknown> } = { where: {} };
+      deliveryModel.findOne.mockImplementation((options: { where: Record<string, unknown> }) => {
+        captured = options;
+        return Promise.resolve(null);
+      });
+
+      await service.updateAcceptance(5, {
+        acceptanceStatus: AcceptanceStatus.ACCEPTED,
+        isFinal: true,
+      });
+
+      expect(captured.where).toEqual(
+        expect.objectContaining({
+          projectId: 7,
+          isFinal: true,
+          acceptanceStatus: AcceptanceStatus.ACCEPTED,
+          id: { [Op.ne]: 5 },
+        }),
+      );
+    });
+
+    it('ถอยการส่งมอบครั้งสุดท้าย (ยังไม่ออกประกัน) → โครงการที่เป็น DELIVERED กลับเป็น IN_PROGRESS', async () => {
+      deliveryModel.findByPk.mockResolvedValue(
+        deliveryRow({ acceptanceStatus: AcceptanceStatus.ACCEPTED, isFinal: true }),
+      );
+      const project = projectRow({ status: ProjectStatus.DELIVERED });
+      projectsService.findOrFail.mockResolvedValue(project);
+
+      await service.updateAcceptance(5, { acceptanceStatus: AcceptanceStatus.REJECTED });
+
+      expect(project.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: ProjectStatus.IN_PROGRESS, actualEndDate: null }),
+        { transaction: TRANSACTION },
       );
     });
 

@@ -5,7 +5,14 @@ import { Op, type Transaction, type WhereOptions } from 'sequelize';
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import { addMonths, toDateOnly, todayAsDateOnly } from '../../common/utils/date.util';
-import { Customer, Delivery, Project, Warranty, WarrantyStatus } from '../../models';
+import {
+  AcceptanceStatus,
+  Customer,
+  Delivery,
+  Project,
+  Warranty,
+  WarrantyStatus,
+} from '../../models';
 import {
   CreateWarrantyDto,
   QueryExpiringWarrantiesDto,
@@ -15,6 +22,14 @@ import {
 import { type WarrantyResponseDto, toWarrantyResponse } from './dto/warranty.response';
 
 const SORTABLE_FIELDS = new Set(['id', 'startDate', 'endDate', 'durationMonth', 'createdAt']);
+
+export const WARRANTY_REQUIRES_ACCEPTANCE_MESSAGE =
+  'ต้องให้ลูกค้ายอมรับการส่งมอบนี้ก่อน จึงออกประกันได้ — ' +
+  'ประกันเริ่มนับจากการส่งมอบครั้งที่ลูกค้ายอมรับแล้วเท่านั้น';
+
+export const WARRANTY_REQUIRES_FINAL_DELIVERY_MESSAGE =
+  'การส่งมอบนี้ไม่ใช่การส่งมอบครั้งสุดท้ายของโครงการ จึงออกประกันไม่ได้ — ' +
+  'ประกันออกหลังส่งมอบงานที่ครบแล้วเท่านั้น ถ้าเป็นครั้งสุดท้ายจริงให้ยืนยันที่การตรวจรับก่อน';
 
 /** สร้างใหม่ทุกครั้ง — Sequelize แก้ object ของ include ในที่ตอน normalize ห้ามใช้ร่วมกัน */
 function deliveryInclude() {
@@ -72,10 +87,22 @@ export class WarrantiesService {
    *
    * projectId และ startDate ไม่ได้มาจาก client ทั้งคู่ — ดึงจากใบส่งมอบที่ระบุใน path
    * นี่คือจุดที่ BR-06 ถูกบังคับจริง ถ้าย้ายไปให้ client ส่งมา กฎจะกลายเป็นแค่ข้อตกลง
+   *
+   * ออกได้เฉพาะ "การส่งมอบครั้งสุดท้าย" ที่ลูกค้ายอมรับแล้ว (ตกลง 11 ก.ย.) — ประกันเริ่มหลัง
+   * ส่งงานที่ครบและลูกค้ายอมรับ ใบที่รอตรวจรับ ถูกตีกลับ หรือเป็นแค่เฟสระหว่างทาง ออกไม่ได้
    */
   async create(deliveryId: number, dto: CreateWarrantyDto): Promise<WarrantyResponseDto> {
     const actorId = getCurrentUserId();
     const delivery = await this.findDeliveryOrFail(deliveryId);
+
+    // สองเงื่อนไขเดียวกับ canIssueWarranty() ที่หน้าจอใช้เปิดปุ่ม — แยกข้อความเพื่อบอกว่าขาดอะไร
+    if (delivery.acceptanceStatus !== AcceptanceStatus.ACCEPTED) {
+      throw new ConflictException(WARRANTY_REQUIRES_ACCEPTANCE_MESSAGE);
+    }
+
+    if (!delivery.isFinal) {
+      throw new ConflictException(WARRANTY_REQUIRES_FINAL_DELIVERY_MESSAGE);
+    }
 
     const startDate = toDateOnly(delivery.deliveredAt);
     const endDate = addMonths(startDate, dto.durationMonth);
@@ -312,7 +339,7 @@ export class WarrantiesService {
 
   private async findDeliveryOrFail(deliveryId: number): Promise<Delivery> {
     const delivery = await this.deliveryModel.findByPk(deliveryId, {
-      attributes: ['id', 'projectId', 'deliveredAt'],
+      attributes: ['id', 'projectId', 'deliveredAt', 'acceptanceStatus', 'isFinal'],
     });
 
     if (!delivery) {

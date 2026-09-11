@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsISO8601,
@@ -140,6 +141,17 @@ export class UpdateAcceptanceDto {
   @IsString({ message: 'หมายเหตุต้องเป็นข้อความ' })
   @Transform(trimToNull)
   note?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'เป็นการส่งมอบครั้งสุดท้ายของโครงการหรือไม่ (คำตอบของ "ส่งมอบครั้งสุดท้าย?" ตอนตรวจรับ) — ' +
+      'ไม่ส่ง = คงค่าเดิม ประกันออกได้จากใบที่เป็นครั้งสุดท้ายและยอมรับแล้วเท่านั้น ' +
+      'และเมื่อยอมรับครั้งสุดท้าย โครงการที่ยังเป็นร่าง/กำลังดำเนินการจะเป็น "ส่งมอบแล้ว" ให้เอง',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'isFinal ต้องเป็น true หรือ false' })
+  isFinal?: boolean;
 }
 
 /** `search` ที่สืบมาจาก PaginationDto ค้นจากหัวข้อและเลขที่ใบส่งมอบ */

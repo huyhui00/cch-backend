@@ -80,14 +80,19 @@ export class WarrantiesController {
       'startDate เท่ากับวันส่งมอบเสมอ ส่งมาเองไม่ได้ และ endDate = startDate + durationMonth ' +
       'โดยหนีบวันสิ้นเดือนให้ (31 ม.ค. + 1 เดือน = 28 ก.พ. ไม่ใช่ 3 มี.ค.) ' +
       'ออกได้หลายใบต่อการส่งมอบหนึ่งครั้งถ้าระยะต่างกัน เช่นฮาร์ดแวร์ 12 เดือน ซอฟต์แวร์ 6 เดือน ' +
-      'ระบุขอบเขตที่ครอบคลุมไว้ที่ scopeNote เพื่อใช้ตัดสินตอนเปิด ticket (BR-07)',
+      'ระบุขอบเขตที่ครอบคลุมไว้ที่ scopeNote เพื่อใช้ตัดสินตอนเปิด ticket (BR-07) ' +
+      '**ออกได้เฉพาะการส่งมอบที่ลูกค้ายอมรับแล้ว (acceptanceStatus = ACCEPTED)** ' +
+      'ประกันคุ้มครองทั้งโครงการ การส่งมอบเป็นแค่ตัวกำหนดวันเริ่ม',
   })
   @ApiParam({ name: 'deliveryId', description: 'id ของใบส่งมอบ', example: 5 })
   @ApiResponse({ status: 201, description: 'ออกประกันเรียบร้อย', type: WarrantyResponseDto })
   @ApiResponse({ status: 400, description: 'ข้อมูลไม่ถูกต้อง' })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   @ApiResponse({ status: 404, description: 'ไม่พบข้อมูลการส่งมอบ' })
-  @ApiResponse({ status: 409, description: 'การส่งมอบนี้มีประกันระยะเท่ากันอยู่แล้ว' })
+  @ApiResponse({
+    status: 409,
+    description: 'การส่งมอบนี้ยังไม่ได้รับการยอมรับจากลูกค้า หรือมีประกันระยะเท่ากันอยู่แล้ว',
+  })
   async create(
     @Param('deliveryId', ParseIntPipe) deliveryId: number,
     @Body() dto: CreateWarrantyDto,

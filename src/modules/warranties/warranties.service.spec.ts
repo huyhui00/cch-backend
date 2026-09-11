@@ -6,8 +6,12 @@ import { Op } from 'sequelize';
 
 import { runWithRequestContext } from '../../common/context/request-context';
 import { todayAsDateOnly, toDateOnly } from '../../common/utils/date.util';
-import { Delivery, Project, Warranty, WarrantyStatus } from '../../models';
-import { WarrantiesService } from './warranties.service';
+import { AcceptanceStatus, Delivery, Project, Warranty, WarrantyStatus } from '../../models';
+import {
+  WARRANTY_REQUIRES_ACCEPTANCE_MESSAGE,
+  WARRANTY_REQUIRES_FINAL_DELIVERY_MESSAGE,
+  WarrantiesService,
+} from './warranties.service';
 import type { QueryExpiringWarrantiesDto, QueryWarrantiesDto } from './dto/warranty.dto';
 import { isWarrantyCurrentlyActive } from './dto/warranty.response';
 
@@ -64,8 +68,16 @@ function warrantyRow(overrides: Partial<WarrantyRow> = {}): WarrantyRow {
   return { ...baseWarrantyRow(), ...overrides };
 }
 
-function deliveryRow(deliveredAt: Date, projectId = 1) {
-  return { id: 5, projectId, deliveredAt };
+/**
+ * ค่าเริ่มต้นเป็น "ยอมรับแล้ว + ครั้งสุดท้าย" เพราะออกประกันได้เฉพาะใบแบบนี้ (ตกลง 11 ก.ย.)
+ */
+function deliveryRow(
+  deliveredAt: Date,
+  projectId = 1,
+  acceptanceStatus: AcceptanceStatus = AcceptanceStatus.ACCEPTED,
+  isFinal = true,
+) {
+  return { id: 5, projectId, deliveredAt, acceptanceStatus, isFinal };
 }
 
 function queryDto(overrides: Record<string, unknown> = {}): QueryWarrantiesDto {
@@ -168,6 +180,47 @@ describe('WarrantiesService', () => {
       await service.create(5, { durationMonth: 1 });
 
       expect(captured.endDate).toBe('2026-02-28');
+    });
+
+    it.each([AcceptanceStatus.PENDING, AcceptanceStatus.REJECTED])(
+      'ออกประกันจากใบส่งมอบที่ยังไม่ได้รับการยอมรับ (%s) ไม่ได้',
+      async (acceptanceStatus) => {
+        // ประกันเริ่มหลังส่งงานที่ครบและลูกค้ายอมรับแล้วเท่านั้น (ตกลง 11 ก.ย.)
+        deliveryModel.findByPk.mockResolvedValue(
+          deliveryRow(new Date('2026-09-08T10:30:00Z'), 1, acceptanceStatus),
+        );
+
+        await expect(service.create(5, { durationMonth: 6 })).rejects.toThrow(
+          new ConflictException(WARRANTY_REQUIRES_ACCEPTANCE_MESSAGE),
+        );
+        expect(warrantyModel.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('ออกประกันจากการส่งมอบที่ยอมรับแล้วแต่ไม่ใช่ครั้งสุดท้าย (ส่งเป็นเฟส) ไม่ได้', async () => {
+      deliveryModel.findByPk.mockResolvedValue(
+        deliveryRow(new Date('2026-09-08T10:30:00Z'), 1, AcceptanceStatus.ACCEPTED, false),
+      );
+
+      await expect(service.create(5, { durationMonth: 6 })).rejects.toThrow(
+        new ConflictException(WARRANTY_REQUIRES_FINAL_DELIVERY_MESSAGE),
+      );
+      expect(warrantyModel.create).not.toHaveBeenCalled();
+    });
+
+    it('โหลดสถานะการตรวจรับและเครื่องหมายครั้งสุดท้ายมาด้วยตอนหาใบส่งมอบ', async () => {
+      // ถ้า attributes ไม่มีสองค่านี้ ค่าจะเป็น undefined แล้วทุกใบจะถูกปฏิเสธ
+      let captured: { attributes: string[] } = { attributes: [] };
+      deliveryModel.findByPk.mockImplementation(
+        (_id: number, options: { attributes: string[] }) => {
+          captured = options;
+          return Promise.resolve(deliveryRow(new Date('2026-09-08T10:30:00Z')));
+        },
+      );
+
+      await service.create(5, { durationMonth: 6 });
+
+      expect(captured.attributes).toEqual(expect.arrayContaining(['acceptanceStatus', 'isFinal']));
     });
 
     it('ออกประกันจากใบส่งมอบที่ไม่มีอยู่ไม่ได้', async () => {

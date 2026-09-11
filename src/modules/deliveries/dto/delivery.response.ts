@@ -91,6 +91,20 @@ export class DeliveryResponseDto {
   @ApiProperty({ type: ContactSummaryDto, nullable: true })
   acceptedByContact: ContactSummaryDto | null;
 
+  @ApiProperty({
+    description: 'การส่งมอบครั้งสุดท้ายของโครงการ — คนยืนยันตอนตรวจรับ',
+    example: true,
+  })
+  isFinal: boolean;
+
+  @ApiProperty({
+    description:
+      'ออกประกันจากใบนี้ได้ไหม = ยอมรับแล้ว และเป็นการส่งมอบครั้งสุดท้าย — ' +
+      'หน้าจอใช้ค่านี้เปิด/ปิดปุ่มออกประกัน ห้ามคำนวณเอง',
+    example: true,
+  })
+  canIssueWarranty: boolean;
+
   @ApiProperty({ nullable: true, example: 3 })
   deliveredByUserId: number | null;
 
@@ -138,6 +152,16 @@ export function toAttachmentSummary(attachment: Attachment): AttachmentSummaryDt
   };
 }
 
+/**
+ * ออกประกันจากใบส่งมอบนี้ได้ไหม (ตกลง 11 ก.ย.) — ต้องเป็นครั้งสุดท้ายและลูกค้ายอมรับแล้ว
+ * ใช้ตัวเดียวกันทั้งตอนออกประกันจริงและ flag ที่คืนให้หน้าจอ สูตรจะได้ไม่หลุดจากกัน
+ */
+export function canIssueWarranty(
+  delivery: Pick<Delivery, 'acceptanceStatus' | 'isFinal'>,
+): boolean {
+  return delivery.acceptanceStatus === AcceptanceStatus.ACCEPTED && delivery.isFinal;
+}
+
 export function toDeliveryResponse(
   delivery: Delivery,
   extras: {
@@ -168,6 +192,8 @@ export function toDeliveryResponse(
     acceptedByContact: delivery.acceptedByContact
       ? { id: delivery.acceptedByContact.id, name: delivery.acceptedByContact.name }
       : null,
+    isFinal: delivery.isFinal,
+    canIssueWarranty: canIssueWarranty(delivery),
     deliveredByUserId: delivery.deliveredByUserId,
     deliveredByUser: toUserSummary(delivery.deliveredByUser),
     note: delivery.note,

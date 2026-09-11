@@ -23,6 +23,7 @@ export interface DeliveryCreationAttributes {
   acceptanceStatus?: AcceptanceStatus;
   acceptedAt?: Date | null;
   acceptedByContactId?: number | null;
+  isFinal?: boolean;
   deliveredByUserId?: number | null;
   note?: string | null;
   createdBy?: number | null;
@@ -69,6 +70,14 @@ export class Delivery extends AuditedModel<Delivery, DeliveryCreationAttributes>
   @ForeignKey(() => Contact)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'accepted_by_contact_id' })
   acceptedByContactId: number | null;
+
+  /**
+   * การส่งมอบครั้งสุดท้ายของโครงการหรือไม่ — คนยืนยันตอนตรวจรับ (ตกลง 11 ก.ย.)
+   * ประกันออกได้จากใบที่เป็นครั้งสุดท้ายและลูกค้ายอมรับแล้วเท่านั้น
+   * การส่งมอบระหว่างทาง (เฟส / เวอร์ชันทดลอง) เป็น false
+   */
+  @Column({ type: DataType.BOOLEAN, allowNull: false, defaultValue: false, field: 'is_final' })
+  isFinal: boolean;
 
   /** พนักงานผู้ส่งมอบ — คู่กับ acceptedByContactId ที่เป็นผู้รับมอบฝั่งลูกค้า */
   @ForeignKey(() => User)

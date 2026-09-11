@@ -10,7 +10,7 @@ import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
-import { todayAsDateOnly } from '../../common/utils/date.util';
+import { toDateOnly, todayAsDateOnly } from '../../common/utils/date.util';
 import {
   AcceptanceStatus,
   Attachment,
@@ -18,8 +18,10 @@ import {
   Contact,
   Delivery,
   Project,
+  ProjectStatus,
   User,
   Warranty,
+  WarrantyStatus,
 } from '../../models';
 import { ProjectsService } from '../projects/projects.service';
 import { WarrantiesService } from '../warranties/warranties.service';
@@ -29,7 +31,11 @@ import {
   UpdateAcceptanceDto,
   UpdateDeliveryDto,
 } from './dto/delivery.dto';
-import { type DeliveryResponseDto, toDeliveryResponse } from './dto/delivery.response';
+import {
+  canIssueWarranty,
+  type DeliveryResponseDto,
+  toDeliveryResponse,
+} from './dto/delivery.response';
 
 /**
  * ref_type ของไฟล์แนบที่เป็นของใบส่งมอบ
@@ -38,6 +44,15 @@ import { type DeliveryResponseDto, toDeliveryResponse } from './dto/delivery.res
  * ไม่ใช่ไปเงียบ ๆ แล้วคืนไฟล์แนบเป็นรายการว่างตลอดกาลโดยไม่มีใครรู้
  */
 const ATTACHMENT_REF_TYPE: AttachmentRefType = 'DELIVERY';
+
+/**
+ * สถานะโครงการที่การยอมรับการส่งมอบครั้งสุดท้ายจะพาไปเป็น DELIVERED ให้เอง
+ * CLOSED / CANCELLED ไม่แตะ เพราะเป็นการตัดสินใจของคนที่เกิดทีหลังแล้ว
+ */
+const OPEN_PROJECT_STATUSES: readonly ProjectStatus[] = [
+  ProjectStatus.DRAFT,
+  ProjectStatus.IN_PROGRESS,
+];
 
 /**
  * ฟิลด์ที่ยอมให้เรียงลำดับได้
@@ -286,23 +301,79 @@ export class DeliveriesService {
    * ไม่บังคับลำดับการเปลี่ยนสถานะ ด้วยเหตุผลเดียวกับสถานะงานใน Phase 5 —
    * ของจริงถอยกลับได้ เช่นตรวจรับไปแล้วเพิ่งมาพบว่าใช้งานไม่ได้จริง
    * `acceptedAt` ถูกจัดการให้สอดคล้องกับสถานะเสมอ ไม่ปล่อยให้ค้าง
+   *
+   * "การส่งมอบครั้งสุดท้าย" (`isFinal`) ยืนยันที่นี่ด้วย (ตกลง 11 ก.ย.) — ใบที่ยอมรับแล้ว
+   * และเป็นครั้งสุดท้ายคือใบเดียวที่ออกประกันได้ และเป็นจุดที่โครงการกลายเป็น DELIVERED
+   *
+   * กติกาที่ตามมา:
+   * - ใบที่ออกประกันไปแล้ว ถอยออกจาก "ยอมรับ + ครั้งสุดท้าย" ไม่ได้จนกว่าประกันทุกใบจะถูก VOID
+   *   ไม่งั้นจะเหลือประกันที่ยังคุ้มครองอยู่บนงานที่ลูกค้าไม่ได้รับ แล้วการเปิดใบแจ้งปัญหา
+   *   จะเสนอ "ในประกัน" ผิด ๆ
+   * - 1 โครงการมีครั้งสุดท้ายที่ยอมรับแล้วได้ใบเดียว ไม่งั้นประกันมีวันเริ่มหลายจุด
+   * - เข้าสู่ "ยอมรับ + ครั้งสุดท้าย" → โครงการที่ยังเป็น DRAFT / IN_PROGRESS เป็น DELIVERED
+   *   ออกจากสถานะนั้น → โครงการที่เป็น DELIVERED กลับเป็น IN_PROGRESS
+   *   ทำในทรานแซกชันเดียวกับการตรวจรับ สถานะโครงการจะได้ไม่ค้างผิดเมื่อขั้นใดพัง
    */
   async updateAcceptance(id: number, dto: UpdateAcceptanceDto): Promise<DeliveryResponseDto> {
     const actorId = getCurrentUserId();
     const delivery = await this.findOrFail(id);
+    const project = await this.projectsService.findOrFail(delivery.projectId);
+
+    // ไม่ส่ง isFinal มา = คงค่าเดิม ตรวจรับซ้ำโดยไม่ตอบคำถามเรื่องครั้งสุดท้ายต้องไม่ล้างค่า
+    const nextIsFinal = dto.isFinal ?? delivery.isFinal;
+    const wasFinalAccepted = canIssueWarranty(delivery);
+    const willBeFinalAccepted = canIssueWarranty({
+      acceptanceStatus: dto.acceptanceStatus,
+      isFinal: nextIsFinal,
+    });
+
+    if (wasFinalAccepted && !willBeFinalAccepted) {
+      await this.assertNoActiveWarranty(id);
+    }
+
+    if (willBeFinalAccepted && !wasFinalAccepted) {
+      await this.assertNoOtherFinalAccepted(delivery);
+    }
 
     if (dto.acceptedByContactId) {
-      const project = await this.projectsService.findOrFail(delivery.projectId);
       await this.assertContactBelongsToCustomer(dto.acceptedByContactId, project.customerId);
     }
 
-    await delivery.update({
-      ...this.acceptancePatch(delivery, dto.acceptanceStatus),
-      ...(dto.acceptedByContactId !== undefined
-        ? { acceptedByContactId: dto.acceptedByContactId ?? null }
-        : {}),
-      ...(dto.note !== undefined ? { note: dto.note ?? null } : {}),
-      updatedBy: actorId,
+    await this.sequelize.transaction(async (transaction) => {
+      await delivery.update(
+        {
+          ...this.acceptancePatch(delivery, dto.acceptanceStatus),
+          isFinal: nextIsFinal,
+          ...(dto.acceptedByContactId !== undefined
+            ? { acceptedByContactId: dto.acceptedByContactId ?? null }
+            : {}),
+          ...(dto.note !== undefined ? { note: dto.note ?? null } : {}),
+          updatedBy: actorId,
+        },
+        { transaction },
+      );
+
+      if (
+        willBeFinalAccepted &&
+        !wasFinalAccepted &&
+        OPEN_PROJECT_STATUSES.includes(project.status)
+      ) {
+        await project.update(
+          {
+            status: ProjectStatus.DELIVERED,
+            actualEndDate: toDateOnly(delivery.deliveredAt),
+            updatedBy: actorId,
+          },
+          { transaction },
+        );
+      }
+
+      if (wasFinalAccepted && !willBeFinalAccepted && project.status === ProjectStatus.DELIVERED) {
+        await project.update(
+          { status: ProjectStatus.IN_PROGRESS, actualEndDate: null, updatedBy: actorId },
+          { transaction },
+        );
+      }
     });
 
     return this.findOne(id);
@@ -321,6 +392,40 @@ export class DeliveriesService {
   }
 
   // ---- helpers -------------------------------------------------------------
+
+  private async assertNoActiveWarranty(deliveryId: number): Promise<void> {
+    const activeWarranties = await this.warrantyModel.count({
+      where: { deliveryId, status: { [Op.ne]: WarrantyStatus.VOID } },
+    });
+
+    if (activeWarranties > 0) {
+      throw new ConflictException(
+        `การส่งมอบนี้ออกประกันไปแล้ว ${activeWarranties} ใบ ต้องยกเลิกประกัน (VOID) ก่อน ` +
+          'จึงเปลี่ยนสถานะการตรวจรับหรือเครื่องหมายครั้งสุดท้ายได้',
+      );
+    }
+  }
+
+  /** 1 โครงการมีการส่งมอบครั้งสุดท้ายที่ยอมรับแล้วได้ใบเดียว — ประกันจะได้มีวันเริ่มจุดเดียว */
+  private async assertNoOtherFinalAccepted(delivery: Delivery): Promise<void> {
+    const other = await this.deliveryModel.findOne({
+      where: {
+        projectId: delivery.projectId,
+        isFinal: true,
+        acceptanceStatus: AcceptanceStatus.ACCEPTED,
+        id: { [Op.ne]: delivery.id },
+      },
+      attributes: ['id', 'title', 'version'],
+    });
+
+    if (other) {
+      const label = other.version ? `${other.title} (${other.version})` : other.title;
+      throw new ConflictException(
+        `โครงการนี้มีการส่งมอบครั้งสุดท้ายที่ลูกค้ายอมรับแล้ว คือ "${label}" (ส่งมอบ #${other.id}) ` +
+          'ถ้าจะเปลี่ยนเป็นใบนี้ ให้เอาเครื่องหมายครั้งสุดท้ายออกจากใบเดิมก่อน',
+      );
+    }
+  }
 
   /** ตั้งหรือล้าง acceptedAt ให้สอดคล้องกับสถานะเสมอ */
   private acceptancePatch(
