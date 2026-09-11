@@ -289,6 +289,7 @@ describe('CustomersService', () => {
 
       expect(customerModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ status: CustomerStatus.ACTIVE }),
+        expect.anything(),
       );
     });
 
@@ -300,6 +301,7 @@ describe('CustomersService', () => {
 
       expect(customerModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ status: CustomerStatus.INACTIVE }),
+        expect.anything(),
       );
     });
 

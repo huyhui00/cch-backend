@@ -10,9 +10,14 @@
  */
 require('dotenv').config();
 
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const mysql = require('mysql2/promise');
+
+/** ต้องตรงกับ LOCAL_STORAGE_DIR ที่ test/setup-env.js ตั้งไว้ */
+const E2E_UPLOAD_DIR = path.join(os.tmpdir(), 'cch-backend-e2e-uploads');
 
 /**
  * เรียกไฟล์ entry ของ sequelize-cli ด้วย node ตรง ๆ ไม่ผ่าน npx
@@ -57,4 +62,8 @@ module.exports = async function globalSetup() {
 
   run(['db:migrate']);
   run(['db:seed:all']);
+
+  // ไฟล์ที่ e2e อัปโหลดรอบก่อน (documents.e2e-spec) ไม่มีใครอ่านอีกแล้ว ล้างทิ้งก่อนเริ่ม
+  // ไม่งั้นโฟลเดอร์ชั่วคราวจะโตขึ้นทุกครั้งที่รัน — ฐานทดสอบไม่ถูกล้าง แต่แถวเก่าไม่ได้ถูกดาวน์โหลดซ้ำ
+  fs.rmSync(E2E_UPLOAD_DIR, { recursive: true, force: true });
 };

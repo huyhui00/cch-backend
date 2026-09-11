@@ -13,12 +13,32 @@ export enum DocumentType {
   OTHER = 'OTHER',
 }
 
+export interface DocumentCreationAttributes {
+  customerId?: number | null;
+  projectId?: number | null;
+  docType: DocumentType;
+  docNo?: string | null;
+  title: string;
+  issuedDate?: string | null;
+  fileUrl?: string | null;
+  fileName?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  note?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 /**
  * BR-12 — สัญญาเซ็นมือต่อหน้าแล้วสแกนเข้าระบบ
  * ไม่มี e-signature มีแต่ไฟล์ที่ upload ขึ้น Cloudflare R2
+ *
+ * เอกสารโครงการ (ประชุม 11 ก.ย. — B-5) ใช้ตารางนี้ พี่เลี้ยงไม่ต้องการแยกประเภท
+ * ("ตั้งชื่อเอาเอง") service จึงบันทึก `doc_type = OTHER` ให้เสมอ คอลัมน์ยังอยู่เผื่อวันหนึ่งต้องใช้
+ * **ห้ามเพิ่มคอลัมน์ยอดเงินหรือสถานะชำระเงิน** แม้ไฟล์จะเป็นใบแจ้งหนี้/ใบเสร็จ (กฎ M10)
  */
 @Table({ tableName: 'documents', underscored: true, timestamps: true, paranoid: true })
-export class Document extends AuditedModel<Document> {
+export class Document extends AuditedModel<Document, DocumentCreationAttributes> {
   @ForeignKey(() => Customer)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'customer_id' })
   customerId: number | null;

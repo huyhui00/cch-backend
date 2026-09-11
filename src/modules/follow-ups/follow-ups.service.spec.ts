@@ -4,7 +4,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Op } from 'sequelize';
 
-import { Customer, FollowUp, FollowUpStatus, User, UserStatus } from '../../models';
+import { Customer, FollowUp, FollowUpStatus, Project, User, UserStatus } from '../../models';
 import { todayAsDateOnly } from '../../common/utils/date.util';
 import { FollowUpsService } from './follow-ups.service';
 import { isFollowUpOverdue } from './dto/follow-up.response';
@@ -17,6 +17,7 @@ import { isFollowUpOverdue } from './dto/follow-up.response';
  *      ตอนคิดธงบนแต่ละแถว ไม่งั้นรายการที่กรองมากับสิ่งที่แสดงจะขัดกันเอง
  *   2. completed_at ระบบใส่ให้เอง ถอยออกจาก DONE แล้วล้าง เป็น DONE ซ้ำไม่ทับเวลาเดิม
  *   3. ปิดงานติดตาม **ไม่ไปแตะ** customers.last_contacted_at
+ *   4. ผูกโปรเจคแล้ว customer_id มาจากโปรเจคเสมอ และย้ายข้ามลูกค้าผ่านการเปลี่ยนโปรเจคไม่ได้
  */
 
 interface ModelMock {
@@ -61,23 +62,27 @@ function followUpRow(overrides: Record<string, unknown> = {}): FollowUp {
 describe('FollowUpsService', () => {
   let followUpModel: ModelMock;
   let customerModel: ModelMock;
+  let projectModel: ModelMock;
   let userModel: ModelMock;
   let service: FollowUpsService;
 
   beforeEach(() => {
     followUpModel = modelMock();
     customerModel = modelMock();
+    projectModel = modelMock();
     userModel = modelMock();
 
     followUpModel.findByPk.mockResolvedValue(followUpRow());
     followUpModel.create.mockResolvedValue(followUpRow());
     followUpModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
     customerModel.findByPk.mockResolvedValue({ id: 1 });
+    projectModel.findByPk.mockResolvedValue({ id: 3, customerId: 1 });
     userModel.findByPk.mockResolvedValue({ id: 4, status: UserStatus.ACTIVE });
 
     service = new FollowUpsService(
       followUpModel as unknown as typeof FollowUp,
       customerModel as unknown as typeof Customer,
+      projectModel as unknown as typeof Project,
       userModel as unknown as typeof User,
     );
   });
@@ -288,6 +293,119 @@ describe('FollowUpsService', () => {
       followUpModel.findByPk.mockResolvedValue(null);
 
       await expect(service.findOne(99)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // ผูกกับโปรเจค (ประชุม 11 ก.ย. — B-14)
+  // -------------------------------------------------------------------------
+  describe('ผูกกับโปรเจค', () => {
+    function captureCreate(): () => Record<string, unknown> {
+      let captured: Record<string, unknown> = {};
+      followUpModel.create.mockImplementation((values: Record<string, unknown>) => {
+        captured = values;
+        return Promise.resolve(followUpRow());
+      });
+      return () => captured;
+    }
+
+    it('ส่งแค่ projectId → customerId ถูกคัดลอกจากเจ้าของโปรเจค', async () => {
+      projectModel.findByPk.mockResolvedValue({ id: 3, customerId: 7 });
+      const captured = captureCreate();
+
+      await service.create({ projectId: 3, title: 'ตามเรื่องส่งมอบ', dueDate: '2026-09-20' });
+
+      expect(captured()).toEqual(expect.objectContaining({ customerId: 7, projectId: 3 }));
+    });
+
+    it('ส่ง customerId ที่ไม่ใช่เจ้าของโปรเจค → 400 ไม่เดาว่าอันไหนถูก', async () => {
+      projectModel.findByPk.mockResolvedValue({ id: 3, customerId: 7 });
+
+      await expect(
+        service.create({ customerId: 1, projectId: 3, title: 'x', dueDate: '2026-09-20' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(followUpModel.create).not.toHaveBeenCalled();
+    });
+
+    it('ส่ง customerId ตรงกับเจ้าของโปรเจค → สร้างได้', async () => {
+      projectModel.findByPk.mockResolvedValue({ id: 3, customerId: 7 });
+      const captured = captureCreate();
+
+      await service.create({ customerId: 7, projectId: 3, title: 'x', dueDate: '2026-09-20' });
+
+      expect(captured()).toEqual(expect.objectContaining({ customerId: 7, projectId: 3 }));
+    });
+
+    it('ไม่ส่งทั้งโปรเจคและลูกค้า → 400', async () => {
+      await expect(service.create({ title: 'x', dueDate: '2026-09-20' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('ไม่พบโปรเจค → 404', async () => {
+      projectModel.findByPk.mockResolvedValue(null);
+
+      await expect(
+        service.create({ projectId: 99, title: 'x', dueDate: '2026-09-20' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('ไม่มีโปรเจค (งานแบบเดิม) → projectId เป็น null', async () => {
+      const captured = captureCreate();
+
+      await service.create({ customerId: 1, title: 'x', dueDate: '2026-09-20' });
+
+      expect(captured()).toEqual(expect.objectContaining({ customerId: 1, projectId: null }));
+      expect(projectModel.findByPk).not.toHaveBeenCalled();
+    });
+
+    it('แก้ไข: เปลี่ยนไปโปรเจคของลูกค้ารายอื่นไม่ได้ — กติกา "ย้ายลูกค้าไม่ได้" ยังอยู่', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      followUpModel.findByPk.mockResolvedValue(followUpRow({ customerId: 1, update }));
+      projectModel.findByPk.mockResolvedValue({ id: 8, customerId: 2 });
+
+      await expect(service.update(12, { projectId: 8 })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('แก้ไข: เปลี่ยนไปโปรเจคอื่นของลูกค้ารายเดิมได้', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      followUpModel.findByPk.mockResolvedValue(followUpRow({ customerId: 1, update }));
+      projectModel.findByPk.mockResolvedValue({ id: 8, customerId: 1 });
+
+      await service.update(12, { projectId: 8 });
+
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ projectId: 8 }));
+    });
+
+    it('แก้ไข: ส่ง null เพื่อถอดโปรเจคออกได้ โดยไม่ต้องไปหาโปรเจค', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      followUpModel.findByPk.mockResolvedValue(followUpRow({ projectId: 3, update }));
+
+      await service.update(12, { projectId: null });
+
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }));
+      expect(projectModel.findByPk).not.toHaveBeenCalled();
+    });
+
+    it('?projectId= กรองเฉพาะงานของโปรเจคนั้น', async () => {
+      let captured: Record<string, unknown> = {};
+      followUpModel.findAndCountAll.mockImplementation((options: { where: object }) => {
+        captured = options.where as Record<string, unknown>;
+        return Promise.resolve({ rows: [], count: 0 });
+      });
+
+      await service.findAll({
+        page: 1,
+        limit: 20,
+        sortOrder: 'ASC' as never,
+        offset: 0,
+        projectId: 3,
+      });
+
+      expect(captured.projectId).toBe(3);
     });
   });
 

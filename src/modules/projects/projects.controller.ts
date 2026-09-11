@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { type PaginatedResult } from '../../common/dto/pagination.dto';
+import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
 import { ProjectResponseDto } from './dto/project.response';
 import { ProjectsService } from './projects.service';
@@ -51,22 +53,33 @@ export class ProjectsController {
   @Post()
   @RequirePermission('project.create')
   @ApiOperation({
-    summary: 'สร้างโครงการ',
+    summary: 'สร้างโครงการ — กับลูกค้าเดิม หรือพร้อมลูกค้าใหม่ในครั้งเดียว',
     description:
-      'ระบุ contractValue และ functionCount ไว้ใช้คิดราคา MA ภายหลัง — ' +
-      'เนื้อหาแผน MA เหมือนกันทุกโครงการ แต่ราคาต่างกันตามขนาดงาน (BR-05)',
+      'ส่ง customerId (ลูกค้าเดิม) หรือ newCustomer (ลูกค้าใหม่ ฟิลด์เหมือน POST /api/customers) ' +
+      'อย่างใดอย่างหนึ่ง — ลูกค้าใหม่ถูกบันทึกพร้อมโครงการในทรานแซกชันเดียว และต้องมีสิทธิ์ ' +
+      'customer.create เพิ่มจาก project.create (ประชุม 11 ก.ย. "ทำงานครั้งเดียวจบ") ' +
+      'ระบุ contractValue และ functionCount ไว้ใช้คิดราคา MA ภายหลัง (BR-05)',
   })
   @ApiResponse({ status: 201, description: 'สร้างโครงการเรียบร้อย', type: ProjectResponseDto })
   @ApiResponse({
     status: 400,
-    description: 'ข้อมูลไม่ถูกต้อง หรือระบุลูกค้า/ผู้จัดการที่ใช้ไม่ได้',
+    description:
+      'ข้อมูลไม่ถูกต้อง ไม่ได้ระบุลูกค้า ส่งมาทั้ง customerId และ newCustomer ' +
+      'หรือระบุลูกค้า/ผู้จัดการที่ใช้ไม่ได้',
   })
-  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
-  @ApiResponse({ status: 409, description: 'รหัสโครงการนี้ถูกใช้ไปแล้ว' })
+  @ApiResponse({
+    status: 403,
+    description: 'ไม่มีสิทธิ์สร้างโครงการ หรือส่ง newCustomer มาแต่ไม่มีสิทธิ์เพิ่มลูกค้า',
+  })
+  @ApiResponse({ status: 409, description: 'รหัสโครงการหรือรหัสลูกค้าถูกใช้ไปแล้ว' })
   async create(
     @Body() dto: CreateProjectDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ data: ProjectResponseDto; message: string }> {
-    return { data: await this.projectsService.create(dto), message: 'สร้างโครงการเรียบร้อย' };
+    return {
+      data: await this.projectsService.create(dto, user),
+      message: dto.newCustomer ? 'สร้างโครงการพร้อมลูกค้าใหม่เรียบร้อย' : 'สร้างโครงการเรียบร้อย',
+    };
   }
 
   @Put(':id')

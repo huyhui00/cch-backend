@@ -110,7 +110,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const payload = exception.getResponse();
 
     if (typeof payload === 'string') {
-      return this.isGenericEnglish(payload) ? fallback : payload;
+      return this.translate(payload, fallback);
     }
 
     if (payload !== null && typeof payload === 'object') {
@@ -122,11 +122,22 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
 
       if (typeof raw === 'string') {
-        return this.isGenericEnglish(raw) ? fallback : raw;
+        return this.translate(raw, fallback);
       }
     }
 
     return fallback;
+  }
+
+  /** ข้อความอังกฤษที่รู้จักแปลเป็นไทย ข้อความทั่วไปของ Nest ใช้ fallback ตาม status */
+  private translate(message: string, fallback: string): string {
+    const known = KNOWN_ENGLISH_MESSAGES[message.toLowerCase()];
+
+    if (known) {
+      return known;
+    }
+
+    return this.isGenericEnglish(message) ? fallback : message;
   }
 
   private resolveSequelize(exception: SequelizeBaseError): {
@@ -170,6 +181,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       : false;
   }
 }
+
+/**
+ * ข้อความอังกฤษเฉพาะเจาะจงที่ไลบรารีโยนมา แปลเป็นไทยที่บอกผู้ใช้ได้ว่าต้องแก้อะไร
+ * ตอนนี้มีแต่ของ multer (อัปโหลดไฟล์ — Phase 9) ที่ FileInterceptor ห่อเป็น HttpException ให้
+ */
+const KNOWN_ENGLISH_MESSAGES: Record<string, string> = {
+  'file too large': 'ไฟล์มีขนาดใหญ่เกินกำหนด',
+  'too many files': 'แนบไฟล์ได้ครั้งละ 1 ไฟล์',
+  'unexpected field': 'ชื่อฟิลด์ของไฟล์ไม่ถูกต้อง — ต้องแนบไฟล์ในฟิลด์ชื่อ file',
+  'multipart: boundary not found':
+    'รูปแบบการอัปโหลดไฟล์ไม่ถูกต้อง — ต้องส่งเป็น multipart/form-data',
+};
 
 const GENERIC_NEST_MESSAGES = new Set([
   'bad request',

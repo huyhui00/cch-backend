@@ -1,0 +1,80 @@
+import { ApiProperty } from '@nestjs/swagger';
+
+import { Document } from '../../../models';
+
+export class DocumentUploaderDto {
+  @ApiProperty({ example: 3 })
+  id: number;
+
+  @ApiProperty({ example: 'สมชาย ใจดี' })
+  fullName: string;
+}
+
+/**
+ * เอกสารของโครงการ
+ *
+ * **ไม่คืน object key ของที่เก็บไฟล์** — ให้ดาวน์โหลดผ่าน `downloadUrl` ซึ่งตรวจสิทธิ์ทุกครั้ง
+ * ถ้าคืน key ไป frontend อาจเอาไปต่อเป็นลิงก์ตรงเข้า R2 ซึ่งข้ามการตรวจสิทธิ์ทั้งหมด
+ */
+export class DocumentResponseDto {
+  @ApiProperty({ example: 12 })
+  id: number;
+
+  @ApiProperty({ example: 3 })
+  projectId: number;
+
+  @ApiProperty({ description: 'ลูกค้าเจ้าของโครงการ — คัดลอกจากโครงการตอนอัปโหลด', example: 1 })
+  customerId: number | null;
+
+  @ApiProperty({ example: 'ใบเสนอราคา งวดที่ 1' })
+  title: string;
+
+  @ApiProperty({ nullable: true, description: 'รายละเอียดเอกสาร' })
+  note: string | null;
+
+  @ApiProperty({ nullable: true, example: 'ใบเสนอราคา-v2.pdf' })
+  fileName: string | null;
+
+  @ApiProperty({ nullable: true, description: 'ขนาดไฟล์ (ไบต์)', example: 248311 })
+  fileSize: number | null;
+
+  @ApiProperty({ nullable: true, example: 'application/pdf' })
+  mimeType: string | null;
+
+  @ApiProperty({
+    description:
+      'path สำหรับดาวน์โหลด (ต่อท้าย base URL ของ API) — ต้องแนบ Authorization header ' +
+      'เหมือนเส้นอื่น จึงเปิดด้วย <a href> ตรง ๆ ไม่ได้ ให้ดึงเป็น blob แล้วค่อยบันทึก/เปิด',
+    example: '/api/documents/12/download',
+  })
+  downloadUrl: string;
+
+  @ApiProperty({ type: DocumentUploaderDto, nullable: true, description: 'ผู้อัปโหลด' })
+  uploadedBy: DocumentUploaderDto | null;
+
+  @ApiProperty({ description: 'เวลาที่อัปโหลด' })
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+
+export function toDocumentResponse(
+  document: Document,
+  uploaders: ReadonlyMap<number, DocumentUploaderDto>,
+): DocumentResponseDto {
+  return {
+    id: document.id,
+    projectId: document.projectId as number,
+    customerId: document.customerId,
+    title: document.title,
+    note: document.note,
+    fileName: document.fileName,
+    fileSize: document.fileSize === null ? null : Number(document.fileSize),
+    mimeType: document.mimeType,
+    downloadUrl: `/api/documents/${document.id}/download`,
+    uploadedBy: document.createdBy ? (uploaders.get(document.createdBy) ?? null) : null,
+    createdAt: document.createdAt,
+    updatedAt: document.updatedAt,
+  };
+}

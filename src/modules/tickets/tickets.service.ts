@@ -172,14 +172,10 @@ export class TicketsService {
     }
 
     if (query.search) {
-      const like = '%' + query.search + '%';
-      Object.assign(where, {
-        [Op.or]: [
-          { title: { [Op.like]: like } },
-          { description: { [Op.like]: like } },
-          { ticketNo: { [Op.like]: like } },
-        ],
-      });
+      Object.assign(
+        where,
+        await this.searchCondition(query.search, ['title', 'description', 'ticketNo']),
+      );
     }
 
     const sortBy = SORTABLE_FIELDS.has(query.sortBy ?? '')
@@ -231,10 +227,7 @@ export class TicketsService {
     }
 
     if (query.search) {
-      const like = '%' + query.search + '%';
-      Object.assign(where, {
-        [Op.or]: [{ title: { [Op.like]: like } }, { ticketNo: { [Op.like]: like } }],
-      });
+      Object.assign(where, await this.searchCondition(query.search, ['title', 'ticketNo']));
     }
 
     const { rows, count } = await this.ticketModel.findAndCountAll({
@@ -600,6 +593,43 @@ export class TicketsService {
   }
 
   // ---- helpers -------------------------------------------------------------
+
+  /**
+   * เงื่อนไขค้นหาใบแจ้งปัญหา — ค้นจากฟิลด์ของใบ **และ** ชื่อ/รหัสของลูกค้าและโครงการ
+   *
+   * ประชุม 11 ก.ย. (B-10): ลูกค้าโทรมาบอกว่า "ปัญหาเดิมกลับมา" เขาจำได้แค่ว่าเป็นบริษัทไหน
+   * โครงการอะไร จำวิธีแก้หรือเลขใบไม่ได้ ถ้าค้นได้แค่หัวข้อ พอข้อมูลเป็นร้อยใบพนักงานจะหาไม่เจอ
+   * แล้วเปิดใบใหม่แทน ซึ่งขัด BR-04 ตรง ๆ
+   *
+   * หา id ของลูกค้า/โครงการที่ตรงก่อน แล้วค่อยกรองด้วย IN แทนการค้นผ่าน `$customer.name$`
+   * เพราะ findAndCountAll ที่มี limit + include อาจถูก Sequelize ห่อเป็น subquery
+   * แล้วคอลัมน์ของตารางที่ join มาหายจาก scope ของ WHERE — แบบนี้ SQL ตรงไปตรงมาเสมอ
+   * ลูกค้า/โครงการที่ถูก soft delete ยังค้นเจอ เพราะใบแจ้งปัญหาเก่ายังชี้ไปหาอยู่
+   */
+  private async searchCondition(
+    search: string,
+    ticketFields: readonly ('title' | 'description' | 'ticketNo')[],
+  ): Promise<WhereOptions<Ticket>> {
+    const like = { [Op.like]: '%' + search + '%' };
+    const nameOrCode = { [Op.or]: [{ name: like }, { code: like }] };
+
+    const [customers, projects] = await Promise.all([
+      this.customerModel.findAll({ where: nameOrCode, attributes: ['id'], paranoid: false }),
+      this.projectModel.findAll({ where: nameOrCode, attributes: ['id'], paranoid: false }),
+    ]);
+
+    const conditions: WhereOptions<Ticket>[] = ticketFields.map((field) => ({ [field]: like }));
+
+    if (customers.length > 0) {
+      conditions.push({ customerId: { [Op.in]: customers.map((customer) => customer.id) } });
+    }
+
+    if (projects.length > 0) {
+      conditions.push({ projectId: { [Op.in]: projects.map((project) => project.id) } });
+    }
+
+    return { [Op.or]: conditions };
+  }
 
   /**
    * ระบบเห็นอะไรบ้างตอนเปิดใบ — ใช้ *เสนอ* ประเภทการคิดเงิน (CLAUDE.md 9.3)

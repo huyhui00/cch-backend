@@ -2,6 +2,7 @@ import { BelongsTo, Column, DataType, ForeignKey, Table } from 'sequelize-typesc
 
 import { AuditedModel } from './base.model';
 import { Customer } from './customer.model';
+import { Project } from './project.model';
 import { User } from './user.model';
 
 export enum FollowUpStatus {
@@ -14,6 +15,7 @@ export enum FollowUpStatus {
 /** งานติดตามลูกค้า — ป้อนเข้า notification rule แบบ FOLLOWUP_DUE */
 export interface FollowUpCreationAttributes {
   customerId: number;
+  projectId?: number | null;
   title: string;
   detail?: string | null;
   dueDate: string;
@@ -30,6 +32,14 @@ export class FollowUp extends AuditedModel<FollowUp, FollowUpCreationAttributes>
   @ForeignKey(() => Customer)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'customer_id' })
   customerId: number;
+
+  /**
+   * โปรเจคที่ติดตามอยู่ (ประชุม 11 ก.ย. — B-14) ยังเป็น null ได้ (Q16)
+   * ระบุมาเมื่อไร `customerId` ต้องเป็นเจ้าของโปรเจคนี้เสมอ — service คัดลอกให้เอง
+   */
+  @ForeignKey(() => Project)
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'project_id' })
+  projectId: number | null;
 
   @Column({ type: DataType.STRING(255), allowNull: false })
   title: string;
@@ -59,6 +69,9 @@ export class FollowUp extends AuditedModel<FollowUp, FollowUpCreationAttributes>
 
   @BelongsTo(() => Customer)
   customer: Customer;
+
+  @BelongsTo(() => Project)
+  project: Project | null;
 
   @BelongsTo(() => User)
   assignedUser: User;

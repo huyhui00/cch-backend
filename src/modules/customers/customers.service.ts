@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/sequelize';
-import { Op, type WhereOptions } from 'sequelize';
+import { Op, type Transaction, type WhereOptions } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
@@ -158,6 +158,23 @@ export class CustomersService {
   }
 
   async create(dto: CreateCustomerDto, actorId: number): Promise<CustomerResponseDto> {
+    const customer = await this.createRecord(dto, actorId);
+
+    return this.findOne(customer.id);
+  }
+
+  /**
+   * สร้างแถวลูกค้า — กติกาการสร้างลูกค้าอยู่ที่นี่ที่เดียว
+   *
+   * ใช้ทั้ง `POST /api/customers` และตอนสร้างโครงการพร้อมลูกค้าใหม่ในฟอร์มเดียว
+   * (ประชุม 11 ก.ย. — B-3) ซึ่งส่ง transaction มา เพื่อให้ลูกค้ากับโครงการถูกบันทึก
+   * พร้อมกันหรือไม่ถูกบันทึกเลย ไม่เหลือลูกค้าลอยอยู่เมื่อการสร้างโครงการพัง
+   */
+  async createRecord(
+    dto: CreateCustomerDto,
+    actorId: number | null,
+    transaction?: Transaction,
+  ): Promise<Customer> {
     if (dto.code) {
       await this.assertCodeIsAvailable(dto.code);
     }
@@ -166,30 +183,31 @@ export class CustomersService {
       await this.assertOwnerExists(dto.ownerUserId);
     }
 
-    const customer = await this.customerModel.create({
-      name: dto.name,
-      code: dto.code ?? null,
-      taxId: dto.taxId ?? null,
-      businessType: dto.businessType ?? null,
-      address: dto.address ?? null,
-      province: dto.province ?? null,
-      postalCode: dto.postalCode ?? null,
-      phone: dto.phone ?? null,
-      email: dto.email ?? null,
-      website: dto.website ?? null,
-      lineOfficialId: dto.lineOfficialId ?? null,
-      facebookUrl: dto.facebookUrl ?? null,
-      // ไม่ส่งมา = ลูกค้าปัจจุบัน เพราะบันทึกเฉพาะลูกค้าที่ใช้บริการจริงแล้ว (ไม่มีผู้มุ่งหวัง)
-      // เขียนไว้ที่นี่ด้วยแทนที่จะพึ่ง default ของคอลัมน์อย่างเดียว กติกาจะได้อ่านเจอในโค้ด
-      status: dto.status ?? CustomerStatus.ACTIVE,
-      source: dto.source ?? null,
-      ownerUserId: dto.ownerUserId ?? null,
-      note: dto.note ?? null,
-      createdBy: actorId,
-      updatedBy: actorId,
-    });
-
-    return this.findOne(customer.id);
+    return this.customerModel.create(
+      {
+        name: dto.name,
+        code: dto.code ?? null,
+        taxId: dto.taxId ?? null,
+        businessType: dto.businessType ?? null,
+        address: dto.address ?? null,
+        province: dto.province ?? null,
+        postalCode: dto.postalCode ?? null,
+        phone: dto.phone ?? null,
+        email: dto.email ?? null,
+        website: dto.website ?? null,
+        lineOfficialId: dto.lineOfficialId ?? null,
+        facebookUrl: dto.facebookUrl ?? null,
+        // ไม่ส่งมา = ลูกค้าปัจจุบัน เพราะบันทึกเฉพาะลูกค้าที่ใช้บริการจริงแล้ว (ไม่มีผู้มุ่งหวัง)
+        // เขียนไว้ที่นี่ด้วยแทนที่จะพึ่ง default ของคอลัมน์อย่างเดียว กติกาจะได้อ่านเจอในโค้ด
+        status: dto.status ?? CustomerStatus.ACTIVE,
+        source: dto.source ?? null,
+        ownerUserId: dto.ownerUserId ?? null,
+        note: dto.note ?? null,
+        createdBy: actorId,
+        updatedBy: actorId,
+      },
+      { transaction },
+    );
   }
 
   async update(id: number, dto: UpdateCustomerDto, actorId: number): Promise<CustomerResponseDto> {

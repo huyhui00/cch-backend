@@ -12,6 +12,7 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { MaModule } from './modules/ma/ma.module';
 import { ProjectsModule } from './modules/projects/projects.module';
@@ -46,10 +47,10 @@ import { WarrantiesModule } from './modules/warranties/warranties.module';
     SurveysModule,
     TicketsModule,
     ReportsModule,
+    DocumentsModule,
 
-    // modules ทางธุรกิจที่เหลือจะถูกเพิ่มที่นี่ — M9 เอกสาร/ไฟล์ และ M11 แจ้งเตือน
-    // ถูกเลื่อนไปทำทีหลัง ไม่ได้ตัดออกจากขอบเขต
-    // DocumentsModule, NotificationsModule
+    // M11 แจ้งเตือน ถูกเลื่อนไปทำทีหลัง ไม่ได้ตัดออกจากขอบเขต
+    // NotificationsModule
   ],
   controllers: [AppController],
   providers: [

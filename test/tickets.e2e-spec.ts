@@ -388,4 +388,39 @@ describe('Tickets (e2e)', () => {
 
     expect((response.body as ApiResponse<null>).message).toContain('ไม่รู้จักฟิลด์');
   });
+
+  // -------------------------------------------------------------------------
+  // ค้นปัญหาเก่าด้วยชื่อลูกค้า/โครงการ (ประชุม 11 ก.ย. — B-10)
+  // ลูกค้าจำได้แค่บริษัท/โครงการ ถ้าค้นไม่เจอพนักงานจะเปิดใบใหม่แทน ซึ่งขัด BR-04
+  // -------------------------------------------------------------------------
+  it('ค้นด้วยชื่อลูกค้าหรือชื่อโครงการเจอใบที่หัวข้อไม่มีคำนั้นเลย ทั้งรายการทั้งหมดและหน้ารอรับการแก้ไข', async () => {
+    const ticketId = await openTicket(`ระบบล็อกอินไม่ได้ ${stamp}`);
+
+    for (const search of [`ลูกค้าทดสอบ e2e ${stamp}`, `โครงการทดสอบ e2e ${stamp}`]) {
+      const all = await authed('get', `/api/tickets?search=${encodeURIComponent(search)}&limit=100`)
+        .expect(200);
+      const pending = await authed(
+        'get',
+        `/api/tickets/pending?search=${encodeURIComponent(search)}&limit=100`,
+      ).expect(200);
+
+      const ids = (body: unknown) =>
+        (body as ApiResponse<ListPayload<TicketPayload>>).data.items.map((item) => item.id);
+
+      expect(ids(all.body)).toContain(ticketId);
+      expect(ids(pending.body)).toContain(ticketId);
+    }
+  });
+
+  it('ค้นด้วยรหัสลูกค้าได้ และคำที่ไม่ตรงอะไรเลยไม่ทำให้ SQL พัง', async () => {
+    const ticketId = await openTicket(`ค้นด้วยรหัส ${stamp}`);
+
+    const byCode = await authed('get', `/api/tickets?search=E2E-C-${stamp}&limit=100`).expect(200);
+    expect(
+      (byCode.body as ApiResponse<ListPayload<TicketPayload>>).data.items.map((item) => item.id),
+    ).toContain(ticketId);
+
+    const none = await authed('get', `/api/tickets?search=ไม่มีทางตรงแน่นอน-${stamp}`).expect(200);
+    expect((none.body as ApiResponse<ListPayload<TicketPayload>>).data.total).toBe(0);
+  });
 });

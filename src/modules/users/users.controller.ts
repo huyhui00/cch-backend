@@ -139,14 +139,14 @@ export class UsersController {
   @ApiOperation({
     summary: 'ผูกบทบาทให้ผู้ใช้',
     description:
-      'ถือได้หลายบทบาทพร้อมกัน สิทธิ์ที่ได้คือ union ของทุกบทบาท (CLAUDE.md 4.2) ' +
-      'roleIds ที่ส่งมาแทนที่ของเดิมทั้งชุด ส่ง array ว่างเพื่อถอดบทบาทออกทั้งหมด',
+      'ถือได้บทบาทเดียว (CLAUDE.md 4.2) — คนที่ทำหลายหน้าที่ให้สร้างบทบาทใหม่ที่รวมสิทธิ์ไว้ ' +
+      'ยังส่งเป็น array เพื่อไม่เปลี่ยนสัญญา: roleIds ที่ส่งมาแทนที่ของเดิม ส่ง [] เพื่อถอดบทบาทออก',
   })
   @ApiParam({ name: 'id', description: 'id ของผู้ใช้', example: 5 })
   @ApiResponse({ status: 200, description: 'บันทึกบทบาทเรียบร้อย', type: UserResponseDto })
   @ApiResponse({
     status: 400,
-    description: 'ระบุบทบาทที่ไม่มีอยู่จริง ปิดใช้งานอยู่ หรือผูกไม่ได้',
+    description: 'ส่งมาเกิน 1 บทบาท หรือระบุบทบาทที่ไม่มีอยู่จริง ปิดใช้งานอยู่ หรือผูกไม่ได้',
   })
   @ApiResponse({ status: 403, description: 'ไม่มีสิทธิ์แก้ไขบัญชีนี้' })
   @ApiResponse({ status: 404, description: 'ไม่พบข้อมูลผู้ใช้' })

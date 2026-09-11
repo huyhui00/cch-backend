@@ -20,6 +20,17 @@ export class FollowUpCustomerSummaryDto {
   code: string | null;
 }
 
+export class FollowUpProjectSummaryDto {
+  @ApiProperty({ example: 3 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'PRJ-2026-003' })
+  code: string | null;
+
+  @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
+  name: string;
+}
+
 export class FollowUpUserSummaryDto {
   @ApiProperty({ example: 4 })
   id: number;
@@ -40,6 +51,16 @@ export class FollowUpResponseDto {
 
   @ApiProperty({ nullable: true, type: FollowUpCustomerSummaryDto })
   customer: FollowUpCustomerSummaryDto | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'โปรเจคที่ติดตาม — งานที่สร้างก่อน 11 ก.ย. เป็น null',
+    example: 3,
+  })
+  projectId: number | null;
+
+  @ApiProperty({ nullable: true, type: FollowUpProjectSummaryDto })
+  project: FollowUpProjectSummaryDto | null;
 
   @ApiProperty({ example: 'โทรถามความคืบหน้าการตัดสินใจต่อสัญญา MA' })
   title: string;
@@ -113,6 +134,10 @@ export function toFollowUpResponse(followUp: FollowUp): FollowUpResponseDto {
           name: followUp.customer.name,
           code: followUp.customer.code,
         }
+      : null,
+    projectId: followUp.projectId ?? null,
+    project: followUp.project
+      ? { id: followUp.project.id, code: followUp.project.code, name: followUp.project.name }
       : null,
     title: followUp.title,
     detail: followUp.detail,

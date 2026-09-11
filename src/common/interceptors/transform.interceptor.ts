@@ -1,4 +1,10 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import {
+  CallHandler,
+  ExecutionContext,
+  Injectable,
+  NestInterceptor,
+  StreamableFile,
+} from '@nestjs/common';
 import { Observable, map } from 'rxjs';
 
 /**
@@ -40,6 +46,12 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ApiResponse<T
   intercept(context: ExecutionContext, next: CallHandler<T>): Observable<ApiResponse<T>> {
     return next.handle().pipe(
       map((payload): ApiResponse<T> => {
+        // ไฟล์ที่ดาวน์โหลด (Phase 9) ต้องส่งเป็นไบต์ตรง ๆ ห่อเป็น JSON ไม่ได้
+        // เป็นข้อยกเว้นเดียวของรูปแบบ response มาตรฐาน — error ของเส้นเดียวกันยังเป็น JSON ตามเดิม
+        if (payload instanceof StreamableFile) {
+          return payload as unknown as ApiResponse<T>;
+        }
+
         // ห่อซ้ำไม่ได้ — ถ้า handler ส่งรูปแบบสุดท้ายมาแล้วก็ปล่อยผ่าน
         if (isApiResponse<T>(payload)) {
           return payload;

@@ -1,20 +1,23 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
   IsISO8601,
   IsNotEmpty,
   IsNumberString,
+  IsObject,
   IsOptional,
   IsPositive,
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { ProjectPriority, ProjectStatus } from '../../../models';
+import { CreateCustomerDto } from '../../customers/dto/create-customer.dto';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -26,11 +29,36 @@ const trimToNull = ({ value }: { value: unknown }) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+/**
+ * สร้างโครงการ — ระบุลูกค้าได้สองแบบ **อย่างใดอย่างหนึ่ง** (ประชุม 11 ก.ย. — B-3)
+ *
+ *   customerId   ลูกค้าเดิม (หน้าจอค้นจากชื่อเมื่อพิมพ์ 2–3 ตัว)
+ *   newCustomer  ลูกค้าใหม่ กรอกในฟอร์มเดียวกัน ระบบบันทึกลูกค้ากับโครงการในทรานแซกชันเดียว
+ *
+ * พี่เลี้ยง: "ทำงานครั้งเดียวจบ" ไม่ต้องไปเพิ่มลูกค้าที่เมนูลูกค้าก่อนแล้วค่อยกลับมาสร้างโครงการ
+ * ส่ง newCustomer ต้องมีสิทธิ์ `customer.create` เพิ่มจาก `project.create` ด้วย
+ */
 export class CreateProjectDto {
-  @ApiProperty({ description: 'ลูกค้าเจ้าของโครงการ', example: 1 })
+  @ApiPropertyOptional({
+    description: 'ลูกค้าเดิมที่เป็นเจ้าของโครงการ — ส่งค่านี้ หรือ newCustomer อย่างใดอย่างหนึ่ง',
+    example: 1,
+  })
+  @IsOptional()
   @IsInt({ message: 'customerId ต้องเป็นจำนวนเต็ม' })
   @IsPositive({ message: 'customerId ต้องมากกว่า 0' })
-  customerId: number;
+  customerId?: number;
+
+  @ApiPropertyOptional({
+    type: () => CreateCustomerDto,
+    description:
+      'ลูกค้าใหม่ กรอกพร้อมโครงการในครั้งเดียว — ฟิลด์เหมือน POST /api/customers ทุกตัว ' +
+      'บันทึกพร้อมโครงการในทรานแซกชันเดียว ต้องมีสิทธิ์ customer.create ด้วย',
+  })
+  @IsOptional()
+  @IsObject({ message: 'newCustomer ต้องเป็นข้อมูลลูกค้า' })
+  @ValidateNested()
+  @Type(() => CreateCustomerDto)
+  newCustomer?: CreateCustomerDto;
 
   @ApiProperty({ description: 'ชื่อโครงการ', maxLength: 255, example: 'ระบบจัดการคลังสินค้า' })
   @IsString({ message: 'ชื่อโครงการต้องเป็นข้อความ' })
@@ -116,8 +144,13 @@ export class CreateProjectDto {
   managerUserId?: number | null;
 }
 
-/** ย้ายโครงการข้ามลูกค้าไม่ได้ — ประวัติ ticket และสัญญา MA ผูกกับลูกค้าเดิมไปแล้ว */
-export class UpdateProjectDto extends PartialType(CreateProjectDto) {
+/**
+ * ย้ายโครงการข้ามลูกค้าไม่ได้ — ประวัติ ticket และสัญญา MA ผูกกับลูกค้าเดิมไปแล้ว
+ * ไม่มี newCustomer เพราะการสร้างลูกค้าใหม่ตอนแก้ไขคือการย้ายลูกค้าในอีกรูปแบบหนึ่ง
+ */
+export class UpdateProjectDto extends PartialType(
+  OmitType(CreateProjectDto, ['newCustomer'] as const),
+) {
   @ApiPropertyOptional({ readOnly: true, description: 'เปลี่ยนไม่ได้ ส่งมาจะถูกปฏิเสธ' })
   @IsOptional()
   declare customerId?: number;

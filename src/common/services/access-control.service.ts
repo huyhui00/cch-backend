@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 
-import { Permission, Role, User } from '../../models';
+import { AccountType, Permission, Role, User } from '../../models';
+import { SUPER_ADMIN_ONLY_PERMISSIONS } from '../decorators/require-permission.decorator';
+import type { AuthenticatedUser } from '../types/auth.types';
 
 /**
  * แหล่งความจริงเดียวของ "ผู้ใช้คนนี้มีสิทธิ์อะไรบ้าง"
@@ -63,5 +65,29 @@ export class AccessControlService {
     }
 
     return codes;
+  }
+
+  /**
+   * ผู้ใช้คนนี้ทำสิ่งที่ต้องใช้สิทธิ์ `code` ได้ไหม — ตัดสินแบบเดียวกับ PermissionsGuard ข้อ 1, 2, 4, 5
+   *
+   * มีไว้สำหรับจุดที่สิทธิ์ขึ้นกับ *เนื้อหา* ของคำขอ ซึ่ง decorator บน endpoint ตรวจแทนไม่ได้
+   * เช่น `POST /api/projects` ที่ส่ง `newCustomer` มาด้วย ต้องมี `customer.create` เพิ่มจาก
+   * `project.create` ไม่งั้นเส้นนี้จะกลายเป็นทางอ้อมให้คนที่ไม่มีสิทธิ์เพิ่มลูกค้าได้
+   */
+  async hasPermission(user: AuthenticatedUser, code: string): Promise<boolean> {
+    if (user.accountType === AccountType.SUPER_ADMIN) {
+      return true;
+    }
+
+    // ต้องอยู่เหนือ ADMIN bypass เหมือนใน guard (BR-10)
+    if (SUPER_ADMIN_ONLY_PERMISSIONS.has(code)) {
+      return false;
+    }
+
+    if (user.accountType === AccountType.ADMIN) {
+      return true;
+    }
+
+    return (await this.findPermissionCodes(user.id)).has(code);
   }
 }

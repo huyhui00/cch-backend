@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayUnique,
   IsArray,
   IsEmail,
@@ -21,6 +22,16 @@ export const MIN_PASSWORD_LENGTH = 8;
 
 /** bcrypt ตัด input ทิ้งที่ 72 ไบต์ ตัดตั้งแต่ชั้น validation จะได้ไม่เข้าใจผิดกันภายหลัง */
 export const MAX_PASSWORD_LENGTH = 72;
+
+/**
+ * ผู้ใช้ถือ role ได้อันเดียว (ประชุม 11 ก.ย. — CLAUDE.md 4.2)
+ * คนที่ทำหลายหน้าที่ให้สร้าง role ใหม่ที่ติ๊กสิทธิ์รวมไว้ ตาราง user_roles ยังเป็น M:N
+ * ถ้าวันหนึ่งกลับไปใช้หลาย role แค่เปลี่ยนค่านี้
+ */
+export const MAX_ROLES_PER_USER = 1;
+
+export const ROLE_LIMIT_MESSAGE =
+  'ผู้ใช้ถือบทบาทได้อันเดียว — ถ้าต้องทำหลายหน้าที่ ให้สร้างบทบาทใหม่ที่รวมสิทธิ์ไว้';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -130,11 +141,15 @@ export class CreateUserDto {
 
   @ApiPropertyOptional({
     type: [Number],
-    description: 'ผูก role ให้เลยตอนสร้างก็ได้ ถือได้หลาย role พร้อมกัน (CLAUDE.md 4.2)',
-    example: [2, 3],
+    description:
+      'ผูก role ให้เลยตอนสร้างก็ได้ — ถือได้ role เดียว (CLAUDE.md 4.2) ' +
+      'ยังรับเป็น array เพื่อไม่เปลี่ยนสัญญากับ frontend',
+    maxItems: MAX_ROLES_PER_USER,
+    example: [2],
   })
   @IsOptional()
   @IsArray({ message: 'roleIds ต้องเป็น array' })
+  @ArrayMaxSize(MAX_ROLES_PER_USER, { message: ROLE_LIMIT_MESSAGE })
   @ArrayUnique({ message: 'roleIds ห้ามมีค่าซ้ำ' })
   @IsInt({ each: true, message: 'roleIds ต้องเป็นจำนวนเต็ม' })
   @IsPositive({ each: true, message: 'roleIds ต้องมากกว่า 0' })

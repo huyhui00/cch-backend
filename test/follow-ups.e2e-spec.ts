@@ -19,6 +19,7 @@ import { createValidationPipe } from '../src/common/pipes/validation.pipe';
  *   - การกรอง ?overdue=true ทำงานจริงบน DATEONLY ของ MySQL
  *   - ธง isOverdue ของแต่ละแถวตรงกับผลของการกรอง (ไม่ขัดกันเอง)
  *   - ปิดงานติดตามแล้ว customers.lastContactedAt ไม่ขยับ
+ *   - ผูกโปรเจคแล้ว customer_id มาจากโปรเจค และคอลัมน์ project_id ใหม่ใช้งานได้จริง (B-14)
  */
 
 interface ApiResponse<T> {
@@ -30,6 +31,8 @@ interface ApiResponse<T> {
 interface FollowUpPayload {
   id: number;
   customerId: number;
+  projectId: number | null;
+  project: { id: number; name: string } | null;
   title: string;
   dueDate: string;
   status: string;
@@ -49,6 +52,8 @@ describe('Follow-ups (e2e)', () => {
   let app: INestApplication;
   let token: string;
   let customerId: number;
+  let projectId: number;
+  let otherCustomerProjectId: number;
 
   const stamp = Date.now();
 
@@ -93,6 +98,22 @@ describe('Follow-ups (e2e)', () => {
       .send({ name: `ลูกค้าทดสอบงานติดตาม ${stamp}`, code: `E2E-FU-${stamp}`, status: 'ACTIVE' })
       .expect(201);
     customerId = (customer.body as ApiResponse<{ id: number }>).data.id;
+
+    const project = await authed('post', '/api/projects')
+      .send({ customerId, name: `โปรเจคที่ติดตาม ${stamp}` })
+      .expect(201);
+    projectId = (project.body as ApiResponse<{ id: number }>).data.id;
+
+    const otherCustomer = await authed('post', '/api/customers')
+      .send({ name: `ลูกค้าอีกราย ${stamp}`, status: 'ACTIVE' })
+      .expect(201);
+    const otherProject = await authed('post', '/api/projects')
+      .send({
+        customerId: (otherCustomer.body as ApiResponse<{ id: number }>).data.id,
+        name: `โปรเจคของลูกค้าอีกราย ${stamp}`,
+      })
+      .expect(201);
+    otherCustomerProjectId = (otherProject.body as ApiResponse<{ id: number }>).data.id;
   });
 
   afterAll(async () => {
@@ -251,6 +272,62 @@ describe('Follow-ups (e2e)', () => {
     ).data.lastContactedAt;
 
     expect(lastContactedAfter).toBe(lastContactedBefore);
+  });
+
+  // -------------------------------------------------------------------------
+  // ผูกกับโปรเจค (ประชุม 11 ก.ย. — "ติดตามโปรเจค ไม่ใช่ตามลูกค้า")
+  // -------------------------------------------------------------------------
+  it('ส่งแค่ projectId → ได้ลูกค้าของโปรเจคมาเอง พร้อมข้อมูลโปรเจคในผลลัพธ์', async () => {
+    const response = await authed('post', '/api/follow-ups')
+      .send({ projectId, title: `ตามเรื่องโปรเจค ${stamp}`, dueDate: shiftDays(3) })
+      .expect(201);
+
+    const followUp = (response.body as ApiResponse<FollowUpPayload>).data;
+
+    expect(followUp.customerId).toBe(customerId);
+    expect(followUp.projectId).toBe(projectId);
+    expect(followUp.project?.id).toBe(projectId);
+  });
+
+  it('ส่ง customerId ที่ไม่ใช่เจ้าของโปรเจค → 400', async () => {
+    await createFollowUp({ projectId: otherCustomerProjectId }).expect(400);
+  });
+
+  it('ไม่ส่งทั้งโปรเจคและลูกค้า → 400', async () => {
+    await authed('post', '/api/follow-ups')
+      .send({ title: `ไม่มีเจ้าของ ${stamp}`, dueDate: shiftDays(3) })
+      .expect(400);
+  });
+
+  it('?projectId= กรองเฉพาะงานของโปรเจคนั้น', async () => {
+    const withProject = await createFollowUp({ projectId }).expect(201);
+    const withoutProject = await createFollowUp({}).expect(201);
+
+    const response = await authed('get', `/api/follow-ups?projectId=${projectId}&limit=100`).expect(
+      200,
+    );
+    const ids = (response.body as ApiResponse<ListPayload<FollowUpPayload>>).data.items.map(
+      (item) => item.id,
+    );
+
+    expect(ids).toContain((withProject.body as ApiResponse<FollowUpPayload>).data.id);
+    expect(ids).not.toContain((withoutProject.body as ApiResponse<FollowUpPayload>).data.id);
+  });
+
+  it('เปลี่ยนไปโปรเจคของลูกค้ารายอื่นไม่ได้ แต่ถอดโปรเจคออกได้', async () => {
+    const created = await createFollowUp({ projectId }).expect(201);
+    const id = (created.body as ApiResponse<FollowUpPayload>).data.id;
+
+    await authed('patch', `/api/follow-ups/${id}`)
+      .send({ projectId: otherCustomerProjectId })
+      .expect(400);
+
+    const cleared = await authed('patch', `/api/follow-ups/${id}`)
+      .send({ projectId: null })
+      .expect(200);
+
+    expect((cleared.body as ApiResponse<FollowUpPayload>).data.projectId).toBeNull();
+    expect((cleared.body as ApiResponse<FollowUpPayload>).data.customerId).toBe(customerId);
   });
 
   // -------------------------------------------------------------------------

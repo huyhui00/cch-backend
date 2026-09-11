@@ -1,15 +1,20 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
+import { InjectConnection, InjectModel } from '@nestjs/sequelize';
 import { Op, type WhereOptions } from 'sequelize';
+import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
+import { AccessControlService } from '../../common/services/access-control.service';
+import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { Customer, Project, Task, TaskStatus, User, UserStatus } from '../../models';
+import { CustomersService } from '../customers/customers.service';
 import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
 import {
   type ProjectProgressDto,
@@ -60,6 +65,9 @@ export class ProjectsService {
     @InjectModel(Task) private readonly taskModel: typeof Task,
     @InjectModel(Customer) private readonly customerModel: typeof Customer,
     @InjectModel(User) private readonly userModel: typeof User,
+    private readonly customersService: CustomersService,
+    private readonly accessControl: AccessControlService,
+    @InjectConnection() private readonly sequelize: Sequelize,
   ) {}
 
   async findAll(query: QueryProjectsDto): Promise<PaginatedResult<ProjectResponseDto>> {
@@ -119,10 +127,37 @@ export class ProjectsService {
     return toProjectResponse(project, await this.calculateProgress(id));
   }
 
-  async create(dto: CreateProjectDto): Promise<ProjectResponseDto> {
+  /**
+   * สร้างโครงการ — ลูกค้าเดิม (`customerId`) หรือลูกค้าใหม่ (`newCustomer`) อย่างใดอย่างหนึ่ง
+   *
+   * ลูกค้าใหม่ถูกบันทึกในทรานแซกชันเดียวกับโครงการ (ประชุม 11 ก.ย. — B-3) ถ้าขั้นใดพัง
+   * จะไม่เหลือลูกค้าลอยอยู่ในระบบโดยไม่มีโครงการ ซึ่งผู้ใช้จะกดบันทึกซ้ำแล้วได้ลูกค้าซ้ำ
+   * กติกาการสร้างลูกค้าใช้ของ `CustomersService.createRecord()` ตัวเดียวกับ `POST /api/customers`
+   *
+   * ตรวจทุกอย่างก่อนเปิดทรานแซกชัน — ของที่ปฏิเสธได้ต้องปฏิเสธก่อนเขียนอะไรลงฐานข้อมูล
+   */
+  async create(dto: CreateProjectDto, actor: AuthenticatedUser): Promise<ProjectResponseDto> {
     const actorId = getCurrentUserId();
+    const { newCustomer } = dto;
 
-    await this.assertCustomerExists(dto.customerId);
+    if (dto.customerId !== undefined && newCustomer) {
+      throw new BadRequestException(
+        'เลือกลูกค้าเดิมหรือกรอกลูกค้าใหม่อย่างใดอย่างหนึ่ง — ส่งมาทั้ง customerId และ newCustomer',
+      );
+    }
+
+    if (dto.customerId !== undefined) {
+      await this.assertCustomerExists(dto.customerId);
+    } else if (newCustomer) {
+      // project.create อย่างเดียวไม่พอ ไม่งั้นเส้นนี้เป็นทางอ้อมให้คนที่ไม่มีสิทธิ์เพิ่มลูกค้าได้
+      if (!(await this.accessControl.hasPermission(actor, 'customer.create'))) {
+        throw new ForbiddenException(
+          'คุณไม่มีสิทธิ์เพิ่มลูกค้าใหม่ — เลือกลูกค้าที่มีอยู่แล้ว หรือให้ผู้มีสิทธิ์เพิ่มลูกค้าก่อน',
+        );
+      }
+    } else {
+      throw new BadRequestException('กรุณาเลือกลูกค้าเดิม หรือกรอกข้อมูลลูกค้าใหม่');
+    }
 
     if (dto.code) {
       await this.assertCodeIsAvailable(dto.code);
@@ -134,25 +169,36 @@ export class ProjectsService {
 
     this.assertDateOrder(dto.startDate ?? null, dto.targetEndDate ?? null);
 
-    const project = await this.projectModel.create({
-      customerId: dto.customerId,
-      name: dto.name,
-      code: dto.code ?? null,
-      description: dto.description ?? null,
-      projectType: dto.projectType ?? null,
-      status: dto.status,
-      priority: dto.priority,
-      startDate: dto.startDate ?? null,
-      targetEndDate: dto.targetEndDate ?? null,
-      actualEndDate: dto.actualEndDate ?? null,
-      contractValue: dto.contractValue ?? null,
-      functionCount: dto.functionCount ?? null,
-      managerUserId: dto.managerUserId ?? null,
-      createdBy: actorId,
-      updatedBy: actorId,
+    const projectId = await this.sequelize.transaction(async (transaction) => {
+      const customerId = newCustomer
+        ? (await this.customersService.createRecord(newCustomer, actorId, transaction)).id
+        : (dto.customerId as number);
+
+      const project = await this.projectModel.create(
+        {
+          customerId,
+          name: dto.name,
+          code: dto.code ?? null,
+          description: dto.description ?? null,
+          projectType: dto.projectType ?? null,
+          status: dto.status,
+          priority: dto.priority,
+          startDate: dto.startDate ?? null,
+          targetEndDate: dto.targetEndDate ?? null,
+          actualEndDate: dto.actualEndDate ?? null,
+          contractValue: dto.contractValue ?? null,
+          functionCount: dto.functionCount ?? null,
+          managerUserId: dto.managerUserId ?? null,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        { transaction },
+      );
+
+      return project.id;
     });
 
-    return this.findOne(project.id);
+    return this.findOne(projectId);
   }
 
   async update(id: number, dto: UpdateProjectDto): Promise<ProjectResponseDto> {

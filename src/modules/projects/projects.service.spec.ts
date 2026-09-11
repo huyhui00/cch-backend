@@ -1,11 +1,21 @@
 /// <reference types="jest" />
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import type { Sequelize } from 'sequelize-typescript';
 
 import { runWithRequestContext } from '../../common/context/request-context';
+import type { AccessControlService } from '../../common/services/access-control.service';
+import type { AuthenticatedUser } from '../../common/types/auth.types';
 import {
+  AccountType,
   Customer,
+  CustomerStatus,
   Project,
   ProjectPriority,
   ProjectStatus,
@@ -14,6 +24,7 @@ import {
   User,
   UserStatus,
 } from '../../models';
+import type { CustomersService } from '../customers/customers.service';
 import { ProjectsService } from './projects.service';
 import { todayAsDateOnly } from './dto/project.response';
 
@@ -86,11 +97,18 @@ function dateOnlyOffsetByDays(days: number): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+/** ผู้เรียกที่เป็น USER ธรรมดา — สิทธิ์จริงตัดสินโดย accessControl.hasPermission ที่ mock ไว้ */
+const actor: AuthenticatedUser = { id: 7, username: 'pranee', accountType: AccountType.USER };
+
 describe('ProjectsService', () => {
   let projectModel: ModelMock;
   let taskModel: ModelMock;
   let customerModel: ModelMock;
   let userModel: ModelMock;
+  let customersService: { createRecord: jest.Mock };
+  let accessControl: { hasPermission: jest.Mock };
+  /** ของที่ส่งเข้า callback ของ transaction — ใช้ยืนยันว่าทุกการเขียนอยู่ในทรานแซกชันเดียวกัน */
+  const fakeTransaction = { id: 'tx-1' };
   let service: ProjectsService;
 
   beforeEach(() => {
@@ -98,6 +116,11 @@ describe('ProjectsService', () => {
     taskModel = modelMock();
     customerModel = modelMock();
     userModel = modelMock();
+    customersService = { createRecord: jest.fn().mockResolvedValue({ id: 55 }) };
+    accessControl = { hasPermission: jest.fn().mockResolvedValue(true) };
+    const sequelize = {
+      transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(fakeTransaction)),
+    };
 
     projectModel.findByPk.mockResolvedValue(projectRow());
     projectModel.findOne.mockResolvedValue(null);
@@ -111,6 +134,9 @@ describe('ProjectsService', () => {
       taskModel as unknown as typeof Task,
       customerModel as unknown as typeof Customer,
       userModel as unknown as typeof User,
+      customersService as unknown as CustomersService,
+      accessControl as unknown as AccessControlService,
+      sequelize as unknown as Sequelize,
     );
   });
 
@@ -268,14 +294,14 @@ describe('ProjectsService', () => {
     it('สร้างให้ลูกค้าที่ไม่มีในระบบไม่ได้', async () => {
       customerModel.findByPk.mockResolvedValue(null);
 
-      await expect(service.create(dto)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.create(dto, actor)).rejects.toBeInstanceOf(BadRequestException);
       expect(projectModel.create).not.toHaveBeenCalled();
     });
 
     it('ตั้งพนักงานที่ลาออกแล้วเป็นผู้จัดการโครงการไม่ได้', async () => {
       userModel.findByPk.mockResolvedValue({ id: 3, status: UserStatus.RESIGNED });
 
-      await expect(service.create({ ...dto, managerUserId: 3 })).rejects.toBeInstanceOf(
+      await expect(service.create({ ...dto, managerUserId: 3 }, actor)).rejects.toBeInstanceOf(
         BadRequestException,
       );
     });
@@ -283,7 +309,7 @@ describe('ProjectsService', () => {
     it('โยน 409 เมื่อรหัสโครงการซ้ำ และตรวจรวมรายการที่ถูกลบไปแล้ว', async () => {
       projectModel.findOne.mockResolvedValue(projectRow());
 
-      await expect(service.create({ ...dto, code: 'PRJ-2026-001' })).rejects.toBeInstanceOf(
+      await expect(service.create({ ...dto, code: 'PRJ-2026-001' }, actor)).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(projectModel.findOne).toHaveBeenCalledWith({
@@ -294,7 +320,7 @@ describe('ProjectsService', () => {
 
     it('ปฏิเสธวันเริ่มที่อยู่หลังกำหนดส่งมอบ', async () => {
       await expect(
-        service.create({ ...dto, startDate: '2026-12-31', targetEndDate: '2026-01-01' }),
+        service.create({ ...dto, startDate: '2026-12-31', targetEndDate: '2026-01-01' }, actor),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -313,11 +339,82 @@ describe('ProjectsService', () => {
 
       await runWithRequestContext(
         { userId: 42, ipAddress: null, userAgent: null, startedAt: Date.now() },
-        () => service.create(dto),
+        () => service.create(dto, actor),
       );
 
       expect(captured.createdBy).toBe(42);
       expect(captured.updatedBy).toBe(42);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // สร้างโครงการพร้อมลูกค้าใหม่ในฟอร์มเดียว (ประชุม 11 ก.ย. — B-3)
+  // -------------------------------------------------------------------------
+  describe('create พร้อมลูกค้าใหม่', () => {
+    const base = { name: 'โครงการของลูกค้าใหม่', status: ProjectStatus.DRAFT };
+    const newCustomer = { name: 'บริษัท ลูกค้าใหม่ จำกัด', taxId: '0105561234567' };
+
+    it('ลูกค้าใหม่กับโครงการถูกเขียนในทรานแซกชันเดียวกัน และโครงการได้ id ของลูกค้าใหม่', async () => {
+      await runWithRequestContext(
+        { userId: 7, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () => service.create({ ...base, newCustomer }, actor),
+      );
+
+      expect(customersService.createRecord).toHaveBeenCalledWith(newCustomer, 7, fakeTransaction);
+      expect(projectModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: 55 }),
+        { transaction: fakeTransaction },
+      );
+    });
+
+    it('ไม่มีสิทธิ์ customer.create → 403 และไม่มีอะไรถูกเขียนเลย', async () => {
+      // project.create อย่างเดียวไม่พอ ไม่งั้นเส้นนี้เป็นทางอ้อมให้เพิ่มลูกค้าได้
+      accessControl.hasPermission.mockResolvedValue(false);
+
+      await expect(service.create({ ...base, newCustomer }, actor)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(accessControl.hasPermission).toHaveBeenCalledWith(actor, 'customer.create');
+      expect(customersService.createRecord).not.toHaveBeenCalled();
+      expect(projectModel.create).not.toHaveBeenCalled();
+    });
+
+    it('ส่งมาทั้ง customerId และ newCustomer → 400 ไม่เดาว่าจะเอาอันไหน', async () => {
+      await expect(
+        service.create({ ...base, customerId: 1, newCustomer }, actor),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(customersService.createRecord).not.toHaveBeenCalled();
+    });
+
+    it('ไม่ส่งลูกค้ามาเลย → 400', async () => {
+      await expect(service.create(base, actor)).rejects.toBeInstanceOf(BadRequestException);
+      expect(projectModel.create).not.toHaveBeenCalled();
+    });
+
+    it('ตรวจโครงการให้ผ่านก่อนเปิดทรานแซกชัน — รหัสโครงการซ้ำต้องไม่ทิ้งลูกค้าใหม่ไว้', async () => {
+      projectModel.findOne.mockResolvedValue(projectRow());
+
+      await expect(
+        service.create({ ...base, code: 'PRJ-2026-001', newCustomer }, actor),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(customersService.createRecord).not.toHaveBeenCalled();
+    });
+
+    it('ลูกค้าเดิม → ไม่สร้างลูกค้าและไม่ต้องเช็คสิทธิ์เพิ่มลูกค้า', async () => {
+      await service.create({ ...base, customerId: 1 }, actor);
+
+      expect(customersService.createRecord).not.toHaveBeenCalled();
+      expect(accessControl.hasPermission).not.toHaveBeenCalled();
+      expect(projectModel.create).toHaveBeenCalledWith(expect.objectContaining({ customerId: 1 }), {
+        transaction: fakeTransaction,
+      });
+    });
+
+    it('สถานะลูกค้าใหม่ไม่ได้ถูกตั้งที่นี่ — กติกา ACTIVE เป็นค่าเริ่มต้นอยู่ที่ CustomersService ที่เดียว', async () => {
+      await service.create({ ...base, newCustomer }, actor);
+
+      const [passed] = customersService.createRecord.mock.calls[0] as [{ status?: CustomerStatus }];
+      expect(passed.status).toBeUndefined();
     });
   });
 });

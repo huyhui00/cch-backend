@@ -47,10 +47,27 @@ const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
  * ตอนติดต่อจริงค่อยบันทึกเป็นการติดต่อแยกอีกใบ ซึ่งมี `channel` ครบอยู่แล้ว (BR-02)
  */
 export class CreateFollowUpDto {
-  @ApiProperty({ description: 'ลูกค้าที่ต้องติดตาม', example: 1 })
+  @ApiPropertyOptional({
+    description:
+      'ลูกค้าที่ต้องติดตาม — ไม่ต้องส่งถ้าส่ง projectId มา ระบบคัดลอกจากโปรเจคให้ ' +
+      'ถ้าส่งมาทั้งคู่ต้องเป็นเจ้าของโปรเจคนั้นจริง ต้องมีอย่างน้อยหนึ่งในสองค่านี้',
+    example: 1,
+  })
+  @IsOptional()
   @IsInt({ message: 'customerId ต้องเป็นจำนวนเต็ม' })
   @IsPositive({ message: 'customerId ต้องมากกว่า 0' })
-  customerId: number;
+  customerId?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'โปรเจคที่ติดตาม (ประชุม 11 ก.ย. — "ติดตามโปรเจค ไม่ใช่ตามลูกค้า") ' +
+      'ยังไม่บังคับที่ API เพราะยังไม่ตกลงว่าทุกงานต้องมีโปรเจคไหม',
+    example: 3,
+  })
+  @IsOptional()
+  @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
+  projectId?: number;
 
   @ApiProperty({
     description: 'เรื่องที่ต้องติดตาม',
@@ -95,11 +112,20 @@ export class CreateFollowUpDto {
  *
  * ย้ายลูกค้าไม่ได้ (ไม่มี `customerId`) ด้วยเหตุผลเดียวกับที่ย้ายโครงการข้ามลูกค้าไม่ได้
  * ใน Phase 5 — งานติดตามที่ทำไปแล้วจะพาประวัติไปโผล่ผิดลูกค้า
- * ผูกผิดรายให้ยกเลิกแล้วสร้างใหม่
+ * ผูกผิดรายให้ยกเลิกแล้วสร้างใหม่ — เปลี่ยน `projectId` ได้เฉพาะโปรเจคของลูกค้ารายเดิม
  *
  * `completedAt` ไม่ได้รับจาก client — ระบบใส่ให้เองตอนสถานะเป็น DONE
  */
 export class UpdateFollowUpDto {
+  @ApiPropertyOptional({
+    description: 'เปลี่ยนโปรเจคได้เฉพาะโปรเจคของลูกค้ารายเดิม — ส่ง null เพื่อถอดออก',
+    example: 3,
+  })
+  @IsOptional()
+  @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
+  projectId?: number | null;
+
   @ApiPropertyOptional({ maxLength: 255 })
   @IsOptional()
   @IsString({ message: 'เรื่องที่ต้องติดตามต้องเป็นข้อความ' })
@@ -167,6 +193,12 @@ export class QueryFollowUpsDto extends PaginationDto {
   @IsInt({ message: 'customerId ต้องเป็นจำนวนเต็ม' })
   @IsPositive({ message: 'customerId ต้องมากกว่า 0' })
   customerId?: number;
+
+  @ApiPropertyOptional({ description: 'กรองตามโปรเจค — ใช้ในหน้ารายละเอียดโปรเจค', example: 3 })
+  @IsOptional()
+  @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
+  projectId?: number;
 
   @ApiPropertyOptional({
     description: 'กรองตามผู้รับผิดชอบ — หน้าจอ "งานติดตามของฉัน"',

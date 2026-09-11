@@ -751,6 +751,79 @@ describe('TicketsService', () => {
   });
 
   // -------------------------------------------------------------------------
+  // ค้นหาปัญหาเก่า (ประชุม 11 ก.ย. — B-10)
+  // ลูกค้าจำได้แค่บริษัท/โครงการ ถ้าค้นไม่เจอพนักงานจะเปิดใบใหม่ ซึ่งขัด BR-04
+  // -------------------------------------------------------------------------
+  describe('ค้นหาด้วยชื่อลูกค้าและโครงการ', () => {
+    type OrWhere = Record<symbol, Record<string, unknown>[]>;
+
+    function captureWhere(): () => OrWhere {
+      let captured: OrWhere = {};
+      ticketModel.findAndCountAll.mockImplementation((options: { where: OrWhere }) => {
+        captured = options.where;
+        return Promise.resolve({ rows: [], count: 0 });
+      });
+      return () => captured;
+    }
+
+    it('รวมใบของลูกค้าและโครงการที่ชื่อตรง เข้ากับการค้นจากหัวข้อ/เลขใบ', async () => {
+      customerModel.findAll.mockResolvedValue([{ id: 3 }, { id: 4 }]);
+      projectModel.findAll.mockResolvedValue([{ id: 9 }]);
+      const where = captureWhere();
+
+      await service.findAll(queryDto({ search: 'โค้ดชิล' }));
+
+      const conditions = where()[Op.or];
+      expect(conditions).toEqual(
+        expect.arrayContaining([
+          { customerId: { [Op.in]: [3, 4] } },
+          { projectId: { [Op.in]: [9] } },
+          { ticketNo: { [Op.like]: '%โค้ดชิล%' } },
+        ]),
+      );
+    });
+
+    it('ค้นลูกค้า/โครงการรวมที่ถูกลบไปแล้ว เพราะใบเก่ายังชี้ไปหาอยู่', async () => {
+      customerModel.findAll.mockResolvedValue([]);
+      projectModel.findAll.mockResolvedValue([]);
+      captureWhere();
+
+      await service.findAll(queryDto({ search: 'x' }));
+
+      expect(customerModel.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ paranoid: false }),
+      );
+      expect(projectModel.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ paranoid: false }),
+      );
+    });
+
+    it('ไม่มีลูกค้า/โครงการที่ชื่อตรง → ไม่ใส่ IN ว่าง ๆ ที่จะทำให้ SQL พัง', async () => {
+      customerModel.findAll.mockResolvedValue([]);
+      projectModel.findAll.mockResolvedValue([]);
+      const where = captureWhere();
+
+      await service.findAll(queryDto({ search: 'ไม่มีทางตรง' }));
+
+      const keys = where()[Op.or].flatMap((condition) => Object.keys(condition));
+      expect(keys).not.toContain('customerId');
+      expect(keys).not.toContain('projectId');
+    });
+
+    it('หน้ารอรับการแก้ไขค้นด้วยชื่อลูกค้าได้เหมือนกัน และยังกรองสถานะที่ค้างอยู่', async () => {
+      customerModel.findAll.mockResolvedValue([{ id: 3 }]);
+      projectModel.findAll.mockResolvedValue([]);
+      const where = captureWhere();
+
+      await service.findPending(queryDto({ search: 'โค้ดชิล' }));
+
+      const captured = where() as OrWhere & { status: Record<symbol, TicketStatus[]> };
+      expect(captured[Op.or]).toEqual(expect.arrayContaining([{ customerId: { [Op.in]: [3] } }]));
+      expect(captured.status[Op.in]).toContain(TicketStatus.RECEIVED);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // BR-04 — ปัญหาเดิมกลับมา ต้องอยู่ในใบเดิม
   // -------------------------------------------------------------------------
   describe('reopen', () => {

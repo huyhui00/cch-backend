@@ -19,3 +19,11 @@ process.env.NODE_ENV = 'test';
 // ตรึงโหมดรอบโควตาไว้ที่ค่าที่ตกลงกัน (Q2) ไม่ให้ผลของเทสต์เปลี่ยนตาม .env
 // ของแต่ละเครื่อง — เทสต์ที่ผ่านบ้างไม่ผ่านบ้างตามเครื่องคนรันคือเทสต์ที่ไม่มีประโยชน์
 process.env.MA_QUOTA_RESET_MODE = 'CONTRACT_ANNIVERSARY';
+
+// ไฟล์ที่อัปโหลดระหว่างเทสต์ลงโฟลเดอร์ชั่วคราว ไม่ขึ้น R2 จริงแม้เครื่องนั้นจะมี key
+// และไม่ปนกับโฟลเดอร์ uploads/ ที่ใช้ตอนพัฒนา
+process.env.STORAGE_DRIVER = 'local';
+process.env.LOCAL_STORAGE_DIR = require('node:path').join(
+  require('node:os').tmpdir(),
+  'cch-backend-e2e-uploads',
+);
