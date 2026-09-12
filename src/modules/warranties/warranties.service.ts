@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, type Transaction, type WhereOptions } from 'sequelize';
 
@@ -9,6 +14,8 @@ import {
   AcceptanceStatus,
   Customer,
   Delivery,
+  MaContract,
+  MaPlan,
   Project,
   Warranty,
   WarrantyStatus,
@@ -31,6 +38,10 @@ export const WARRANTY_REQUIRES_FINAL_DELIVERY_MESSAGE =
   'การส่งมอบนี้ไม่ใช่การส่งมอบครั้งสุดท้ายของโครงการ จึงออกประกันไม่ได้ — ' +
   'ประกันออกหลังส่งมอบงานที่ครบแล้วเท่านั้น ถ้าเป็นครั้งสุดท้ายจริงให้ยืนยันที่การตรวจรับก่อน';
 
+export const WARRANTY_MA_CONTRACT_PROJECT_MISMATCH_MESSAGE =
+  'สัญญา MA ที่เลือกไม่ใช่สัญญาของโครงการเดียวกันกับประกันใบนี้ — ' +
+  'ประกันผูกกับโครงการผ่านใบส่งมอบ จึงผูกได้เฉพาะสัญญาของโครงการนั้น';
+
 /** สร้างใหม่ทุกครั้ง — Sequelize แก้ object ของ include ในที่ตอน normalize ห้ามใช้ร่วมกัน */
 function deliveryInclude() {
   return {
@@ -38,6 +49,29 @@ function deliveryInclude() {
     attributes: ['id', 'title', 'version', 'deliveredAt'],
     required: false,
     paranoid: false,
+  };
+}
+
+/**
+ * สัญญา MA ที่ผูกไว้ (B-13) — อ่านมาแสดงว่า "ประกันนี้รวม MA รูปแบบไหน"
+ *
+ * `paranoid: false` เพราะสัญญาที่ถูกลบไปแล้วยังต้องอ่านชื่อแผนได้ ไม่งั้นประกันเก่า
+ * จะแสดงว่าไม่ได้ผูกอะไรเลยทั้งที่ `ma_contract_id` ยังมีค่าอยู่
+ */
+function maContractInclude() {
+  return {
+    model: MaContract,
+    attributes: ['id', 'contractNo', 'status', 'planId'],
+    required: false,
+    paranoid: false,
+    include: [
+      {
+        model: MaPlan,
+        attributes: ['id', 'code', 'name'],
+        required: false,
+        paranoid: false,
+      },
+    ],
   };
 }
 
@@ -80,6 +114,7 @@ export class WarrantiesService {
     @InjectModel(Warranty) private readonly warrantyModel: typeof Warranty,
     @InjectModel(Delivery) private readonly deliveryModel: typeof Delivery,
     @InjectModel(Project) private readonly projectModel: typeof Project,
+    @InjectModel(MaContract) private readonly maContractModel: typeof MaContract,
   ) {}
 
   /**
@@ -108,10 +143,12 @@ export class WarrantiesService {
     const endDate = addMonths(startDate, dto.durationMonth);
 
     await this.assertNotDuplicate(deliveryId, dto.durationMonth);
+    await this.assertMaContractMatchesProject(dto.maContractId, delivery.projectId);
 
     const warranty = await this.warrantyModel.create({
       deliveryId,
       projectId: delivery.projectId,
+      maContractId: dto.maContractId ?? null,
       durationMonth: dto.durationMonth,
       startDate,
       endDate,
@@ -126,7 +163,7 @@ export class WarrantiesService {
 
   async findOne(id: number): Promise<WarrantyResponseDto> {
     const warranty = await this.warrantyModel.findByPk(id, {
-      include: [deliveryInclude(), projectInclude()],
+      include: [deliveryInclude(), projectInclude(), maContractInclude()],
     });
 
     if (!warranty) {
@@ -156,7 +193,7 @@ export class WarrantiesService {
 
     const { rows, count } = await this.warrantyModel.findAndCountAll({
       where,
-      include: [deliveryInclude(), projectInclude()],
+      include: [deliveryInclude(), projectInclude(), maContractInclude()],
       distinct: true,
       order: [
         [sortBy, query.sortOrder],
@@ -196,7 +233,7 @@ export class WarrantiesService {
         status: { [Op.ne]: WarrantyStatus.VOID },
         endDate: { [Op.between]: [today, until] },
       },
-      include: [deliveryInclude(), projectInclude(query.customerId)],
+      include: [deliveryInclude(), projectInclude(query.customerId), maContractInclude()],
       distinct: true,
       // ใกล้หมดที่สุดขึ้นก่อนเสมอ ไม่สนใจ sortOrder ที่ส่งมา เพราะหน้าจอนี้มีความหมายเดียว
       order: [
@@ -227,12 +264,18 @@ export class WarrantiesService {
 
     const durationMonth = dto.durationMonth ?? warranty.durationMonth;
 
+    // ส่ง null มา = ถอดการผูกออก (ผูกผิดฉบับ) ไม่ส่งมาเลย = คงค่าเดิม
+    if (dto.maContractId !== undefined && dto.maContractId !== null) {
+      await this.assertMaContractMatchesProject(dto.maContractId, warranty.projectId);
+    }
+
     await warranty.update({
       ...(dto.durationMonth !== undefined
         ? { durationMonth, endDate: addMonths(warranty.startDate, durationMonth) }
         : {}),
       ...(dto.status !== undefined ? { status: dto.status } : {}),
       ...(dto.scopeNote !== undefined ? { scopeNote: dto.scopeNote ?? null } : {}),
+      ...(dto.maContractId !== undefined ? { maContractId: dto.maContractId ?? null } : {}),
       updatedBy: actorId,
     });
 
@@ -354,6 +397,37 @@ export class WarrantiesService {
 
     if (!project) {
       throw new NotFoundException('ไม่พบข้อมูลโครงการ');
+    }
+  }
+
+  /**
+   * สัญญา MA ที่จะผูกต้องเป็นของโครงการเดียวกับประกัน (B-13)
+   *
+   * ประกันได้ `projectId` มาจากใบส่งมอบเสมอ (BR-06) ส่วนสัญญา MA ก็ผูกโครงการเสมอ (Phase 8)
+   * ถ้าปล่อยให้ผูกข้ามโครงการ หน้าจอจะแสดงว่าประกันของโครงการ A รวมแผนของโครงการ B
+   * ซึ่งอ่านแล้วเข้าใจผิดทันที และไม่มีทางตรวจเจอเพราะไม่มีใครไล่ดูทีละใบ
+   *
+   * ค้นแบบ `paranoid: false` ไม่ได้ — สัญญาที่ถูกลบไปแล้วไม่ควรถูกผูกเข้ามาใหม่
+   * (การ *อ่าน* สัญญาที่ถูกลบยังทำได้ผ่าน maContractInclude() เพื่อไม่ให้ประกันเก่าแสดงผลเพี้ยน)
+   */
+  private async assertMaContractMatchesProject(
+    maContractId: number | null | undefined,
+    projectId: number,
+  ): Promise<void> {
+    if (maContractId === undefined || maContractId === null) {
+      return;
+    }
+
+    const contract = await this.maContractModel.findByPk(maContractId, {
+      attributes: ['id', 'projectId'],
+    });
+
+    if (!contract) {
+      throw new NotFoundException('ไม่พบข้อมูลสัญญา MA');
+    }
+
+    if (contract.projectId !== projectId) {
+      throw new BadRequestException(WARRANTY_MA_CONTRACT_PROJECT_MISMATCH_MESSAGE);
     }
   }
 

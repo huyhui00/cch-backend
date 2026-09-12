@@ -203,7 +203,11 @@ describe('Tickets (e2e)', () => {
 
     await authed('patch', `/api/tickets/${closedId}/close`).send({}).expect(200);
 
-    const pending = await authed('get', '/api/tickets/pending?limit=100').expect(200);
+    // กรองด้วย stamp ของรอบนี้ ไม่ใช่ดึงร้อยแถวแรกมาหา — ฐานทดสอบไม่ถูกล้างระหว่างรอบ
+    // ใบที่ค้างจึงสะสมขึ้นเรื่อย ๆ จนใบใหม่หลุดออกนอกหน้าแรกแล้วเทสต์แดงโดยที่โค้ดไม่ได้พัง
+    const pending = await authed('get', `/api/tickets/pending?limit=100&search=${stamp}`).expect(
+      200,
+    );
     const items = (pending.body as ApiResponse<ListPayload<TicketPayload>>).data.items;
     const ids = items.map((item) => item.id);
 
@@ -230,7 +234,9 @@ describe('Tickets (e2e)', () => {
       .expect(200);
     expect((reopened.body as ApiResponse<TicketPayload>).data.status).toBe('REOPENED');
 
-    const pending = await authed('get', '/api/tickets/pending?limit=100').expect(200);
+    const pending = await authed('get', `/api/tickets/pending?limit=100&search=${stamp}`).expect(
+      200,
+    );
     const ids = (pending.body as ApiResponse<ListPayload<TicketPayload>>).data.items.map(
       (item) => item.id,
     );

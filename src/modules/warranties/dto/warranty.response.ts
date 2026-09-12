@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 import { daysUntil } from '../../../common/utils/date.util';
-import { Warranty, WarrantyStatus } from '../../../models';
+import { MaContractStatus, Warranty, WarrantyStatus } from '../../../models';
 
 /**
  * ใบส่งมอบต้นทางแบบย่อ
@@ -21,6 +21,35 @@ export class DeliverySummaryDto {
 
   @ApiProperty({ description: 'จุดตั้งต้นของระยะประกัน (BR-06)' })
   deliveredAt: Date;
+}
+
+/**
+ * สัญญา MA ที่ประกันใบนี้มาคู่กัน (B-13)
+ *
+ * มีเท่าที่ต้องใช้ตอบคำถามของพี่เลี้ยงว่า "ประกันนี้รวม MA ตัวไหน รูปแบบไหน" เท่านั้น
+ * **ห้ามเพิ่มราคาหรือโควตาลงในนี้** — พี่เลี้ยงปฏิเสธการคิดรวมไว้ชัด ถ้าเอาตัวเลขพวกนั้นมาแปะ
+ * หน้าจอจะเริ่มเอาไปบวกกับประกันเอง ซึ่งเป็นสิ่งที่ตกลงกันว่าจะไม่ทำ
+ * รายละเอียดเต็มของสัญญาอยู่ที่ /api/ma-contracts/:id ตามเดิม
+ */
+export class WarrantyMaContractSummaryDto {
+  @ApiProperty({ example: 3 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'MA-2026-001' })
+  contractNo: string | null;
+
+  @ApiProperty({ enum: MaContractStatus, description: 'สถานะที่บันทึกไว้ของสัญญา' })
+  status: MaContractStatus;
+
+  @ApiProperty({ nullable: true, example: 'MA-STD', description: 'รหัสแผนที่สัญญาฉบับนี้ใช้' })
+  planCode: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 'Standard',
+    description: 'ชื่อแผน — "รูปแบบ" ที่พี่เลี้ยงถามถึง',
+  })
+  planName: string | null;
 }
 
 export class WarrantyProjectSummaryDto {
@@ -79,6 +108,22 @@ export class WarrantyResponseDto {
 
   @ApiProperty({ type: WarrantyProjectSummaryDto, nullable: true })
   project: WarrantyProjectSummaryDto | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'สัญญา MA ที่ประกันใบนี้มาคู่กัน — null เมื่อไม่ได้ผูก (B-13)',
+    example: 3,
+  })
+  maContractId: number | null;
+
+  @ApiProperty({
+    type: WarrantyMaContractSummaryDto,
+    nullable: true,
+    description:
+      'ข้อมูลย่อของสัญญาที่ผูกไว้ ใช้แสดงว่า "ประกันนี้รวม MA รูปแบบไหน" — ' +
+      'อ้างอิงอย่างเดียว ห้ามเอาโควตาหรือราคาของสัญญามารวมกับประกัน',
+  })
+  maContract: WarrantyMaContractSummaryDto | null;
 
   @ApiProperty({ example: 12 })
   durationMonth: number;
@@ -181,6 +226,16 @@ export function toWarrantyResponse(warranty: Warranty, onDate: string): Warranty
           name: warranty.project.name,
           customerId: warranty.project.customerId,
           customerName: warranty.project.customer ? warranty.project.customer.name : null,
+        }
+      : null,
+    maContractId: warranty.maContractId ?? null,
+    maContract: warranty.maContract
+      ? {
+          id: warranty.maContract.id,
+          contractNo: warranty.maContract.contractNo,
+          status: warranty.maContract.status,
+          planCode: warranty.maContract.plan ? warranty.maContract.plan.code : null,
+          planName: warranty.maContract.plan ? warranty.maContract.plan.name : null,
         }
       : null,
     durationMonth: warranty.durationMonth,

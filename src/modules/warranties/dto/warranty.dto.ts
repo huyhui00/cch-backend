@@ -47,6 +47,19 @@ export class CreateWarrantyDto {
   @IsString({ message: 'ขอบเขตการรับประกันต้องเป็นข้อความ' })
   @Transform(trimToNull)
   scopeNote?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'สัญญา MA ที่ประกันใบนี้มาคู่กัน (B-13) — ต้องเป็นสัญญาของโครงการเดียวกัน ' +
+      'ไม่บังคับกรอก และเป็นการอ้างอิงอย่างเดียว ไม่มีการรวมโควตาหรือรวมราคาใด ๆ ' +
+      'ประกันยังมาก่อนสัญญา MA ในการเสนอประเภทการคิดเงินเหมือนเดิม',
+    example: 3,
+  })
+  @IsOptional()
+  @IsInt({ message: 'maContractId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'maContractId ต้องมากกว่า 0' })
+  maContractId?: number | null;
 }
 
 /**
@@ -84,6 +97,18 @@ export class UpdateWarrantyDto {
   @IsString({ message: 'ขอบเขตการรับประกันต้องเป็นข้อความ' })
   @Transform(trimToNull)
   scopeNote?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'สัญญา MA ที่ผูกกับประกันใบนี้ (B-13) — ส่ง null เพื่อถอดการผูกออกเมื่อผูกผิดฉบับ ' +
+      'ไม่ส่งมาเลย = คงค่าเดิม · ต้องเป็นสัญญาของโครงการเดียวกันกับประกัน',
+    example: 3,
+  })
+  @IsOptional()
+  @IsInt({ message: 'maContractId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'maContractId ต้องมากกว่า 0' })
+  maContractId?: number | null;
 }
 
 export class QueryWarrantiesDto extends PaginationDto {

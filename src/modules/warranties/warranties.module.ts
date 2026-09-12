@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 
-import { Customer, Delivery, Project, Warranty } from '../../models';
+import { Customer, Delivery, MaContract, MaPlan, Project, Warranty } from '../../models';
 import { WarrantiesController } from './warranties.controller';
 import { WarrantiesService } from './warranties.service';
 
@@ -14,9 +14,16 @@ import { WarrantiesService } from './warranties.service';
  *
  * Customer อยู่ในรายการเพราะ include ซ้อนใต้ Project ตอนกรอง "ประกันใกล้หมด"
  * ตามลูกค้า ทำให้หน้าจอแสดงชื่อลูกค้าได้โดยไม่ต้องยิงถามซ้ำ
+ *
+ * MaContract / MaPlan เข้ามาตอน B-13 — ประกันผูกสัญญา MA ได้เพื่อ *อ้างอิง* ว่าประกันใบนี้
+ * มาคู่กับแผนไหน ใช้ model ตรง ๆ ไม่ inject MaContractsService เพราะต้องการแค่ตรวจว่า
+ * สัญญามีอยู่จริงและอยู่โครงการเดียวกัน ไม่ได้ใช้กติกาการคิดเงินหรือโควตาของโมดูลนั้นเลย
+ * (พี่เลี้ยง: "ไม่ใช่คิดรวมนะ") การพึ่ง service จะลากกติกาที่ไม่เกี่ยวเข้ามาโดยไม่จำเป็น
  */
 @Module({
-  imports: [SequelizeModule.forFeature([Warranty, Delivery, Project, Customer])],
+  imports: [
+    SequelizeModule.forFeature([Warranty, Delivery, Project, Customer, MaContract, MaPlan]),
+  ],
   controllers: [WarrantiesController],
   providers: [WarrantiesService],
   exports: [WarrantiesService],

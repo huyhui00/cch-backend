@@ -2,6 +2,7 @@ import { BelongsTo, Column, DataType, ForeignKey, Table } from 'sequelize-typesc
 
 import { AuditedModel } from './base.model';
 import { Delivery } from './delivery.model';
+import { MaContract } from './ma-contract.model';
 import { Project } from './project.model';
 
 export enum WarrantyStatus {
@@ -28,6 +29,7 @@ export enum WarrantyStatus {
 export interface WarrantyCreationAttributes {
   deliveryId: number;
   projectId: number;
+  maContractId?: number | null;
   durationMonth: number;
   startDate: string;
   endDate: string;
@@ -46,6 +48,14 @@ export class Warranty extends AuditedModel<Warranty, WarrantyCreationAttributes>
   @ForeignKey(() => Project)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'project_id' })
   projectId: number;
+
+  /**
+   * สัญญา MA ที่ประกันใบนี้มาคู่กัน (B-13) — **อ้างอิงอย่างเดียว ไม่มีการคิดรวม**
+   * พี่เลี้ยง: "ไม่ใช่คิดรวมนะ เราดึงสัญญามาเพิ่มในประกันด้วย" เพื่อให้รู้ว่าประกันนี้รวมแผนไหน
+   */
+  @ForeignKey(() => MaContract)
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'ma_contract_id' })
+  maContractId: number | null;
 
   @Column({ type: DataType.INTEGER, allowNull: false, field: 'duration_month' })
   durationMonth: number;
@@ -72,4 +82,7 @@ export class Warranty extends AuditedModel<Warranty, WarrantyCreationAttributes>
 
   @BelongsTo(() => Project)
   project: Project;
+
+  @BelongsTo(() => MaContract)
+  maContract: MaContract | null;
 }

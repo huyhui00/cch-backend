@@ -1,13 +1,21 @@
 /// <reference types="jest" />
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Op } from 'sequelize';
 
 import { runWithRequestContext } from '../../common/context/request-context';
 import { todayAsDateOnly, toDateOnly } from '../../common/utils/date.util';
-import { AcceptanceStatus, Delivery, Project, Warranty, WarrantyStatus } from '../../models';
 import {
+  AcceptanceStatus,
+  Delivery,
+  MaContract,
+  Project,
+  Warranty,
+  WarrantyStatus,
+} from '../../models';
+import {
+  WARRANTY_MA_CONTRACT_PROJECT_MISMATCH_MESSAGE,
   WARRANTY_REQUIRES_ACCEPTANCE_MESSAGE,
   WARRANTY_REQUIRES_FINAL_DELIVERY_MESSAGE,
   WarrantiesService,
@@ -105,12 +113,14 @@ describe('WarrantiesService', () => {
   let warrantyModel: ModelMock;
   let deliveryModel: ModelMock;
   let projectModel: ModelMock;
+  let maContractModel: ModelMock;
   let service: WarrantiesService;
 
   beforeEach(() => {
     warrantyModel = modelMock();
     deliveryModel = modelMock();
     projectModel = modelMock();
+    maContractModel = modelMock();
 
     warrantyModel.findOne.mockResolvedValue(null);
     warrantyModel.findAll.mockResolvedValue([]);
@@ -119,11 +129,14 @@ describe('WarrantiesService', () => {
     warrantyModel.create.mockResolvedValue(warrantyRow());
     deliveryModel.findByPk.mockResolvedValue(deliveryRow(new Date('2026-09-08T10:30:00Z')));
     projectModel.findByPk.mockResolvedValue({ id: 1 });
+    // สัญญาที่หาเจอเป็นของโครงการเดียวกับใบส่งมอบตัวอย่าง (projectId 1)
+    maContractModel.findByPk.mockResolvedValue({ id: 3, projectId: 1 });
 
     service = new WarrantiesService(
       warrantyModel as unknown as typeof Warranty,
       deliveryModel as unknown as typeof Delivery,
       projectModel as unknown as typeof Project,
+      maContractModel as unknown as typeof MaContract,
     );
   });
 
@@ -280,6 +293,97 @@ describe('WarrantiesService', () => {
       );
 
       expect(captured.createdBy).toBe(42);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // B-13 — ประกันผูกสัญญา MA (อ้างอิงอย่างเดียว ไม่คิดรวม)
+  //
+  // พี่เลี้ยงปฏิเสธชัดตอนถูกถามว่า "คิดรวมกับ MA?" ว่า "ไม่ใช่คิดรวมนะ"
+  // เทสต์ชุดนี้จึงตรึงสองอย่าง: ผูกได้จริง และการผูก *ไม่* ไปเปลี่ยนอะไรของเดิมเลย
+  // -------------------------------------------------------------------------
+  describe('ผูกสัญญา MA กับประกัน (B-13)', () => {
+    it('บันทึก maContractId เมื่อสัญญาเป็นของโครงการเดียวกัน', async () => {
+      deliveryModel.findByPk.mockResolvedValue(deliveryRow(new Date(2026, 8, 8), 7));
+      maContractModel.findByPk.mockResolvedValue({ id: 3, projectId: 7 });
+
+      let captured: { maContractId: number | null } = { maContractId: null };
+      warrantyModel.create.mockImplementation((values: { maContractId: number | null }) => {
+        captured = values;
+        return Promise.resolve(warrantyRow());
+      });
+
+      await service.create(5, { durationMonth: 12, maContractId: 3 });
+
+      expect(captured.maContractId).toBe(3);
+    });
+
+    it('ปฏิเสธด้วย 400 เมื่อสัญญาเป็นของคนละโครงการ และไม่สร้างประกันทิ้งไว้', async () => {
+      deliveryModel.findByPk.mockResolvedValue(deliveryRow(new Date(2026, 8, 8), 7));
+      maContractModel.findByPk.mockResolvedValue({ id: 3, projectId: 99 });
+
+      await expect(service.create(5, { durationMonth: 12, maContractId: 3 })).rejects.toThrow(
+        new BadRequestException(WARRANTY_MA_CONTRACT_PROJECT_MISMATCH_MESSAGE),
+      );
+      expect(warrantyModel.create).not.toHaveBeenCalled();
+    });
+
+    it('โยน 404 เมื่อไม่พบสัญญาที่ระบุ', async () => {
+      maContractModel.findByPk.mockResolvedValue(null);
+
+      await expect(
+        service.create(5, { durationMonth: 12, maContractId: 404 }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(warrantyModel.create).not.toHaveBeenCalled();
+    });
+
+    it('ไม่ผูกสัญญาก็ออกประกันได้ตามเดิม และไม่ไปแตะตาราง ma_contracts เลย', async () => {
+      let captured: { maContractId: number | null } = { maContractId: 999 };
+      warrantyModel.create.mockImplementation((values: { maContractId: number | null }) => {
+        captured = values;
+        return Promise.resolve(warrantyRow());
+      });
+
+      await service.create(5, { durationMonth: 12 });
+
+      expect(captured.maContractId).toBeNull();
+      expect(maContractModel.findByPk).not.toHaveBeenCalled();
+    });
+
+    it('ถอดการผูกออกได้ด้วยการส่ง null และไม่ต้องไปตรวจสัญญา', async () => {
+      const warranty = warrantyRow();
+      warrantyModel.findByPk.mockResolvedValue(warranty);
+
+      await service.update(4, { maContractId: null });
+
+      expect(warranty.update).toHaveBeenCalledWith(expect.objectContaining({ maContractId: null }));
+      expect(maContractModel.findByPk).not.toHaveBeenCalled();
+    });
+
+    it('ไม่ส่ง maContractId มาเลย = คงค่าเดิม ไม่ล้างทิ้ง', async () => {
+      const warranty = warrantyRow();
+      warrantyModel.findByPk.mockResolvedValue(warranty);
+
+      let patch: { maContractId?: number | null } = {};
+      warranty.update.mockImplementation((values: { maContractId?: number | null }) => {
+        patch = values;
+        return Promise.resolve(warranty);
+      });
+
+      await service.update(4, { scopeNote: 'แก้เฉพาะขอบเขต' });
+
+      expect('maContractId' in patch).toBe(false);
+    });
+
+    it('การผูกสัญญาไม่เปลี่ยนเงื่อนไขว่าประกันคุ้มครองอยู่ไหม — "ไม่ใช่คิดรวม"', async () => {
+      // ถ้าวันหนึ่งมีคนเอาสถานะหรือช่วงวันของสัญญา MA มาร่วมตัดสิน เทสต์นี้จะแดง
+      warrantyModel.findOne.mockResolvedValue(warrantyRow({ maContractId: 3 } as never));
+
+      await service.findCoveringWarranty(1, new Date('2026-10-01'));
+
+      const [options] = warrantyModel.findOne.mock.calls[0] as [{ where: Record<string, unknown> }];
+      expect(options.where).not.toHaveProperty('maContractId');
+      expect(maContractModel.findByPk).not.toHaveBeenCalled();
     });
   });
 

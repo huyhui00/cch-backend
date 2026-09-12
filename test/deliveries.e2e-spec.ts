@@ -178,4 +178,93 @@ describe('Deliveries → Warranties (e2e)', () => {
     expect(reverted.status).toBe('IN_PROGRESS');
     expect(reverted.actualEndDate).toBeNull();
   });
+
+  /**
+   * B-13 — ประกันผูกสัญญา MA (ประชุม 11 ก.ย., ยืนยัน Q14 12 ก.ย.)
+   *
+   * พี่เลี้ยง: "เราดึงสัญญาบำรุงรักษา MA เข้าไปด้วยนะ ... จะได้รู้ว่าประกันตัวนี้รวม MA ตัวไหน"
+   * และปฏิเสธการคิดรวมไว้ชัด — เทสต์นี้จึงพิสูจน์ทั้งว่าผูกได้จริงตลอดสาย HTTP
+   * และว่าสัญญาที่ผูกต้องเป็นของโครงการเดียวกันเท่านั้น
+   */
+  it('ผูกสัญญา MA กับประกันได้ และผูกข้ามโครงการไม่ได้ (B-13)', async () => {
+    const customer = await authed('post', '/api/customers')
+      .send({ name: `ลูกค้าทดสอบผูก MA ${stamp}` })
+      .expect(201);
+    const customerId = (customer.body as ApiResponse<{ id: number }>).data.id;
+
+    const makeProject = async (name: string): Promise<number> => {
+      const created = await authed('post', '/api/projects')
+        .send({ customerId, name, status: 'IN_PROGRESS' })
+        .expect(201);
+      return (created.body as ApiResponse<{ id: number }>).data.id;
+    };
+
+    const mine = await makeProject(`โครงการผูก MA ${stamp}`);
+    const other = await makeProject(`โครงการอื่นของลูกค้าเดียวกัน ${stamp}`);
+
+    const plans = await authed('get', '/api/ma-plans?limit=1').expect(200);
+    const planId = (plans.body as ApiResponse<{ items: { id: number }[] }>).data.items[0].id;
+
+    const makeContract = async (forProject: number): Promise<number> => {
+      const response = await authed('post', '/api/ma-contracts')
+        .send({
+          projectId: forProject,
+          planId,
+          price: '12000.00',
+          startDate: '2026-09-01',
+          endDate: '2027-08-31',
+        })
+        .expect(201);
+      return (response.body as ApiResponse<{ id: number }>).data.id;
+    };
+
+    const myContract = await makeContract(mine);
+    const otherContract = await makeContract(other);
+
+    projectId = mine;
+    const finalId = await deliver('ส่งงานครั้งสุดท้าย', '2026-09-02T10:00:00+07:00');
+    await accept(finalId, { acceptanceStatus: 'ACCEPTED', isFinal: true }).expect(200);
+
+    // สัญญาของโครงการอื่นผูกไม่ได้ แม้จะเป็นลูกค้ารายเดียวกัน
+    const mismatch = await authed('post', `/api/deliveries/${finalId}/warranties`)
+      .send({ durationMonth: 6, maContractId: otherContract })
+      .expect(400);
+    expect((mismatch.body as ApiResponse<null>).message).toContain('โครงการเดียวกัน');
+
+    // ผูกสัญญาของโครงการตัวเองได้ และคืนชื่อแผนมาให้หน้าจอแสดง
+    const created = await authed('post', `/api/deliveries/${finalId}/warranties`)
+      .send({ durationMonth: 6, maContractId: myContract })
+      .expect(201);
+    const warranty = (
+      created.body as ApiResponse<{
+        id: number;
+        maContractId: number | null;
+        maContract: { id: number; planName: string | null } | null;
+        isCurrentlyActive: boolean;
+      }>
+    ).data;
+
+    expect(warranty.maContractId).toBe(myContract);
+    expect(warranty.maContract?.id).toBe(myContract);
+    expect(warranty.maContract?.planName).toBeTruthy();
+
+    // ถอดการผูกออกได้เมื่อผูกผิดฉบับ — ไม่ใช่หลักฐานทางการเงิน
+    const unlinked = await api()
+      .put(`/api/warranties/${warranty.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ maContractId: null })
+      .expect(200);
+    const after = (
+      unlinked.body as ApiResponse<{
+        maContractId: number | null;
+        maContract: unknown;
+        isCurrentlyActive: boolean;
+      }>
+    ).data;
+
+    expect(after.maContractId).toBeNull();
+    expect(after.maContract).toBeNull();
+    // "ไม่ใช่คิดรวมนะ" — การผูกหรือถอดสัญญาต้องไม่กระทบความคุ้มครองของประกันเลย
+    expect(after.isCurrentlyActive).toBe(warranty.isCurrentlyActive);
+  });
 });
