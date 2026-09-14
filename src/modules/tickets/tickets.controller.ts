@@ -6,6 +6,7 @@ import { type PaginatedResult } from '../../common/dto/pagination.dto';
 import { CreateResolutionDto } from './dto/resolution.dto';
 import {
   AssignTicketDto,
+  BillingSuggestionQueryDto,
   CloseTicketDto,
   CreateTicketDto,
   QueryPendingTicketsDto,
@@ -57,6 +58,20 @@ export class TicketsController {
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   findPending(@Query() query: QueryPendingTicketsDto): Promise<PaginatedResult<TicketResponseDto>> {
     return this.ticketsService.findPending(query);
+  }
+
+  @Get('billing-suggestion')
+  @RequirePermission('ticket.view')
+  @ApiOperation({
+    summary: 'ตรวจ Warranty และ MA ก่อนเปิดใบแจ้งปัญหา',
+    description:
+      'คืนคำแนะนำประเภทการคิดเงินพร้อมขอบเขตและวันหมด Warranty โดยไม่สร้างข้อมูล ' +
+      'ถ้ามีทั้ง Warranty และ MA ระบบจะเลือก Warranty ก่อน และระบุ MA เป็นข้อมูลอ้างอิงเท่านั้น',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: Object })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  getBillingSuggestion(@Query() query: BillingSuggestionQueryDto) {
+    return this.ticketsService.suggestBilling(query.projectId, new Date(query.reportedAt));
   }
 
   @Get(':id')

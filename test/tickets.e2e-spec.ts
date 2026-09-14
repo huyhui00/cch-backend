@@ -51,6 +51,7 @@ describe('Tickets (e2e)', () => {
   /** id ของบัญชีที่ล็อกอิน — ใช้เป็นผู้รับผิดชอบตอนทดสอบการมอบหมาย */
   let actorId: number;
   let customerId: number;
+  let customerCode: string;
   let projectId: number;
 
   /** ทำให้ข้อมูลของแต่ละรอบการรันไม่ชนกัน ฐานทดสอบไม่ได้ถูกล้างทุกครั้ง */
@@ -94,15 +95,16 @@ describe('Tickets (e2e)', () => {
 
     // ---- เตรียมลูกค้าและโครงการของรอบนี้ ------------------------------------
     const customer = await authed('post', '/api/customers')
-      .send({ name: `ลูกค้าทดสอบ e2e ${stamp}`, code: `E2E-C-${stamp}`, status: 'ACTIVE' })
+      .send({ name: `ลูกค้าทดสอบ e2e ${stamp}`, status: 'ACTIVE' })
       .expect(201);
-    customerId = (customer.body as ApiResponse<{ id: number }>).data.id;
+    const customerData = (customer.body as ApiResponse<{ id: number; code: string }>).data;
+    customerId = customerData.id;
+    customerCode = customerData.code;
 
     const project = await authed('post', '/api/projects')
       .send({
         customerId,
         name: `โครงการทดสอบ e2e ${stamp}`,
-        code: `E2E-P-${stamp}`,
         status: 'IN_PROGRESS',
         priority: 'NORMAL',
       })
@@ -421,7 +423,7 @@ describe('Tickets (e2e)', () => {
   it('ค้นด้วยรหัสลูกค้าได้ และคำที่ไม่ตรงอะไรเลยไม่ทำให้ SQL พัง', async () => {
     const ticketId = await openTicket(`ค้นด้วยรหัส ${stamp}`);
 
-    const byCode = await authed('get', `/api/tickets?search=E2E-C-${stamp}&limit=100`).expect(200);
+    const byCode = await authed('get', `/api/tickets?search=${customerCode}&limit=100`).expect(200);
     expect(
       (byCode.body as ApiResponse<ListPayload<TicketPayload>>).data.items.map((item) => item.id),
     ).toContain(ticketId);

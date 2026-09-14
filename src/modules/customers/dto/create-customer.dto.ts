@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsEmail,
@@ -25,6 +25,10 @@ const trimToNull = ({ value }: { value: unknown }) => {
 };
 
 export class CreateCustomerDto {
+  /** รับไว้เพื่อให้โค้ดเก่าคอมไพล์ได้ แต่ ValidationPipe จะปฏิเสธฟิลด์นี้ */
+  @ApiHideProperty()
+  code?: unknown;
+
   @ApiProperty({
     description: 'ชื่อบริษัทหรือชื่อลูกค้า',
     maxLength: 255,
@@ -35,17 +39,6 @@ export class CreateCustomerDto {
   @MaxLength(255, { message: 'ชื่อลูกค้ายาวเกิน 255 ตัวอักษร' })
   @Transform(trim)
   name: string;
-
-  @ApiPropertyOptional({
-    description: 'รหัสลูกค้าที่บริษัทกำหนดเอง ห้ามซ้ำ',
-    maxLength: 50,
-    example: 'CUS-001',
-  })
-  @IsOptional()
-  @IsString({ message: 'รหัสลูกค้าต้องเป็นข้อความ' })
-  @MaxLength(50, { message: 'รหัสลูกค้ายาวเกิน 50 ตัวอักษร' })
-  @Transform(trimToNull)
-  code?: string | null;
 
   @ApiPropertyOptional({
     description: 'เลขประจำตัวผู้เสียภาษี',

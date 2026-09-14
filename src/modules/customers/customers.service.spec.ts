@@ -1,7 +1,7 @@
 /// <reference types="jest" />
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { type ClassConstructor, plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Op } from 'sequelize';
@@ -106,7 +106,7 @@ describe('CustomersService', () => {
   let projectModel: ModelMock;
   let ticketModel: ModelMock;
   let userModel: ModelMock;
-  let sequelize: { transaction: jest.Mock };
+  let sequelize: { transaction: jest.Mock; query: jest.Mock };
   let service: CustomersService;
 
   beforeEach(() => {
@@ -118,6 +118,9 @@ describe('CustomersService', () => {
     userModel = modelMock();
     sequelize = {
       transaction: jest.fn((callback: (t: unknown) => Promise<unknown>) => callback(TRANSACTION)),
+      query: jest.fn((sql: string) =>
+        sql.includes('SELECT') ? Promise.resolve([{ nextValue: 1 }]) : Promise.resolve([]),
+      ),
     };
 
     service = new CustomersService(
@@ -334,21 +337,20 @@ describe('CustomersService', () => {
   // -------------------------------------------------------------------------
   describe('รหัสลูกค้า', () => {
     it('โยน 409 เมื่อรหัสซ้ำ และตรวจรวมรายการที่ถูกลบไปแล้วด้วย', async () => {
-      // paranoid: false คือหัวใจ — unique index ในฐานข้อมูลไม่สนใจ deleted_at
-      // ถ้าตรวจแบบมองข้ามรายการที่ลบแล้ว จะผ่าน service แต่ไปตายที่ระดับ DB
+      customerModel.create.mockResolvedValue(customerRow());
+      customerModel.findByPk.mockResolvedValue(customerRow());
       customerModel.findOne.mockResolvedValue(customerRow());
 
-      await expect(
-        service.create({ name: 'x', code: 'CUS-001', status: CustomerStatus.ACTIVE }, 9),
-      ).rejects.toBeInstanceOf(ConflictException);
+      const result = await service.create(
+        { name: 'x', code: 'CUS-001', status: CustomerStatus.ACTIVE },
+        9,
+      );
 
-      expect(customerModel.findOne).toHaveBeenCalledWith({
-        where: { code: 'CUS-001' },
-        paranoid: false,
-      });
+      expect(result.code).toBe('CUS-001');
+      expect(customerModel.findOne).not.toHaveBeenCalled();
     });
 
-    it('ไม่ตรวจซ้ำเมื่อแก้ไขแล้วส่งรหัสเดิมกลับมา', async () => {
+    it('ไม่เปิดให้แก้รหัสเดิมจาก client', async () => {
       const customer = customerRow({ code: 'CUS-001' });
       customerModel.findByPk.mockResolvedValue(customer);
 
@@ -357,20 +359,12 @@ describe('CustomersService', () => {
       expect(customerModel.findOne).not.toHaveBeenCalled();
     });
 
-    it('ยกเว้นตัวเองตอนตรวจรหัสซ้ำในการแก้ไข', async () => {
+    it('ไม่เปิดให้เปลี่ยนรหัสจาก client', async () => {
       customerModel.findByPk.mockResolvedValue(customerRow({ code: 'CUS-001' }));
-      let captured: { code: string; id: Record<symbol, number> } = { code: '', id: {} };
-      customerModel.findOne.mockImplementation(
-        (options: { where: { code: string; id: Record<symbol, number> } }) => {
-          captured = options.where;
-          return Promise.resolve(null);
-        },
-      );
 
       await service.update(1, { code: 'CUS-002' }, 9);
 
-      expect(captured.code).toBe('CUS-002');
-      expect(captured.id[Op.ne]).toBe(1);
+      expect(customerModel.findOne).not.toHaveBeenCalled();
     });
   });
 

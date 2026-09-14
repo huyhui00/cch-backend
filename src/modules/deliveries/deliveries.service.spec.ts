@@ -112,7 +112,7 @@ describe('DeliveriesService', () => {
   let contactModel: ModelMock;
   let userModel: ModelMock;
   let attachmentModel: ModelMock;
-  let sequelize: { transaction: jest.Mock };
+  let sequelize: { transaction: jest.Mock; query: jest.Mock };
   let projectsService: { findOrFail: jest.Mock };
   let warrantiesService: { resyncByDelivery: jest.Mock };
   let service: DeliveriesService;
@@ -125,6 +125,9 @@ describe('DeliveriesService', () => {
     attachmentModel = modelMock();
     sequelize = {
       transaction: jest.fn((callback: (t: unknown) => Promise<unknown>) => callback(TRANSACTION)),
+      query: jest.fn((sql: string) =>
+        sql.includes('SELECT') ? Promise.resolve([{ nextValue: 1 }]) : Promise.resolve([]),
+      ),
     };
     projectsService = { findOrFail: jest.fn().mockResolvedValue(projectRow()) };
     warrantiesService = { resyncByDelivery: jest.fn().mockResolvedValue(0) };
@@ -516,21 +519,13 @@ describe('DeliveriesService', () => {
       expect(captured.acceptedAt).toBeNull();
     });
 
-    it('โยน 409 เมื่อเลขที่ใบส่งมอบซ้ำ และตรวจรวมรายการที่ถูกลบไปแล้ว', async () => {
+    it('สร้างเลขที่ใบส่งมอบเองโดยไม่รับรหัสจาก client', async () => {
       deliveryModel.findOne.mockResolvedValue(deliveryRow());
 
       await expect(
-        service.create(1, {
-          title: 'ส่งมอบ',
-          deliveredAt: pastIso(),
-          deliveryNo: 'DN-2026-001',
-        }),
-      ).rejects.toBeInstanceOf(ConflictException);
-
-      expect(deliveryModel.findOne).toHaveBeenCalledWith({
-        where: { deliveryNo: 'DN-2026-001' },
-        paranoid: false,
-      });
+        service.create(1, { title: 'ส่งมอบ', deliveredAt: pastIso(), deliveryNo: 'DN-2026-001' }),
+      ).resolves.toBeDefined();
+      expect(deliveryModel.findOne).not.toHaveBeenCalled();
     });
 
     it('ระบุผู้รับมอบที่เป็นคนของลูกค้ารายอื่นไม่ได้', async () => {

@@ -1,12 +1,7 @@
 /// <reference types="jest" />
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Sequelize } from 'sequelize-typescript';
 
 import { runWithRequestContext } from '../../common/context/request-context';
@@ -120,6 +115,9 @@ describe('ProjectsService', () => {
     accessControl = { hasPermission: jest.fn().mockResolvedValue(true) };
     const sequelize = {
       transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(fakeTransaction)),
+      query: jest.fn((sql: string) =>
+        sql.includes('SELECT') ? Promise.resolve([{ nextValue: 1 }]) : Promise.resolve([]),
+      ),
     };
 
     projectModel.findByPk.mockResolvedValue(projectRow());
@@ -306,16 +304,11 @@ describe('ProjectsService', () => {
       );
     });
 
-    it('โยน 409 เมื่อรหัสโครงการซ้ำ และตรวจรวมรายการที่ถูกลบไปแล้ว', async () => {
+    it('สร้างรหัสเองโดยไม่รับรหัสจาก client', async () => {
       projectModel.findOne.mockResolvedValue(projectRow());
 
-      await expect(service.create({ ...dto, code: 'PRJ-2026-001' }, actor)).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-      expect(projectModel.findOne).toHaveBeenCalledWith({
-        where: { code: 'PRJ-2026-001' },
-        paranoid: false,
-      });
+      await expect(service.create({ ...dto, code: 'PRJ-2026-001' }, actor)).resolves.toBeDefined();
+      expect(projectModel.findOne).not.toHaveBeenCalled();
     });
 
     it('ปฏิเสธวันเริ่มที่อยู่หลังกำหนดส่งมอบ', async () => {
@@ -391,13 +384,13 @@ describe('ProjectsService', () => {
       expect(projectModel.create).not.toHaveBeenCalled();
     });
 
-    it('ตรวจโครงการให้ผ่านก่อนเปิดทรานแซกชัน — รหัสโครงการซ้ำต้องไม่ทิ้งลูกค้าใหม่ไว้', async () => {
+    it('สร้างลูกค้าใหม่และโครงการได้โดยไม่รับรหัสจาก client', async () => {
       projectModel.findOne.mockResolvedValue(projectRow());
 
       await expect(
         service.create({ ...base, code: 'PRJ-2026-001', newCustomer }, actor),
-      ).rejects.toBeInstanceOf(ConflictException);
-      expect(customersService.createRecord).not.toHaveBeenCalled();
+      ).resolves.toBeDefined();
+      expect(customersService.createRecord).toHaveBeenCalled();
     });
 
     it('ลูกค้าเดิม → ไม่สร้างลูกค้าและไม่ต้องเช็คสิทธิ์เพิ่มลูกค้า', async () => {

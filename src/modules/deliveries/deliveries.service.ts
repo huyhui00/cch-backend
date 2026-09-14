@@ -10,6 +10,7 @@ import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
+import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
 import { toDateOnly, todayAsDateOnly } from '../../common/utils/date.util';
 import {
   AcceptanceStatus,
@@ -205,10 +206,6 @@ export class DeliveriesService {
     const actorId = getCurrentUserId();
     const project = await this.projectsService.findOrFail(projectId);
 
-    if (dto.deliveryNo) {
-      await this.assertDeliveryNoIsAvailable(dto.deliveryNo);
-    }
-
     if (dto.deliveredByUserId) {
       await this.assertUserExists(dto.deliveredByUserId);
     }
@@ -220,22 +217,33 @@ export class DeliveriesService {
     const deliveredAt = new Date(dto.deliveredAt);
     this.assertNotInFuture(deliveredAt);
 
-    const delivery = await this.deliveryModel.create({
-      projectId,
-      title: dto.title,
-      version: dto.version ?? null,
-      deliveryNo: dto.deliveryNo ?? null,
-      description: dto.description ?? null,
-      deliveredAt,
-      // การส่งมอบเริ่มที่ "ส่งแล้ว รอตรวจรับ" เสมอ การตรวจรับเป็นคนละเหตุการณ์
-      // ที่เกิดทีหลังและใช้สิทธิ์คนละตัว
-      acceptanceStatus: AcceptanceStatus.PENDING,
-      acceptedAt: null,
-      acceptedByContactId: dto.acceptedByContactId ?? null,
-      deliveredByUserId: dto.deliveredByUserId ?? null,
-      note: dto.note ?? null,
-      createdBy: actorId,
-      updatedBy: actorId,
+    const delivery = await this.sequelize.transaction(async (transaction) => {
+      const sequence = await nextSequenceNumber(
+        this.sequelize,
+        `DELIVERY:${projectId}`,
+        transaction,
+      );
+
+      return this.deliveryModel.create(
+        {
+          projectId,
+          title: dto.title,
+          version: dto.version ?? null,
+          deliveryNo:
+            `DLV-${project.code ?? `PRJ-${new Date().getFullYear()}-${String(projectId).padStart(3, '0')}`}-` +
+            String(sequence).padStart(2, '0'),
+          description: dto.description ?? null,
+          deliveredAt,
+          acceptanceStatus: AcceptanceStatus.PENDING,
+          acceptedAt: null,
+          acceptedByContactId: dto.acceptedByContactId ?? null,
+          deliveredByUserId: dto.deliveredByUserId ?? null,
+          note: dto.note ?? null,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        { transaction },
+      );
     });
 
     return this.findOne(delivery.id);
@@ -244,10 +252,6 @@ export class DeliveriesService {
   async update(id: number, dto: UpdateDeliveryDto): Promise<DeliveryResponseDto> {
     const actorId = getCurrentUserId();
     const delivery = await this.findOrFail(id);
-
-    if (dto.deliveryNo !== undefined && dto.deliveryNo && dto.deliveryNo !== delivery.deliveryNo) {
-      await this.assertDeliveryNoIsAvailable(dto.deliveryNo, id);
-    }
 
     if (dto.deliveredByUserId) {
       await this.assertUserExists(dto.deliveredByUserId);
@@ -272,7 +276,6 @@ export class DeliveriesService {
         {
           ...(dto.title !== undefined ? { title: dto.title } : {}),
           ...(dto.version !== undefined ? { version: dto.version ?? null } : {}),
-          ...(dto.deliveryNo !== undefined ? { deliveryNo: dto.deliveryNo ?? null } : {}),
           ...(dto.description !== undefined ? { description: dto.description ?? null } : {}),
           ...(deliveredAt !== undefined ? { deliveredAt } : {}),
           ...(dto.deliveredByUserId !== undefined

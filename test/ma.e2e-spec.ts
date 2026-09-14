@@ -42,6 +42,7 @@ interface QuotaPayload {
 
 interface ContractPayload {
   id: number;
+  contractNo: string | null;
   customerId: number;
   projectId: number;
   planId: number;
@@ -99,7 +100,7 @@ describe('MA (e2e)', () => {
     token = (login.body as ApiResponse<{ accessToken: string }>).data.accessToken;
 
     const customer = await authed('post', '/api/customers')
-      .send({ name: `ลูกค้าทดสอบ MA ${stamp}`, code: `E2E-MC-${stamp}`, status: 'ACTIVE' })
+      .send({ name: `ลูกค้าทดสอบ MA ${stamp}`, status: 'ACTIVE' })
       .expect(201);
     customerId = (customer.body as ApiResponse<{ id: number }>).data.id;
 
@@ -107,7 +108,6 @@ describe('MA (e2e)', () => {
       .send({
         customerId,
         name: `โครงการทดสอบ MA ${stamp}`,
-        code: `E2E-MP-${stamp}`,
         status: 'IN_PROGRESS',
         priority: 'NORMAL',
       })
@@ -317,9 +317,9 @@ describe('MA (e2e)', () => {
 
     const created = await createContract({
       status: 'ACTIVE',
-      contractNo: `E2E-PRINT-${stamp}`,
     }).expect(201);
     const previousId = (created.body as ApiResponse<ContractPayload>).data.id;
+    const previousContractNo = (created.body as ApiResponse<ContractPayload>).data.contractNo;
 
     const renewed = await authed('post', `/api/ma-contracts/${previousId}/renew`)
       .send({ startDate: '2027-10-15', endDate: '2028-10-14', price: '52000.00' })
@@ -346,7 +346,7 @@ describe('MA (e2e)', () => {
     expect(print.contract.price).toBe('52000.00');
     expect(print.contract.previousContract).toEqual({
       id: previousId,
-      contractNo: `E2E-PRINT-${stamp}`,
+      contractNo: previousContractNo,
       startDate: '2026-10-15',
       endDate: '2027-10-14',
     });

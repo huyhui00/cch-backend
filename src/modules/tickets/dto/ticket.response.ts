@@ -113,10 +113,31 @@ export class BillingSuggestionDto {
 
   @ApiProperty({
     nullable: true,
+    description: 'วันสิ้นสุด Warranty ที่ระบบตรวจพบ ใช้ประกอบการตัดสินใจของผู้รับเรื่อง',
+    example: '2027-09-08',
+  })
+  warrantyEndDate: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'ขอบเขต Warranty ที่บันทึกไว้ ใช้ให้คนตรวจว่าเป็นงานเดิมหรือคำขอใหม่',
+    example: 'ครอบคลุมข้อผิดพลาดของฟังก์ชันเดิม ไม่รวมการเพิ่มรายงานใหม่',
+  })
+  warrantyScopeNote: string | null;
+
+  @ApiProperty({
+    nullable: true,
     description: 'สัญญา MA ที่ยัง ACTIVE อยู่ ณ วันที่แจ้ง',
     example: 2,
   })
   maContractId: number | null;
+
+  @ApiProperty({
+    description:
+      'เป็น true เมื่อมี Warranty และ MA พร้อมกัน โดย MA ใช้อ้างอิงเท่านั้น ไม่หักโควตา MA ในคำแนะนำนี้',
+    example: true,
+  })
+  maIsReferenceOnly: boolean;
 
   @ApiProperty({
     description: 'เหตุผลที่เสนอแบบนี้ ให้คนอ่านประกอบการตัดสินใจ',

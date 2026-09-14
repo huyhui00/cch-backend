@@ -29,6 +29,7 @@ export enum WarrantyStatus {
 export interface WarrantyCreationAttributes {
   deliveryId: number;
   projectId: number;
+  warrantyNo?: string | null;
   maContractId?: number | null;
   durationMonth: number;
   startDate: string;
@@ -48,6 +49,9 @@ export class Warranty extends AuditedModel<Warranty, WarrantyCreationAttributes>
   @ForeignKey(() => Project)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'project_id' })
   projectId: number;
+
+  @Column({ type: DataType.STRING(50), allowNull: true, field: 'warranty_no' })
+  warrantyNo: string | null;
 
   /**
    * สัญญา MA ที่ประกันใบนี้มาคู่กัน (B-13) — **อ้างอิงอย่างเดียว ไม่มีการคิดรวม**

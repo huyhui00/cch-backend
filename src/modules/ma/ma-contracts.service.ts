@@ -11,6 +11,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import { addDays, todayAsDateOnly } from '../../common/utils/date.util';
+import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
 import {
   Contact,
   Customer,
@@ -229,32 +230,35 @@ export class MaContractsService {
     const project = await this.findProjectOrFail(dto.projectId);
     await this.assertPlanIsUsable(dto.planId);
 
-    if (dto.contractNo) {
-      await this.assertContractNoIsAvailable(dto.contractNo);
-    }
-
     const status = dto.status ?? MaContractStatus.DRAFT;
     const warning =
       status === MaContractStatus.ACTIVE
         ? await this.describeOverlap(dto.projectId, dto.startDate, dto.endDate)
         : null;
 
-    const contract = await this.contractModel.create({
-      // ลูกค้ามาจากโครงการเสมอ ไม่รับจาก client — กันสัญญาที่ลูกค้ากับโครงการไม่ตรงกัน
-      customerId: project.customerId,
-      projectId: dto.projectId,
-      planId: dto.planId,
-      contractNo: dto.contractNo ?? null,
-      price: dto.price,
-      billingCycle: dto.billingCycle ?? undefined,
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      status,
-      signedDate: dto.signedDate ?? null,
-      signedFileUrl: dto.signedFileUrl ?? null,
-      note: dto.note ?? null,
-      createdBy: actorId,
-      updatedBy: actorId,
+    const year = new Date().getFullYear();
+    const contract = await this.sequelize.transaction(async (transaction) => {
+      const sequence = await nextSequenceNumber(this.sequelize, `MA_CONTRACT:${year}`, transaction);
+
+      return this.contractModel.create(
+        {
+          customerId: project.customerId,
+          projectId: dto.projectId,
+          planId: dto.planId,
+          contractNo: `MA-${year}-${String(sequence).padStart(3, '0')}`,
+          price: dto.price,
+          billingCycle: dto.billingCycle ?? undefined,
+          startDate: dto.startDate,
+          endDate: dto.endDate,
+          status,
+          signedDate: dto.signedDate ?? null,
+          signedFileUrl: dto.signedFileUrl ?? null,
+          note: dto.note ?? null,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        { transaction },
+      );
     });
 
     return { contract: await this.findOne(contract.id), warning };

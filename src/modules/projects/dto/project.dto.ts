@@ -1,4 +1,10 @@
-import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
+import {
+  ApiHideProperty,
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+  PartialType,
+} from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
@@ -39,6 +45,10 @@ const trimToNull = ({ value }: { value: unknown }) => {
  * ส่ง newCustomer ต้องมีสิทธิ์ `customer.create` เพิ่มจาก `project.create` ด้วย
  */
 export class CreateProjectDto {
+  /** รับไว้เพื่อให้โค้ดเก่าคอมไพล์ได้ แต่ ValidationPipe จะปฏิเสธฟิลด์นี้ */
+  @ApiHideProperty()
+  code?: unknown;
+
   @ApiPropertyOptional({
     description: 'ลูกค้าเดิมที่เป็นเจ้าของโครงการ — ส่งค่านี้ หรือ newCustomer อย่างใดอย่างหนึ่ง',
     example: 1,
@@ -66,17 +76,6 @@ export class CreateProjectDto {
   @MaxLength(255, { message: 'ชื่อโครงการยาวเกิน 255 ตัวอักษร' })
   @Transform(trim)
   name: string;
-
-  @ApiPropertyOptional({
-    description: 'รหัสโครงการที่บริษัทกำหนดเอง',
-    maxLength: 50,
-    example: 'PRJ-2026-001',
-  })
-  @IsOptional()
-  @IsString({ message: 'รหัสโครงการต้องเป็นข้อความ' })
-  @MaxLength(50, { message: 'รหัสโครงการยาวเกิน 50 ตัวอักษร' })
-  @Transform(trimToNull)
-  code?: string | null;
 
   @ApiPropertyOptional({ description: 'รายละเอียดโครงการ' })
   @IsOptional()

@@ -111,7 +111,7 @@ describe('Reports (e2e)', () => {
     token = (login.body as ApiResponse<{ accessToken: string }>).data.accessToken;
 
     const customer = await authed('post', '/api/customers')
-      .send({ name: `ลูกค้าทดสอบรายงาน ${stamp}`, code: `E2E-RP-${stamp}`, status: 'ACTIVE' })
+      .send({ name: `ลูกค้าทดสอบรายงาน ${stamp}`, status: 'ACTIVE' })
       .expect(201);
     customerId = (customer.body as ApiResponse<{ id: number }>).data.id;
   });
@@ -158,7 +158,6 @@ describe('Reports (e2e)', () => {
       .send({
         customerId,
         name: `โครงการที่จะยกเลิก ${stamp}`,
-        code: `E2E-RPX-${stamp}`,
         status: 'IN_PROGRESS',
         priority: 'NORMAL',
         contractValue: '70000.00',
@@ -192,7 +191,6 @@ describe('Reports (e2e)', () => {
       .send({
         customerId,
         name: `โครงการทดสอบต้นทุน ${stamp}`,
-        code: `E2E-RPC-${stamp}`,
         status: 'IN_PROGRESS',
         priority: 'NORMAL',
       })
@@ -258,7 +256,6 @@ describe('Reports (e2e)', () => {
       .send({
         customerId,
         name: `โครงการทดสอบสัญญาซ้อน ${stamp}`,
-        code: `E2E-RPO-${stamp}`,
         status: 'IN_PROGRESS',
         priority: 'NORMAL',
       })

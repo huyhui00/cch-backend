@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
@@ -26,6 +26,10 @@ const trimToNull = ({ value }: { value: unknown }) => {
 };
 
 export class CreateDeliveryDto {
+  /** รับไว้เพื่อให้โค้ดเก่าคอมไพล์ได้ แต่ ValidationPipe จะปฏิเสธฟิลด์นี้ */
+  @ApiHideProperty()
+  deliveryNo?: unknown;
+
   @ApiProperty({
     description: 'หัวข้อการส่งมอบ',
     maxLength: 255,
@@ -58,17 +62,6 @@ export class CreateDeliveryDto {
   @MaxLength(50, { message: 'เวอร์ชันยาวเกิน 50 ตัวอักษร' })
   @Transform(trimToNull)
   version?: string | null;
-
-  @ApiPropertyOptional({
-    description: 'เลขที่ใบส่งมอบที่บริษัทกำหนดเอง ห้ามซ้ำ',
-    maxLength: 50,
-    example: 'DN-2026-001',
-  })
-  @IsOptional()
-  @IsString({ message: 'เลขที่ใบส่งมอบต้องเป็นข้อความ' })
-  @MaxLength(50, { message: 'เลขที่ใบส่งมอบยาวเกิน 50 ตัวอักษร' })
-  @Transform(trimToNull)
-  deliveryNo?: string | null;
 
   @ApiPropertyOptional({ description: 'รายละเอียดสิ่งที่ส่งมอบ' })
   @IsOptional()

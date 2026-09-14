@@ -4,12 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
+import { InjectConnection, InjectModel } from '@nestjs/sequelize';
 import { Op, type Transaction, type WhereOptions } from 'sequelize';
+import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import { addMonths, toDateOnly, todayAsDateOnly } from '../../common/utils/date.util';
+import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
 import {
   AcceptanceStatus,
   Customer,
@@ -115,6 +117,7 @@ export class WarrantiesService {
     @InjectModel(Delivery) private readonly deliveryModel: typeof Delivery,
     @InjectModel(Project) private readonly projectModel: typeof Project,
     @InjectModel(MaContract) private readonly maContractModel: typeof MaContract,
+    @InjectConnection() private readonly sequelize: Sequelize,
   ) {}
 
   /**
@@ -145,17 +148,26 @@ export class WarrantiesService {
     await this.assertNotDuplicate(deliveryId, dto.durationMonth);
     await this.assertMaContractMatchesProject(dto.maContractId, delivery.projectId);
 
-    const warranty = await this.warrantyModel.create({
-      deliveryId,
-      projectId: delivery.projectId,
-      maContractId: dto.maContractId ?? null,
-      durationMonth: dto.durationMonth,
-      startDate,
-      endDate,
-      status: WarrantyStatus.ACTIVE,
-      scopeNote: dto.scopeNote ?? null,
-      createdBy: actorId,
-      updatedBy: actorId,
+    const year = new Date().getFullYear();
+    const warranty = await this.sequelize.transaction(async (transaction) => {
+      const sequence = await nextSequenceNumber(this.sequelize, `WARRANTY:${year}`, transaction);
+
+      return this.warrantyModel.create(
+        {
+          deliveryId,
+          projectId: delivery.projectId,
+          warrantyNo: `WAR-${year}-${String(sequence).padStart(3, '0')}`,
+          maContractId: dto.maContractId ?? null,
+          durationMonth: dto.durationMonth,
+          startDate,
+          endDate,
+          status: WarrantyStatus.ACTIVE,
+          scopeNote: dto.scopeNote ?? null,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        { transaction },
+      );
     });
 
     return this.findOne(warranty.id);

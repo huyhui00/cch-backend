@@ -9,6 +9,7 @@ import { Op, type Transaction, type WhereOptions } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
+import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
 import {
   CommunicationLog,
   Contact,
@@ -158,7 +159,9 @@ export class CustomersService {
   }
 
   async create(dto: CreateCustomerDto, actorId: number): Promise<CustomerResponseDto> {
-    const customer = await this.createRecord(dto, actorId);
+    const customer = await this.sequelize.transaction((transaction) =>
+      this.createRecord(dto, actorId, transaction),
+    );
 
     return this.findOne(customer.id);
   }
@@ -173,20 +176,18 @@ export class CustomersService {
   async createRecord(
     dto: CreateCustomerDto,
     actorId: number | null,
-    transaction?: Transaction,
+    transaction: Transaction,
   ): Promise<Customer> {
-    if (dto.code) {
-      await this.assertCodeIsAvailable(dto.code);
-    }
-
     if (dto.ownerUserId) {
       await this.assertOwnerExists(dto.ownerUserId);
     }
 
+    const code = `CUS-${String(await nextSequenceNumber(this.sequelize, 'CUSTOMER', transaction)).padStart(3, '0')}`;
+
     return this.customerModel.create(
       {
         name: dto.name,
-        code: dto.code ?? null,
+        code,
         taxId: dto.taxId ?? null,
         businessType: dto.businessType ?? null,
         address: dto.address ?? null,
@@ -213,17 +214,12 @@ export class CustomersService {
   async update(id: number, dto: UpdateCustomerDto, actorId: number): Promise<CustomerResponseDto> {
     const customer = await this.findOrFail(id);
 
-    if (dto.code !== undefined && dto.code && dto.code !== customer.code) {
-      await this.assertCodeIsAvailable(dto.code, id);
-    }
-
     if (dto.ownerUserId) {
       await this.assertOwnerExists(dto.ownerUserId);
     }
 
     await customer.update({
       ...(dto.name !== undefined ? { name: dto.name } : {}),
-      ...(dto.code !== undefined ? { code: dto.code ?? null } : {}),
       ...(dto.taxId !== undefined ? { taxId: dto.taxId ?? null } : {}),
       ...(dto.businessType !== undefined ? { businessType: dto.businessType ?? null } : {}),
       ...(dto.address !== undefined ? { address: dto.address ?? null } : {}),

@@ -13,6 +13,7 @@ import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import { AccessControlService } from '../../common/services/access-control.service';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
+import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
 import { Customer, Project, Task, TaskStatus, User, UserStatus } from '../../models';
 import { CustomersService } from '../customers/customers.service';
 import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
@@ -159,10 +160,6 @@ export class ProjectsService {
       throw new BadRequestException('กรุณาเลือกลูกค้าเดิม หรือกรอกข้อมูลลูกค้าใหม่');
     }
 
-    if (dto.code) {
-      await this.assertCodeIsAvailable(dto.code);
-    }
-
     if (dto.managerUserId) {
       await this.assertManagerIsUsable(dto.managerUserId);
     }
@@ -173,12 +170,14 @@ export class ProjectsService {
       const customerId = newCustomer
         ? (await this.customersService.createRecord(newCustomer, actorId, transaction)).id
         : (dto.customerId as number);
+      const year = new Date().getFullYear();
+      const sequence = await nextSequenceNumber(this.sequelize, `PROJECT:${year}`, transaction);
 
       const project = await this.projectModel.create(
         {
           customerId,
           name: dto.name,
-          code: dto.code ?? null,
+          code: `PRJ-${year}-${String(sequence).padStart(3, '0')}`,
           description: dto.description ?? null,
           projectType: dto.projectType ?? null,
           status: dto.status,
@@ -213,10 +212,6 @@ export class ProjectsService {
       );
     }
 
-    if (dto.code !== undefined && dto.code && dto.code !== project.code) {
-      await this.assertCodeIsAvailable(dto.code, id);
-    }
-
     if (dto.managerUserId) {
       await this.assertManagerIsUsable(dto.managerUserId);
     }
@@ -228,7 +223,6 @@ export class ProjectsService {
 
     await project.update({
       ...(dto.name !== undefined ? { name: dto.name } : {}),
-      ...(dto.code !== undefined ? { code: dto.code ?? null } : {}),
       ...(dto.description !== undefined ? { description: dto.description ?? null } : {}),
       ...(dto.projectType !== undefined ? { projectType: dto.projectType ?? null } : {}),
       ...(dto.status !== undefined ? { status: dto.status } : {}),

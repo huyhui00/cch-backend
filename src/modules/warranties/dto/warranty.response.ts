@@ -71,6 +71,9 @@ export class WarrantySummaryDto {
   @ApiProperty({ example: 4 })
   id: number;
 
+  @ApiProperty({ nullable: true, example: 'WAR-2026-001' })
+  warrantyNo: string | null;
+
   @ApiProperty({ example: 12 })
   durationMonth: number;
 
@@ -93,6 +96,9 @@ export class WarrantySummaryDto {
 export class WarrantyResponseDto {
   @ApiProperty({ example: 4 })
   id: number;
+
+  @ApiProperty({ nullable: true, example: 'WAR-2026-001' })
+  warrantyNo: string | null;
 
   @ApiProperty({
     description: 'ประกันผูกกับการส่งมอบ ไม่ใช่ผูกกับโครงการเฉย ๆ (BR-06)',
@@ -199,6 +205,7 @@ export function isWarrantyCurrentlyActive(
 export function toWarrantySummary(warranty: Warranty, onDate: string): WarrantySummaryDto {
   return {
     id: warranty.id,
+    warrantyNo: warranty.warrantyNo,
     durationMonth: warranty.durationMonth,
     startDate: warranty.startDate,
     endDate: warranty.endDate,
@@ -210,6 +217,7 @@ export function toWarrantySummary(warranty: Warranty, onDate: string): WarrantyS
 export function toWarrantyResponse(warranty: Warranty, onDate: string): WarrantyResponseDto {
   return {
     id: warranty.id,
+    warrantyNo: warranty.warrantyNo,
     deliveryId: warranty.deliveryId,
     delivery: warranty.delivery
       ? {

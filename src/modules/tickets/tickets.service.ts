@@ -10,6 +10,7 @@ import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
+import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
 import {
   Contact,
   Customer,
@@ -287,39 +288,39 @@ export class TicketsService {
       }
     }
 
-    if (dto.ticketNo) {
-      await this.assertTicketNoIsAvailable(dto.ticketNo);
-    }
-
     const reportedAt = new Date(dto.reportedAt);
     this.assertNotInFuture(reportedAt, 'เวลาที่ลูกค้าแจ้งต้องไม่เป็นเวลาในอนาคต');
 
     const suggestion = await this.suggestBilling(dto.projectId ?? null, reportedAt);
 
-    const ticket = await this.ticketModel.create({
-      customerId: dto.customerId,
-      projectId: dto.projectId ?? null,
-      ticketNo: dto.ticketNo ?? null,
-      title: dto.title,
-      description: dto.description ?? null,
-      status: TicketStatus.RECEIVED,
-      priority: dto.priority,
-      // ผู้ใช้ชนะเสมอ ระบบเติมให้เฉพาะตอนที่ไม่ได้เลือกมา
-      // ไม่เจอทั้งประกันและ MA แล้วผู้ใช้ก็ไม่เลือก = ONE_TIME (งานที่ต้องคิดเงิน)
-      billingType: dto.billingType ?? suggestion.suggested ?? TicketBillingType.ONE_TIME,
-      // ผูกหลักฐานที่ระบบใช้เสนอไว้ด้วย จะได้ตรวจย้อนหลังได้ว่าตอนนั้นเห็นอะไร
-      warrantyId: suggestion.warrantyId,
-      maContractId: suggestion.maContractId,
-      reportedChannel: dto.reportedChannel,
-      reportedAt,
-      reportedByContactId: dto.reportedByContactId ?? null,
-      assignedUserId: dto.assignedUserId ?? null,
-      // ไม่ระบุผู้รับเรื่อง = คนที่กดบันทึกคือคนรับเรื่อง
-      receivedByUserId: dto.receivedByUserId ?? actorId,
-      dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
-      resolutionCount: 0,
-      createdBy: actorId,
-      updatedBy: actorId,
+    const year = new Date().getFullYear();
+    const ticket = await this.sequelize.transaction(async (transaction) => {
+      const sequence = await nextSequenceNumber(this.sequelize, `TICKET:${year}`, transaction);
+
+      return this.ticketModel.create(
+        {
+          customerId: dto.customerId,
+          projectId: dto.projectId ?? null,
+          ticketNo: `TK-${year}-${String(sequence).padStart(3, '0')}`,
+          title: dto.title,
+          description: dto.description ?? null,
+          status: TicketStatus.RECEIVED,
+          priority: dto.priority,
+          billingType: dto.billingType ?? suggestion.suggested ?? TicketBillingType.ONE_TIME,
+          warrantyId: suggestion.warrantyId,
+          maContractId: suggestion.maContractId,
+          reportedChannel: dto.reportedChannel,
+          reportedAt,
+          reportedByContactId: dto.reportedByContactId ?? null,
+          assignedUserId: dto.assignedUserId ?? null,
+          receivedByUserId: dto.receivedByUserId ?? actorId,
+          dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
+          resolutionCount: 0,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        { transaction },
+      );
     });
 
     return this.findOne(ticket.id);
@@ -643,7 +644,10 @@ export class TicketsService {
       return {
         suggested: null,
         warrantyId: null,
+        warrantyEndDate: null,
+        warrantyScopeNote: null,
         maContractId: null,
+        maIsReferenceOnly: false,
         reason: 'ไม่ได้ระบุโครงการ จึงตรวจประกันและสัญญา MA ให้ไม่ได้',
       };
     }
@@ -657,7 +661,10 @@ export class TicketsService {
       return {
         suggested: TicketBillingType.WARRANTY,
         warrantyId: warranty.id,
+        warrantyEndDate: warranty.endDate,
+        warrantyScopeNote: warranty.scopeNote ?? null,
         maContractId: contract ? contract.id : null,
+        maIsReferenceOnly: contract !== null,
         reason:
           `อยู่ในระยะประกันถึง ${warranty.endDate} — ` +
           'ครอบคลุมเฉพาะ bug ในขอบเขตเดิม ถ้าเป็นงานที่ขอเพิ่มใหม่ต้องเปลี่ยนเป็น ONE_TIME (BR-07)',
@@ -668,7 +675,10 @@ export class TicketsService {
       return {
         suggested: TicketBillingType.MA_QUOTA,
         warrantyId: null,
+        warrantyEndDate: null,
+        warrantyScopeNote: null,
         maContractId: contract.id,
+        maIsReferenceOnly: false,
         reason: `มีสัญญา MA ที่ยังใช้งานอยู่ถึง ${contract.endDate}`,
       };
     }
@@ -676,7 +686,10 @@ export class TicketsService {
     return {
       suggested: null,
       warrantyId: null,
+      warrantyEndDate: null,
+      warrantyScopeNote: null,
       maContractId: null,
+      maIsReferenceOnly: false,
       reason: 'ไม่พบประกันหรือสัญญา MA ที่ยังคุ้มครองโครงการนี้ ณ วันที่แจ้ง',
     };
   }

@@ -135,7 +135,7 @@ describe('TicketsService', () => {
   let projectModel: ModelMock;
   let contactModel: ModelMock;
   let userModel: ModelMock;
-  let sequelize: { transaction: jest.Mock };
+  let sequelize: { transaction: jest.Mock; query: jest.Mock };
   let warrantiesService: { findCoveringWarranty: jest.Mock };
   let maQuotaService: { findActiveContract: jest.Mock; recordUsageForTicket: jest.Mock };
   let service: TicketsService;
@@ -149,6 +149,9 @@ describe('TicketsService', () => {
     userModel = modelMock();
     sequelize = {
       transaction: jest.fn((callback: (t: unknown) => Promise<unknown>) => callback(TRANSACTION)),
+      query: jest.fn((sql: string) =>
+        sql.includes('SELECT') ? Promise.resolve([{ nextValue: 1 }]) : Promise.resolve([]),
+      ),
     };
     warrantiesService = { findCoveringWarranty: jest.fn().mockResolvedValue(null) };
     maQuotaService = {
@@ -418,7 +421,11 @@ describe('TicketsService', () => {
     } as never;
 
     it('เสนอ WARRANTY เมื่อยังอยู่ในระยะประกัน', async () => {
-      warrantiesService.findCoveringWarranty.mockResolvedValue({ id: 4, endDate: '2027-09-08' });
+      warrantiesService.findCoveringWarranty.mockResolvedValue({
+        id: 4,
+        endDate: '2027-09-08',
+        scopeNote: 'ครอบคลุมบั๊กในขอบเขตเดิม',
+      });
 
       let captured: { billingType: TicketBillingType; warrantyId: number | null } = {
         billingType: TicketBillingType.FREE,
@@ -435,6 +442,27 @@ describe('TicketsService', () => {
 
       expect(captured.billingType).toBe(TicketBillingType.WARRANTY);
       expect(captured.warrantyId).toBe(4);
+    });
+
+    it('ส่งขอบเขต Warranty และระบุว่า MA เป็นข้อมูลอ้างอิงเมื่อมีทั้งคู่', async () => {
+      warrantiesService.findCoveringWarranty.mockResolvedValue({
+        id: 4,
+        endDate: '2027-09-08',
+        scopeNote: 'ครอบคลุมบั๊กในขอบเขตเดิม',
+      });
+      maQuotaService.findActiveContract.mockResolvedValue({ id: 2, endDate: '2027-12-31' });
+
+      const suggestion = await service.suggestBilling(1, new Date('2026-09-14'));
+
+      expect(suggestion).toEqual(
+        expect.objectContaining({
+          suggested: TicketBillingType.WARRANTY,
+          warrantyEndDate: '2027-09-08',
+          warrantyScopeNote: 'ครอบคลุมบั๊กในขอบเขตเดิม',
+          maContractId: 2,
+          maIsReferenceOnly: true,
+        }),
+      );
     });
 
     it('ประกันมาก่อนสัญญา MA เมื่อมีทั้งคู่', async () => {
@@ -593,17 +621,14 @@ describe('TicketsService', () => {
       expect(captured.receivedByUserId).toBe(42);
     });
 
-    it('โยน 409 เมื่อเลขที่ใบซ้ำ และตรวจรวมรายการที่ถูกลบไปแล้ว', async () => {
+    it('สร้างเลขที่ใบแจ้งปัญหาเองโดยไม่รับรหัสจาก client', async () => {
       ticketModel.findOne.mockResolvedValue(ticketRow());
 
       await expect(
         service.create({ ...(dto as object), ticketNo: 'TK-2026-001' } as never),
-      ).rejects.toBeInstanceOf(ConflictException);
+      ).resolves.toBeDefined();
 
-      expect(ticketModel.findOne).toHaveBeenCalledWith({
-        where: { ticketNo: 'TK-2026-001' },
-        paranoid: false,
-      });
+      expect(ticketModel.findOne).not.toHaveBeenCalled();
     });
   });
 

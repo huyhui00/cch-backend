@@ -3,6 +3,7 @@
 
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Op } from 'sequelize';
+import { Sequelize } from 'sequelize-typescript';
 
 import { runWithRequestContext } from '../../common/context/request-context';
 import { todayAsDateOnly, toDateOnly } from '../../common/utils/date.util';
@@ -114,6 +115,12 @@ describe('WarrantiesService', () => {
   let deliveryModel: ModelMock;
   let projectModel: ModelMock;
   let maContractModel: ModelMock;
+  const sequelize = {
+    transaction: jest.fn((callback: (t: unknown) => Promise<unknown>) => callback({ name: 'tx' })),
+    query: jest.fn((sql: string) =>
+      sql.includes('SELECT') ? Promise.resolve([{ nextValue: 1 }]) : Promise.resolve([]),
+    ),
+  };
   let service: WarrantiesService;
 
   beforeEach(() => {
@@ -137,6 +144,7 @@ describe('WarrantiesService', () => {
       deliveryModel as unknown as typeof Delivery,
       projectModel as unknown as typeof Project,
       maContractModel as unknown as typeof MaContract,
+      sequelize as unknown as Sequelize,
     );
   });
 

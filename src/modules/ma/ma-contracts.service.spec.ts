@@ -91,7 +91,12 @@ describe('MaContractsService', () => {
    * ที่ประกาศชนิดเป็น Sequelize ซึ่ง eslint จะเตือนว่าเป็นการเรียกแบบหลุด this
    */
   const runTransaction = jest.fn(<T>(fn: (t: unknown) => Promise<T>) => fn({ name: 'tx' }));
-  const sequelize = { transaction: runTransaction } as unknown as Sequelize;
+  const sequelize = {
+    transaction: runTransaction,
+    query: jest.fn((sql: string) =>
+      sql.includes('SELECT') ? Promise.resolve([{ nextValue: 1 }]) : Promise.resolve([]),
+    ),
+  } as unknown as Sequelize;
 
   beforeEach(() => {
     contractModel = modelMock();
@@ -183,18 +188,11 @@ describe('MaContractsService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('เลขที่สัญญาซ้ำ → 409 และค้นรวมแถวที่ลบแล้วด้วย', async () => {
-      // unique index ที่ฐานข้อมูลไม่สนใจ deleted_at เลขที่ที่ลบไปแล้วจึงยังจองอยู่
-      let captured: { paranoid: boolean } = { paranoid: true };
-      contractModel.findOne.mockImplementation((options: { paranoid: boolean }) => {
-        captured = options;
-        return Promise.resolve(contractRow());
-      });
-
+    it('สร้างเลขที่สัญญาเองโดยไม่รับรหัสจาก client', async () => {
       await expect(
         service.create({ ...baseDto, contractNo: 'MA-2026-014' }),
-      ).rejects.toBeInstanceOf(ConflictException);
-      expect(captured.paranoid).toBe(false);
+      ).resolves.toBeDefined();
+      expect(contractModel.findOne).not.toHaveBeenCalled();
     });
 
     it('สัญญา ACTIVE ที่ช่วงเวลาทับกันได้คำเตือน แต่ไม่ถูกปฏิเสธ (Q4)', async () => {

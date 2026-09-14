@@ -91,7 +91,7 @@ describe('Tasks across projects (e2e)', () => {
     token = (login.body as ApiResponse<{ accessToken: string }>).data.accessToken;
 
     const customer = await authed('post', '/api/customers')
-      .send({ name: `ลูกค้าทดสอบงาน ${stamp}`, code: `E2E-TK-${stamp}`, status: 'ACTIVE' })
+      .send({ name: `ลูกค้าทดสอบงาน ${stamp}`, status: 'ACTIVE' })
       .expect(201);
     const customerId = (customer.body as ApiResponse<{ id: number }>).data.id;
 
@@ -99,7 +99,6 @@ describe('Tasks across projects (e2e)', () => {
       .send({
         customerId,
         name: `โครงการทดสอบงาน ${stamp}`,
-        code: `E2E-TP-${stamp}`,
         status: 'IN_PROGRESS',
         priority: 'NORMAL',
       })

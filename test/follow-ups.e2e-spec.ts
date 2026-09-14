@@ -95,7 +95,7 @@ describe('Follow-ups (e2e)', () => {
     token = (login.body as ApiResponse<{ accessToken: string }>).data.accessToken;
 
     const customer = await authed('post', '/api/customers')
-      .send({ name: `ลูกค้าทดสอบงานติดตาม ${stamp}`, code: `E2E-FU-${stamp}`, status: 'ACTIVE' })
+      .send({ name: `ลูกค้าทดสอบงานติดตาม ${stamp}`, status: 'ACTIVE' })
       .expect(201);
     customerId = (customer.body as ApiResponse<{ id: number }>).data.id;
 

@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
@@ -38,6 +38,10 @@ const trimToNull = ({ value }: { value: unknown }) => {
  *         `reportedChannel` และ `reportedAt` ที่เป็นเวลาที่ลูกค้าแจ้งจริง
  */
 export class CreateTicketDto {
+  /** รับไว้เพื่อให้โค้ดเก่าคอมไพล์ได้ แต่ ValidationPipe จะปฏิเสธฟิลด์นี้ */
+  @ApiHideProperty()
+  ticketNo?: unknown;
+
   @ApiProperty({ description: 'ลูกค้าที่แจ้งปัญหา', example: 1 })
   @IsInt({ message: 'customerId ต้องเป็นจำนวนเต็ม' })
   @IsPositive({ message: 'customerId ต้องมากกว่า 0' })
@@ -108,17 +112,6 @@ export class CreateTicketDto {
   priority?: TicketPriority;
 
   @ApiPropertyOptional({
-    description: 'เลขที่ใบแจ้งปัญหาที่บริษัทกำหนดเอง ห้ามซ้ำ',
-    maxLength: 50,
-    example: 'TK-2026-001',
-  })
-  @IsOptional()
-  @IsString({ message: 'เลขที่ใบแจ้งปัญหาต้องเป็นข้อความ' })
-  @MaxLength(50, { message: 'เลขที่ใบแจ้งปัญหายาวเกิน 50 ตัวอักษร' })
-  @Transform(trimToNull)
-  ticketNo?: string | null;
-
-  @ApiPropertyOptional({
     description: 'ผู้ติดต่อฝั่งลูกค้าที่เป็นคนแจ้ง ต้องอยู่ภายใต้ลูกค้ารายนี้',
     example: 2,
   })
@@ -150,6 +143,21 @@ export class CreateTicketDto {
   @IsOptional()
   @IsISO8601({ strict: false }, { message: 'dueAt ต้องเป็นวันที่เวลาตามรูปแบบ ISO 8601' })
   dueAt?: string | null;
+}
+
+/** ข้อมูลที่ใช้ตรวจหลักฐาน Warranty/MA ก่อนเปิดใบแจ้งปัญหา */
+export class BillingSuggestionQueryDto {
+  @ApiProperty({ description: 'โครงการที่เกิดปัญหา', example: 1 })
+  @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
+  projectId: number;
+
+  @ApiProperty({
+    description: 'วันที่เวลาที่ลูกค้าแจ้งปัญหาจริง ใช้ตรวจช่วง Warranty/MA',
+    example: '2026-09-14T09:00:00.000Z',
+  })
+  @IsISO8601({ strict: false }, { message: 'reportedAt ต้องเป็นวันที่เวลาตามรูปแบบ ISO 8601' })
+  reportedAt: string;
 }
 
 /**

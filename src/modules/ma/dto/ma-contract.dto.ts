@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
@@ -52,6 +52,10 @@ export const MA_CONTRACT_PRICE_DESCRIPTION =
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export class CreateMaContractDto {
+  /** รับไว้เพื่อให้โค้ดเก่าคอมไพล์ได้ แต่ ValidationPipe จะปฏิเสธฟิลด์นี้ */
+  @ApiHideProperty()
+  contractNo?: unknown;
+
   @ApiProperty({
     description:
       'โครงการที่สัญญาฉบับนี้ดูแล — สัญญา MA ผูกกับโครงการเสมอ ไม่ใช่ผูกกับลูกค้าลอย ๆ ' +
@@ -112,17 +116,6 @@ export class CreateMaContractDto {
   @IsOptional()
   @IsEnum(MaContractStatus, { message: 'สถานะสัญญาไม่ถูกต้อง' })
   status?: MaContractStatus;
-
-  @ApiPropertyOptional({
-    description: 'เลขที่สัญญา ห้ามซ้ำ',
-    maxLength: 100,
-    example: 'MA-2026-014',
-  })
-  @IsOptional()
-  @IsString({ message: 'เลขที่สัญญาต้องเป็นข้อความ' })
-  @MaxLength(100, { message: 'เลขที่สัญญายาวเกิน 100 ตัวอักษร' })
-  @Transform(trimToNull)
-  contractNo?: string | null;
 
   @ApiPropertyOptional({
     description: 'วันที่เซ็นสัญญา (YYYY-MM-DD) — สัญญาเซ็นมือแล้วสแกนเข้าระบบ (BR-12)',
