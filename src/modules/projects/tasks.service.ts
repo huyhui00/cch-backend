@@ -4,7 +4,11 @@ import { Op, type Order, type Transaction, type WhereOptions } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
-import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
+import {
+  PaginationDto,
+  type PaginatedResult,
+  toPaginatedResult,
+} from '../../common/dto/pagination.dto';
 import { addDays } from '../../common/utils/date.util';
 import { Project, Task, TaskStatus, User, UserStatus } from '../../models';
 import { ProjectsService } from './projects.service';
@@ -199,6 +203,26 @@ export class TasksService {
     }
 
     return toTaskResponse(task);
+  }
+
+  /** งานที่มอบหมายให้ผู้ใช้ปัจจุบัน — ไม่รับ user id จาก client */
+  async findMyTasks(
+    userId: number,
+    query: PaginationDto,
+  ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
+    const { rows, count } = await this.taskModel.findAndCountAll({
+      where: { assignedUserId: userId },
+      include: [assigneeInclude(), projectInclude()],
+      order: [
+        ['dueDate', 'ASC'],
+        ['priority', 'DESC'],
+        ['id', 'ASC'],
+      ],
+      limit: query.limit,
+      offset: query.offset,
+    });
+
+    return toPaginatedResult(rows.map(toCompanyTaskResponse), count, query);
   }
 
   async update(projectId: number, id: number, dto: UpdateTaskDto): Promise<TaskResponseDto> {

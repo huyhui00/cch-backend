@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
-import { type PaginatedResult } from '../../common/dto/pagination.dto';
+import { PaginationDto, type PaginatedResult } from '../../common/dto/pagination.dto';
 import {
   CompanyTaskResponseDto,
   TaskBoardSummaryDto,
@@ -27,6 +28,21 @@ import { TasksService } from './tasks.service';
 @Controller('tasks')
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
+
+  @Get('me')
+  @RequirePermission('task.view')
+  @ApiOperation({
+    summary: 'งานของฉัน',
+    description: 'คืนเฉพาะงานที่มอบหมายให้ผู้ใช้ที่ล็อกอินอยู่',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [CompanyTaskResponseDto] })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  findMyTasks(
+    @CurrentUser('id') userId: number,
+    @Query() query: PaginationDto,
+  ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
+    return this.tasksService.findMyTasks(userId, query);
+  }
 
   @Get()
   @RequirePermission('task.view')

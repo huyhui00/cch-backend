@@ -142,7 +142,7 @@ export class TicketsController {
     summary: 'มอบหมายผู้รับผิดชอบแก้ไข',
     description:
       'แยกจากผู้รับเรื่องที่บันทึกไว้ตอนเปิดใบ (A-3) — ใบที่เป็น RECEIVED หรือ REOPENED ' +
-      'จะถูกเลื่อนเป็น IN_PROGRESS ให้อัตโนมัติ ใบที่ปัญหาเดิมกลับมาจึง "หยิบงานรอบใหม่" ' +
+      'จะถูกเลื่อนเป็น ASSIGNED (ส่งงานแล้ว) ผู้รับผิดชอบต้องกดเริ่มงานเองจึงเป็น IN_PROGRESS ' +
       'ด้วยการมอบหมายซ้ำ แม้เป็นคนเดิมก็ตาม (BR-04) ส่ง assignedUserId เป็น null เพื่อถอนการมอบหมาย ' +
       'ผู้รับผิดชอบต้องเป็นพนักงานที่ยังอยู่ในสถานะใช้งาน',
   })
@@ -156,6 +156,22 @@ export class TicketsController {
     @Body() dto: AssignTicketDto,
   ): Promise<{ data: TicketResponseDto; message: string }> {
     return { data: await this.ticketsService.assign(id, dto), message: 'มอบหมายเรียบร้อย' };
+  }
+
+  @Patch(':id/start')
+  @RequirePermission('ticket.update')
+  @ApiOperation({
+    summary: 'เริ่มดำเนินการแก้ไข',
+    description: 'ผู้รับผิดชอบเท่านั้นที่เริ่มงานได้ หลังสถานะเป็น ASSIGNED',
+  })
+  @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
+  @ApiResponse({ status: 200, description: 'เริ่มดำเนินการแล้ว', type: TicketResponseDto })
+  @ApiResponse({ status: 403, description: 'เฉพาะผู้รับผิดชอบเท่านั้นที่เริ่มงานนี้ได้' })
+  @ApiResponse({ status: 409, description: 'สถานะใบแจ้งปัญหาไม่ถูกต้องสำหรับการเริ่มงาน' })
+  async start(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<{ data: TicketResponseDto; message: string }> {
+    return { data: await this.ticketsService.start(id), message: 'เริ่มดำเนินการแก้ไขแล้ว' };
   }
 
   @Post(':id/resolutions')

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -43,14 +44,14 @@ import {
 } from './dto/ticket.response';
 
 /**
- * สถานะที่การมอบหมายจะพาไป IN_PROGRESS ให้เอง — ใบที่ยังไม่มีใครลงมือ
+ * สถานะที่การมอบหมายจะพาไป ASSIGNED — ผู้รับผิดชอบต้องกดเริ่มงานเอง
  * RECEIVED = เพิ่งรับเรื่อง, REOPENED = ปัญหาเดิมกลับมาและยังไม่มีใครหยิบรอบใหม่ (BR-04)
  */
 export const CLOSED_TICKET_RESOLUTION_MESSAGE =
   'ปัญหานี้ปิดงานแล้ว ถ้าอาการเดิมกลับมาให้กด "ปัญหาเดิมกลับมา" เพื่อเปิดใบนี้ก่อน ' +
   'แล้วจึงบันทึกการแก้ไขรอบถัดไป';
 
-const STARTABLE_TICKET_STATUSES: readonly TicketStatus[] = [
+const ASSIGNABLE_TICKET_STATUSES: readonly TicketStatus[] = [
   TicketStatus.RECEIVED,
   TicketStatus.REOPENED,
 ];
@@ -390,8 +391,8 @@ export class TicketsService {
   /**
    * มอบหมายผู้รับผิดชอบแก้ไข — แยกจากผู้รับเรื่องที่บันทึกไว้ตอนเปิดใบ (A-3)
    *
-   * ใบที่เป็น RECEIVED หรือ REOPENED จะถูกเลื่อนเป็น IN_PROGRESS ให้อัตโนมัติ เพราะการมอบหมาย
-   * คือจุดที่งานเริ่มเดินจริงในทีมขนาดนี้ ส่วนใบที่อยู่สถานะอื่นแล้วไม่ถูกแตะสถานะ
+   * ใบที่เป็น RECEIVED หรือ REOPENED จะถูกเลื่อนเป็น ASSIGNED ก่อน ผู้รับผิดชอบต้องกดเริ่มงานเอง
+   * จึงจะเป็น IN_PROGRESS ส่วนใบที่อยู่สถานะอื่นแล้วไม่ถูกแตะสถานะ
    * — ถอนการมอบหมาย (ส่ง null) ก็ไม่ย้อนสถานะกลับ เพราะงานที่เริ่มไปแล้วยังเริ่มไปแล้ว
    *
    * REOPENED ต้องอยู่ในนี้ด้วย ไม่งั้นใบที่ปัญหาเดิมกลับมาจะไม่มีทางไป IN_PROGRESS เลย
@@ -410,15 +411,33 @@ export class TicketsService {
       await this.assertUserIsAssignable(dto.assignedUserId);
     }
 
-    const shouldStart =
-      dto.assignedUserId !== null && STARTABLE_TICKET_STATUSES.includes(ticket.status);
+    const shouldAssign =
+      dto.assignedUserId !== null && ASSIGNABLE_TICKET_STATUSES.includes(ticket.status);
 
     await ticket.update({
       assignedUserId: dto.assignedUserId,
-      ...(shouldStart ? { status: TicketStatus.IN_PROGRESS } : {}),
+      ...(shouldAssign ? { status: TicketStatus.ASSIGNED } : {}),
       ...(dto.dueAt !== undefined ? { dueAt: dto.dueAt ? new Date(dto.dueAt) : null } : {}),
       updatedBy: actorId,
     });
+
+    return this.findOne(id);
+  }
+
+  /** ผู้รับผิดชอบเป็นคนเริ่มงานเอง หลังหัวหน้าส่งงานแล้ว */
+  async start(id: number): Promise<TicketResponseDto> {
+    const actorId = getCurrentUserId();
+    const ticket = await this.findOrFail(id);
+
+    if (ticket.assignedUserId !== actorId) {
+      throw new ForbiddenException('เฉพาะผู้รับผิดชอบเท่านั้นที่เริ่มงานนี้ได้');
+    }
+
+    if (ticket.status !== TicketStatus.ASSIGNED) {
+      throw new ConflictException('ใบแจ้งปัญหานี้ยังไม่อยู่ในสถานะส่งงานแล้ว');
+    }
+
+    await ticket.update({ status: TicketStatus.IN_PROGRESS, updatedBy: actorId });
 
     return this.findOne(id);
   }

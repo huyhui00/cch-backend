@@ -109,6 +109,26 @@ describe('TasksService', () => {
     }
   }
 
+  describe('findMyTasks', () => {
+    it('กรองด้วย user id จากฝั่ง server และคืนผลแบบแบ่งหน้า', async () => {
+      const task = taskRow({ assignedUserId: 42 });
+      let captured: { assignedUserId: number } | undefined;
+      taskModel.findAndCountAll.mockImplementation((options: { where: typeof captured }) => {
+        captured = options.where;
+        return Promise.resolve({ rows: [task], count: 1 });
+      });
+
+      const result = await service.findMyTasks(42, {
+        page: 1,
+        limit: 20,
+        offset: 0,
+      } as never);
+
+      expect(captured).toEqual({ assignedUserId: 42 });
+      expect(result).toMatchObject({ total: 1, page: 1, limit: 20 });
+    });
+  });
+
   // -------------------------------------------------------------------------
   // สถานะงานเปลี่ยนไปไหนก็ได้ แต่ completedAt ต้องสอดคล้องเสมอ
   // -------------------------------------------------------------------------

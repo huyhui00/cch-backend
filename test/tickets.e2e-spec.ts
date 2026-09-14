@@ -251,14 +251,16 @@ describe('Tickets (e2e)', () => {
     ).toBe(2);
   });
 
-  it('ใบที่กลับมาเป็นซ้ำ มอบหมายแล้วเดินต่อเป็น IN_PROGRESS ครบวงจร BR-04', async () => {
-    // RESOLVED → REOPENED → IN_PROGRESS → RESOLVED (รอบที่ 2) ตามภาพ 6.4
+  it('ใบที่กลับมาเป็นซ้ำ มอบหมายแล้วให้ผู้รับผิดชอบกดเริ่มงาน ครบวงจร BR-04', async () => {
+    // RESOLVED → REOPENED → ASSIGNED → IN_PROGRESS → RESOLVED (รอบที่ 2)
     const ticketId = await openTicket(`ปัญหาที่กลับมาแล้วต้องมีคนหยิบ ${stamp}`);
 
     const assignTo = () =>
       authed('patch', `/api/tickets/${ticketId}/assign`).send({ assignedUserId: actorId });
 
-    const started = await assignTo().expect(200);
+    const assigned = await assignTo().expect(200);
+    expect((assigned.body as ApiResponse<TicketPayload>).data.status).toBe('ASSIGNED');
+    const started = await authed('patch', `/api/tickets/${ticketId}/start`).send({}).expect(200);
     expect((started.body as ApiResponse<TicketPayload>).data.status).toBe('IN_PROGRESS');
 
     await addResolution(ticketId, 'แก้รอบแรก').expect(201);
@@ -266,11 +268,12 @@ describe('Tickets (e2e)', () => {
       .send({ reason: 'อาการเดิมกลับมา' })
       .expect(200);
 
-    // หยิบงานรอบใหม่ = มอบหมายซ้ำ แม้เป็นคนเดิม
+    // ส่งงานรอบใหม่ แล้วผู้รับผิดชอบกดเริ่มเอง
     const restarted = await assignTo().expect(200);
     const ticket = (restarted.body as ApiResponse<TicketPayload>).data;
-    expect(ticket.status).toBe('IN_PROGRESS');
+    expect(ticket.status).toBe('ASSIGNED');
     expect(ticket.isPending).toBe(true);
+    await authed('patch', `/api/tickets/${ticketId}/start`).send({}).expect(200);
 
     const second = await addResolution(ticketId, 'แก้รอบสองด้วยวิธีใหม่').expect(201);
     const body = second.body as ApiResponse<{
@@ -282,7 +285,7 @@ describe('Tickets (e2e)', () => {
   });
 
   it('ปัญหาเดิมกลับมาหลังปิดงานแล้ว เปิดใบเดิมกลับมาแก้รอบถัดไปได้ (BR-04, Q9)', async () => {
-    // CLOSED → REOPENED → IN_PROGRESS → RESOLVED → CLOSED อีกครั้ง ทั้งหมดอยู่ในใบเดียว
+    // CLOSED → REOPENED → ASSIGNED → IN_PROGRESS → RESOLVED → CLOSED อีกครั้ง
     const ticketId = await openTicket(`ปัญหาที่กลับมาหลังปิดงาน ${stamp}`);
 
     await addResolution(ticketId, 'แก้รอบแรก').expect(201);
@@ -290,7 +293,7 @@ describe('Tickets (e2e)', () => {
     const firstClosedAt = (closed.body as ApiResponse<TicketPayload>).data.closedAt;
     expect(firstClosedAt).not.toBeNull();
 
-    // กดครั้งเดียวที่หน้าจอ = reopen แล้ว assign ต่อทันที
+    // หน้าจอ reopen แล้ว assign ต่อ จากนั้นผู้รับผิดชอบกดเริ่มงาน
     const reopened = await authed('patch', `/api/tickets/${ticketId}/reopen`)
       .send({ reason: 'อาการเดิมกลับมาหลังปิดงาน' })
       .expect(200);
@@ -298,9 +301,11 @@ describe('Tickets (e2e)', () => {
     expect(afterReopen.status).toBe('REOPENED');
     expect(afterReopen.closedAt).toBeNull();
 
-    const started = await authed('patch', `/api/tickets/${ticketId}/assign`)
+    const assigned = await authed('patch', `/api/tickets/${ticketId}/assign`)
       .send({ assignedUserId: actorId })
       .expect(200);
+    expect((assigned.body as ApiResponse<TicketPayload>).data.status).toBe('ASSIGNED');
+    const started = await authed('patch', `/api/tickets/${ticketId}/start`).send({}).expect(200);
     expect((started.body as ApiResponse<TicketPayload>).data.status).toBe('IN_PROGRESS');
 
     const second = await addResolution(ticketId, 'แก้รอบสองหลังเปิดใบเดิมกลับมา').expect(201);

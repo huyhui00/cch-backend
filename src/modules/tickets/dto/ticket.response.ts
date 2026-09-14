@@ -18,6 +18,7 @@ import {
  */
 export const PENDING_TICKET_STATUSES: readonly TicketStatus[] = [
   TicketStatus.RECEIVED,
+  TicketStatus.ASSIGNED,
   TicketStatus.REOPENED,
   TicketStatus.IN_PROGRESS,
 ];

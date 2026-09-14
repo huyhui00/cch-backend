@@ -1,7 +1,12 @@
 /// <reference types="jest" />
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
@@ -728,7 +733,7 @@ describe('TicketsService', () => {
   });
 
   describe('findPending', () => {
-    it('เอาเฉพาะสามสถานะที่ยังไม่จบ', async () => {
+    it('เอาเฉพาะสถานะที่ยังไม่จบ รวมสถานะส่งงานแล้ว', async () => {
       let captured: { status: Record<symbol, TicketStatus[]> } = { status: {} };
       ticketModel.findAndCountAll.mockImplementation(
         (options: { where: { status: Record<symbol, TicketStatus[]> } }) => {
@@ -741,6 +746,7 @@ describe('TicketsService', () => {
 
       expect(captured.status[Op.in]).toEqual([
         TicketStatus.RECEIVED,
+        TicketStatus.ASSIGNED,
         TicketStatus.REOPENED,
         TicketStatus.IN_PROGRESS,
       ]);
@@ -966,28 +972,25 @@ describe('TicketsService', () => {
   // มอบหมายผู้รับผิดชอบ
   // -------------------------------------------------------------------------
   describe('assign', () => {
-    it('ใบที่ยัง RECEIVED ถูกเลื่อนเป็น IN_PROGRESS ให้เอง', async () => {
+    it('ใบที่ยัง RECEIVED ถูกเลื่อนเป็น ASSIGNED เมื่อมอบหมาย', async () => {
       const ticket = ticketRow({ status: TicketStatus.RECEIVED });
       ticketModel.findByPk.mockResolvedValue(ticket);
 
       await service.assign(7, { assignedUserId: 4 });
 
       expect(ticket.update).toHaveBeenCalledWith(
-        expect.objectContaining({ assignedUserId: 4, status: TicketStatus.IN_PROGRESS }),
+        expect.objectContaining({ assignedUserId: 4, status: TicketStatus.ASSIGNED }),
       );
     });
 
-    it('ใบที่ปัญหาเดิมกลับมา (REOPENED) ถูกเลื่อนเป็น IN_PROGRESS เมื่อมอบหมาย (BR-04)', async () => {
-      // เดิมไม่มีทางไป IN_PROGRESS เลย ใบจึงค้าง REOPENED จนบันทึกรอบถัดไป
-      // หน้าจอรอรับการแก้ไขแยกไม่ออกว่า "ยังไม่มีใครหยิบ" หรือ "กำลังแก้รอบใหม่"
+    it('ใบที่ปัญหาเดิมกลับมา (REOPENED) ถูกเลื่อนเป็น ASSIGNED เมื่อมอบหมาย (BR-04)', async () => {
       const ticket = ticketRow({ status: TicketStatus.REOPENED, assignedUserId: 4 });
       ticketModel.findByPk.mockResolvedValue(ticket);
 
-      // หยิบงานรอบใหม่ = มอบหมายซ้ำ แม้เป็นคนเดิม
       await service.assign(7, { assignedUserId: 4 });
 
       expect(ticket.update).toHaveBeenCalledWith(
-        expect.objectContaining({ assignedUserId: 4, status: TicketStatus.IN_PROGRESS }),
+        expect.objectContaining({ assignedUserId: 4, status: TicketStatus.ASSIGNED }),
       );
     });
 
@@ -1052,6 +1055,35 @@ describe('TicketsService', () => {
       await expect(service.assign(7, { assignedUserId: 4 })).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+  });
+
+  describe('start', () => {
+    it('ผู้รับผิดชอบเริ่มงานจาก ASSIGNED เป็น IN_PROGRESS ได้', async () => {
+      const ticket = ticketRow({ status: TicketStatus.ASSIGNED, assignedUserId: 42 });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await runWithRequestContext(
+        { userId: 42, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () => service.start(7),
+      );
+
+      expect(ticket.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: TicketStatus.IN_PROGRESS }),
+      );
+    });
+
+    it('คนที่ไม่ใช่ผู้รับผิดชอบเริ่มงานไม่ได้', async () => {
+      ticketModel.findByPk.mockResolvedValue(
+        ticketRow({ status: TicketStatus.ASSIGNED, assignedUserId: 42 }),
+      );
+
+      await expect(
+        runWithRequestContext(
+          { userId: 99, ipAddress: null, userAgent: null, startedAt: Date.now() },
+          () => service.start(7),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 

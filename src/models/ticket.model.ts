@@ -15,6 +15,7 @@ import { Warranty } from './warranty.model';
  */
 export enum TicketStatus {
   RECEIVED = 'RECEIVED',
+  ASSIGNED = 'ASSIGNED',
   IN_PROGRESS = 'IN_PROGRESS',
   RESOLVED = 'RESOLVED',
   REOPENED = 'REOPENED',
@@ -54,7 +55,7 @@ export enum TicketPriority {
  * ตารางนี้เก็บ "ตัวปัญหา" ส่วนแต่ละรอบที่ลงมือแก้อยู่ที่ ticket_resolutions
  * ห้ามยุบสองตารางนี้เข้าด้วยกัน เพราะรอบที่ 2 จะทับประวัติของรอบที่ 1
  *
- * หน้าจอ "รอรับการแก้ไข" = WHERE status IN ('RECEIVED','REOPENED','IN_PROGRESS')
+ * หน้าจอ "รอรับการแก้ไข" = WHERE status IN ('RECEIVED','ASSIGNED','REOPENED','IN_PROGRESS')
  */
 /** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface TicketCreationAttributes {
