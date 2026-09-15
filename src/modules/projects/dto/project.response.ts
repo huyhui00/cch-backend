@@ -7,6 +7,8 @@ import {
   ProjectStatus,
   Task,
   TaskPriority,
+  TaskSubmission,
+  TaskSubmissionStatus,
   TaskStatus,
 } from '../../../models';
 
@@ -55,8 +57,14 @@ export class TaskResponseDto {
   @ApiProperty({ nullable: true, example: 3 })
   assignedUserId: number | null;
 
+  @ApiProperty({ nullable: true, example: 2, description: 'ผู้มอบหมายงาน' })
+  assignedByUserId: number | null;
+
   @ApiProperty({ type: UserSummaryDto, nullable: true })
   assignedUser: UserSummaryDto | null;
+
+  @ApiProperty({ type: UserSummaryDto, nullable: true })
+  assignedByUser: UserSummaryDto | null;
 
   @ApiProperty({ nullable: true, example: '2026-09-10' })
   startDate: string | null;
@@ -72,6 +80,9 @@ export class TaskResponseDto {
 
   @ApiProperty({ nullable: true, example: '18.50' })
   actualHours: string | null;
+
+  @ApiProperty({ type: () => [TaskSubmissionResponseDto] })
+  submissions: TaskSubmissionResponseDto[];
 
   @ApiProperty({ description: 'ลำดับการแสดงผลในกลุ่มพี่น้องเดียวกัน', example: 0 })
   sortOrder: number;
@@ -95,6 +106,41 @@ export class TaskResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
+}
+
+export class TaskSubmissionResponseDto {
+  @ApiProperty({ example: 10 })
+  id: number;
+
+  @ApiProperty({ example: 5 })
+  taskId: number;
+
+  @ApiProperty({ example: 3 })
+  submittedByUserId: number;
+
+  @ApiProperty()
+  report: string;
+
+  @ApiProperty({ nullable: true, example: '6.50' })
+  actualHours: string | null;
+
+  @ApiProperty({ enum: TaskSubmissionStatus })
+  status: TaskSubmissionStatus;
+
+  @ApiProperty({ nullable: true })
+  reviewNote: string | null;
+
+  @ApiProperty({ nullable: true })
+  reviewedAt: Date | null;
+
+  @ApiProperty({ nullable: true, description: 'ไฟล์รายงานที่ดาวน์โหลดผ่าน API' })
+  fileName: string | null;
+
+  @ApiProperty({ nullable: true })
+  downloadUrl: string | null;
+
+  @ApiProperty()
+  submittedAt: Date;
 }
 
 export class TaskProjectSummaryDto {
@@ -305,12 +351,15 @@ export function toTaskResponse(task: Task, includeSubTasks = true): TaskResponse
     status: task.status,
     priority: task.priority,
     assignedUserId: task.assignedUserId,
+    assignedByUserId: task.assignedByUserId,
     assignedUser: toUserSummary(task.assignedUser),
+    assignedByUser: toUserSummary(task.assignedByUser),
     startDate: task.startDate,
     dueDate: task.dueDate,
     completedAt: task.completedAt,
     estimatedHours: task.estimatedHours,
     actualHours: task.actualHours,
+    submissions: (task.submissions ?? []).map(toTaskSubmissionResponse),
     sortOrder: task.sortOrder,
     isOverdue: isTaskOverdue(task),
     // ตัดที่ชั้นเดียว — งานย่อยของงานย่อยไม่ถูกคืนมาโดยอัตโนมัติ
@@ -320,6 +369,22 @@ export function toTaskResponse(task: Task, includeSubTasks = true): TaskResponse
         : [],
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
+  };
+}
+
+export function toTaskSubmissionResponse(submission: TaskSubmission): TaskSubmissionResponseDto {
+  return {
+    id: submission.id,
+    taskId: submission.taskId,
+    submittedByUserId: submission.submittedByUserId,
+    report: submission.report,
+    actualHours: submission.actualHours,
+    status: submission.status,
+    reviewNote: submission.reviewNote,
+    reviewedAt: submission.reviewedAt,
+    fileName: submission.fileName,
+    downloadUrl: submission.fileUrl ? `/api/tasks/submissions/${submission.id}/download` : null,
+    submittedAt: submission.createdAt,
   };
 }
 

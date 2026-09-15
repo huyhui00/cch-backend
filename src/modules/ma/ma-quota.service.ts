@@ -10,6 +10,7 @@ import {
   MaContract,
   MaContractStatus,
   MaPlan,
+  MaPlanItem,
   MaUsage,
   Ticket,
   TicketBillingType,
@@ -122,7 +123,15 @@ export class MaQuotaService {
         startDate: { [Op.lte]: date },
         endDate: { [Op.gte]: date },
       },
-      include: [{ model: MaPlan, required: false }],
+      include: [
+        {
+          model: MaPlan,
+          required: false,
+          include: [
+            { model: MaPlanItem, required: false, separate: true, order: [['sortOrder', 'ASC']] },
+          ],
+        },
+      ],
       order: [['endDate', 'DESC']],
       transaction,
     });

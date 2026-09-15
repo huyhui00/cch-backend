@@ -14,9 +14,11 @@ import { Sequelize } from 'sequelize-typescript';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { DEFAULT_SALT_ROUNDS, hashPassword, verifyPassword } from '../../common/utils/crypto.util';
+import { AccessControlService } from '../../common/services/access-control.service';
 import { AccountType, Role, User, UserRole, UserStatus } from '../../models';
 import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
+import { AssignableCapability } from './dto/query-assignable-users.dto';
 import { AssignRolesDto, ChangePasswordDto, UpdateUserStatusDto } from './dto/user-actions.dto';
 import { type AssignableUserDto, type UserResponseDto, toUserResponse } from './dto/user.response';
 
@@ -48,6 +50,7 @@ export class UsersService {
     @InjectModel(UserRole) private readonly userRoleModel: typeof UserRole,
     @InjectConnection() private readonly sequelize: Sequelize,
     private readonly config: ConfigService,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   /**
@@ -65,7 +68,7 @@ export class UsersService {
    * คนที่ลาออกแล้วไม่อยู่ในรายการนี้ เพราะเป็นการ *มอบหมายงานใหม่* ต่างจากการบันทึก
    * ข้อเท็จจริงในอดีตอย่างผู้ส่งมอบใน Phase 6 ที่ระบุคนที่ลาออกแล้วได้
    */
-  async findAssignable(): Promise<AssignableUserDto[]> {
+  async findAssignable(capability?: AssignableCapability): Promise<AssignableUserDto[]> {
     const users = await this.userModel.findAll({
       where: { status: UserStatus.ACTIVE },
       attributes: ['id', 'username', 'fullName', 'position'],
@@ -75,7 +78,31 @@ export class UsersService {
       ],
     });
 
-    return users.map((user) => ({
+    const requiredPermissions = capability
+      ? {
+          [AssignableCapability.TASK]: ['task.view', 'task.update'],
+          [AssignableCapability.TICKET]: ['ticket.view', 'ticket.update', 'ticket.resolve'],
+          [AssignableCapability.TASK_REVIEW]: ['task.review'],
+        }[capability]
+      : [];
+
+    const eligibleUsers =
+      requiredPermissions.length === 0
+        ? users
+        : (
+            await Promise.all(
+              users.map(async (user) => {
+                const allowed = await Promise.all(
+                  requiredPermissions.map((permission) =>
+                    this.accessControl.hasPermission(user, permission),
+                  ),
+                );
+                return allowed.every(Boolean) ? user : null;
+              }),
+            )
+          ).filter((user): user is (typeof users)[number] => user !== null);
+
+    return eligibleUsers.map((user) => ({
       id: user.id,
       username: user.username,
       fullName: user.fullName,

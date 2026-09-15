@@ -23,6 +23,7 @@ import { SurveyQuestion } from './survey-question.model';
 import { SurveyResponse } from './survey-response.model';
 import { Survey } from './survey.model';
 import { Task } from './task.model';
+import { TaskSubmission } from './task-submission.model';
 import { TicketResolution } from './ticket-resolution.model';
 import { Ticket } from './ticket.model';
 import { UserRole } from './user-role.model';
@@ -55,6 +56,7 @@ export * from './survey-question.model';
 export * from './survey-response.model';
 export * from './survey.model';
 export * from './task.model';
+export * from './task-submission.model';
 export * from './ticket-resolution.model';
 export * from './ticket.model';
 export * from './user-role.model';
@@ -84,6 +86,7 @@ export const ALL_MODELS = [
   // C. Project & Delivery
   Project,
   Task,
+  TaskSubmission,
   Delivery,
   Warranty,
   Document,

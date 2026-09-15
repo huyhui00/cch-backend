@@ -142,7 +142,12 @@ describe('TicketsService', () => {
   let userModel: ModelMock;
   let sequelize: { transaction: jest.Mock; query: jest.Mock };
   let warrantiesService: { findCoveringWarranty: jest.Mock };
-  let maQuotaService: { findActiveContract: jest.Mock; recordUsageForTicket: jest.Mock };
+  let maQuotaService: {
+    findActiveContract: jest.Mock;
+    getQuotaStatus: jest.Mock;
+    recordUsageForTicket: jest.Mock;
+  };
+  let accessControl: { hasPermission: jest.Mock };
   let service: TicketsService;
 
   beforeEach(() => {
@@ -161,8 +166,10 @@ describe('TicketsService', () => {
     warrantiesService = { findCoveringWarranty: jest.fn().mockResolvedValue(null) };
     maQuotaService = {
       findActiveContract: jest.fn().mockResolvedValue(null),
+      getQuotaStatus: jest.fn().mockResolvedValue({ quota: 5, used: 0, willExceed: false }),
       recordUsageForTicket: jest.fn().mockResolvedValue({ usage: null, status: null }),
     };
+    accessControl = { hasPermission: jest.fn().mockResolvedValue(true) };
 
     ticketModel.findByPk.mockResolvedValue(ticketRow());
     ticketModel.findOne.mockResolvedValue(null);
@@ -188,6 +195,7 @@ describe('TicketsService', () => {
       sequelize as unknown as Sequelize,
       warrantiesService as unknown as WarrantiesService,
       maQuotaService as unknown as MaQuotaService,
+      accessControl as never,
     );
   });
 
@@ -504,6 +512,20 @@ describe('TicketsService', () => {
 
       expect(captured.billingType).toBe(TicketBillingType.MA_QUOTA);
       expect(captured.maContractId).toBe(2);
+    });
+
+    it('ไม่เปิด Ticket แบบ MA_QUOTA เมื่อโควตารอบนี้เต็มแล้ว', async () => {
+      maQuotaService.findActiveContract.mockResolvedValue({ id: 2, endDate: '2027-12-31' });
+      maQuotaService.getQuotaStatus.mockResolvedValue({ quota: 5, used: 5, willExceed: true });
+
+      await expect(
+        service.create({
+          ...(dto as object),
+          billingType: TicketBillingType.MA_QUOTA,
+        } as never),
+      ).rejects.toThrow('โควตา MA รอบนี้เต็มแล้ว');
+
+      expect(ticketModel.create).not.toHaveBeenCalled();
     });
 
     it('ค่าที่ผู้ใช้เลือกชนะเสมอ แม้ระบบจะเสนออย่างอื่น', async () => {

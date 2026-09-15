@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { QueryAssignableUsersDto } from './dto/query-assignable-users.dto';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { type PaginatedResult } from '../../common/dto/pagination.dto';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
@@ -75,8 +76,8 @@ export class UsersController {
   })
   @ApiResponse({ status: 200, description: 'สำเร็จ', type: [AssignableUserDto] })
   @ApiResponse({ status: 401, description: 'ยังไม่ได้เข้าสู่ระบบ' })
-  findAssignable(): Promise<AssignableUserDto[]> {
-    return this.usersService.findAssignable();
+  findAssignable(@Query() query: QueryAssignableUsersDto): Promise<AssignableUserDto[]> {
+    return this.usersService.findAssignable(query.capability);
   }
 
   @Get()

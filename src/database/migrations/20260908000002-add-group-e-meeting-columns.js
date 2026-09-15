@@ -31,6 +31,15 @@ module.exports = {
   },
 
   async down(queryInterface) {
+    const constraints = await queryInterface.getForeignKeyReferencesForTable('tickets');
+    const receivedByConstraint = constraints.find(
+      (constraint) => constraint.columnName === 'received_by_user_id',
+    );
+
+    if (receivedByConstraint) {
+      await queryInterface.removeConstraint('tickets', receivedByConstraint.constraintName);
+    }
+
     await queryInterface.removeIndex('tickets', 'idx_tickets_received_by');
     await queryInterface.removeColumn('tickets', 'received_by_user_id');
   },

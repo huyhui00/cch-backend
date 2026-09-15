@@ -26,7 +26,11 @@ const PERMISSION_GROUPS = [
     actions: ['view', 'create', 'update', 'delete'],
   },
   { name: 'project', label: 'โครงการ', actions: ['view', 'create', 'update', 'delete'] },
-  { name: 'task', label: 'งานย่อย', actions: ['view', 'create', 'update', 'delete', 'assign'] },
+  {
+    name: 'task',
+    label: 'งานย่อย',
+    actions: ['view', 'create', 'update', 'delete', 'assign', 'review'],
+  },
   {
     name: 'delivery',
     label: 'การส่งมอบ',
@@ -69,6 +73,7 @@ const ACTION_LABELS = {
   complete: 'ปิดงาน',
   send: 'ส่ง',
   manage: 'จัดการ',
+  review: 'ตรวจ',
   reset_password: 'รีเซ็ตรหัสผ่าน',
 };
 

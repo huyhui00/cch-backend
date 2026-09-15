@@ -3,6 +3,7 @@ import { BelongsTo, Column, DataType, ForeignKey, HasMany, Table } from 'sequeli
 import { AuditedModel } from './base.model';
 import { Project } from './project.model';
 import { User } from './user.model';
+import { TaskSubmission } from './task-submission.model';
 
 export enum TaskStatus {
   TODO = 'TODO',
@@ -32,6 +33,7 @@ export interface TaskCreationAttributes {
   status?: TaskStatus;
   priority?: TaskPriority;
   assignedUserId?: number | null;
+  assignedByUserId?: number | null;
   startDate?: string | null;
   dueDate?: string | null;
   completedAt?: Date | null;
@@ -87,6 +89,10 @@ export class Task extends AuditedModel<Task, TaskCreationAttributes> {
   @Column({ type: DataType.DATEONLY, allowNull: true, field: 'start_date' })
   startDate: string | null;
 
+  @ForeignKey(() => User)
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'assigned_by_user_id' })
+  assignedByUserId: number | null;
+
   /** ใช้กับ notification rule แบบ TASK_OVERDUE */
   @Column({ type: DataType.DATEONLY, allowNull: true, field: 'due_date' })
   dueDate: string | null;
@@ -116,4 +122,10 @@ export class Task extends AuditedModel<Task, TaskCreationAttributes> {
 
   @BelongsTo(() => User)
   assignedUser: User;
+
+  @BelongsTo(() => User, 'assignedByUserId')
+  assignedByUser: User;
+
+  @HasMany(() => TaskSubmission, 'taskId')
+  submissions: TaskSubmission[];
 }

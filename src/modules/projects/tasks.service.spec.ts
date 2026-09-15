@@ -1,14 +1,20 @@
 /// <reference types="jest" />
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
-import { Task, TaskPriority, TaskStatus, User, UserStatus } from '../../models';
+import { Task, TaskPriority, TaskStatus, TaskSubmission, User, UserStatus } from '../../models';
 import { TasksService } from './tasks.service';
 import type { ProjectsService } from './projects.service';
 import { addDays } from '../../common/utils/date.util';
+import { runWithRequestContext } from '../../common/context/request-context';
 import { todayAsDateOnly } from './dto/project.response';
 
 /**
@@ -20,6 +26,7 @@ import { todayAsDateOnly } from './dto/project.response';
 
 interface ModelMock {
   findByPk: jest.Mock;
+  findOne: jest.Mock;
   findAll: jest.Mock;
   findAndCountAll: jest.Mock;
   create: jest.Mock;
@@ -29,6 +36,7 @@ interface ModelMock {
 function modelMock(): ModelMock {
   return {
     findByPk: jest.fn(),
+    findOne: jest.fn(),
     findAll: jest.fn(),
     findAndCountAll: jest.fn(),
     create: jest.fn(),
@@ -55,6 +63,7 @@ function baseTaskRow() {
     estimatedHours: null as string | null,
     actualHours: null as string | null,
     sortOrder: 0,
+    assignedByUserId: null as number | null,
     subTasks: [],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -71,9 +80,13 @@ function taskRow(overrides: Partial<TaskRow> = {}): TaskRow {
 
 describe('TasksService', () => {
   let taskModel: ModelMock;
+  let submissionModel: ModelMock;
+  let projectModel: ModelMock;
   let userModel: ModelMock;
   let sequelize: { transaction: jest.Mock };
   let projectsService: { findOrFail: jest.Mock };
+  let accessControl: { hasPermission: jest.Mock };
+  let storage: { put: jest.Mock; get: jest.Mock };
   let service: TasksService;
 
   /** ทะเบียนงานที่ findByPk จะหาเจอ — ใช้จำลองโครงสร้างงานแม่-งานย่อยหลายชั้น */
@@ -81,12 +94,16 @@ describe('TasksService', () => {
 
   beforeEach(() => {
     taskModel = modelMock();
+    submissionModel = modelMock();
+    projectModel = modelMock();
     userModel = modelMock();
     registry = new Map();
     sequelize = {
       transaction: jest.fn((callback: (t: unknown) => Promise<unknown>) => callback(TRANSACTION)),
     };
     projectsService = { findOrFail: jest.fn().mockResolvedValue({ id: 1 }) };
+    accessControl = { hasPermission: jest.fn().mockResolvedValue(true) };
+    storage = { put: jest.fn(), get: jest.fn() };
 
     taskModel.findByPk.mockImplementation((id: number) =>
       Promise.resolve(registry.get(id) ?? null),
@@ -94,12 +111,18 @@ describe('TasksService', () => {
     taskModel.findAll.mockResolvedValue([]);
     taskModel.count.mockResolvedValue(0);
     userModel.findByPk.mockResolvedValue({ id: 3, status: UserStatus.ACTIVE });
+    projectModel.findByPk.mockResolvedValue({ id: 1, managerUserId: null });
+    submissionModel.findOne.mockResolvedValue({ update: jest.fn() });
 
     service = new TasksService(
       taskModel as unknown as typeof Task,
+      submissionModel as unknown as typeof TaskSubmission,
+      projectModel as never,
       userModel as unknown as typeof User,
       sequelize as unknown as Sequelize,
       projectsService as unknown as ProjectsService,
+      accessControl as never,
+      storage as never,
     );
   });
 
@@ -124,7 +147,12 @@ describe('TasksService', () => {
         offset: 0,
       } as never);
 
-      expect(captured).toEqual({ assignedUserId: 42 });
+      expect(captured).toEqual(
+        expect.objectContaining({
+          assignedUserId: 42,
+          status: { [Op.notIn]: [TaskStatus.REVIEW, TaskStatus.DONE] },
+        }),
+      );
       expect(result).toMatchObject({ total: 1, page: 1, limit: 20 });
     });
   });
@@ -134,7 +162,12 @@ describe('TasksService', () => {
   // -------------------------------------------------------------------------
   describe('updateStatus', () => {
     it('บันทึกเวลาที่เสร็จให้เองเมื่อเปลี่ยนเป็น DONE', async () => {
-      const task = taskRow({ status: TaskStatus.DOING, completedAt: null });
+      const task = taskRow({
+        status: TaskStatus.REVIEW,
+        assignedUserId: 2,
+        assignedByUserId: 9,
+        completedAt: null,
+      });
       let captured: { status: TaskStatus; completedAt: Date | null } = {
         status: TaskStatus.TODO,
         completedAt: null,
@@ -145,7 +178,10 @@ describe('TasksService', () => {
       });
       register(task);
 
-      await service.updateStatus(1, { status: TaskStatus.DONE });
+      await runWithRequestContext(
+        { userId: 9, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () => service.review(1, { status: TaskStatus.DONE }),
+      );
 
       expect(captured.status).toBe(TaskStatus.DONE);
       expect(captured.completedAt).toBeInstanceOf(Date);
@@ -154,10 +190,18 @@ describe('TasksService', () => {
     it('ไม่ทับเวลาเดิมเมื่อสั่งเป็น DONE ซ้ำ', async () => {
       // ไม่งั้นการกดซ้ำโดยไม่ตั้งใจจะทำให้ไม่รู้ว่างานเสร็จจริงเมื่อไร
       const finishedAt = new Date('2026-03-01T00:00:00Z');
-      const task = taskRow({ status: TaskStatus.DONE, completedAt: finishedAt });
+      const task = taskRow({
+        status: TaskStatus.REVIEW,
+        assignedUserId: 2,
+        assignedByUserId: 9,
+        completedAt: finishedAt,
+      });
       register(task);
 
-      await service.updateStatus(1, { status: TaskStatus.DONE });
+      await runWithRequestContext(
+        { userId: 9, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () => service.review(1, { status: TaskStatus.DONE }),
+      );
 
       expect(task.update).toHaveBeenCalledWith(
         expect.objectContaining({ completedAt: finishedAt }),
@@ -179,15 +223,81 @@ describe('TasksService', () => {
     it('ถอยสถานะกลับได้ ไม่บังคับลำดับ', async () => {
       // งานจริงถอยได้ เช่น REVIEW ไม่ผ่านต้องกลับไป DOING
       // ถ้าบังคับลำดับ ผู้ใช้จะเลี่ยงด้วยการสร้างงานใหม่ ซึ่งทำให้ประวัติขาด
-      const task = taskRow({ status: TaskStatus.REVIEW });
+      const task = taskRow({ status: TaskStatus.REVIEW, assignedUserId: 2 });
       register(task);
 
-      await expect(service.updateStatus(1, { status: TaskStatus.TODO })).resolves.toBeDefined();
+      await expect(
+        runWithRequestContext(
+          { userId: 9, ipAddress: null, userAgent: null, startedAt: Date.now() },
+          () => service.updateStatus(1, { status: TaskStatus.TODO }),
+        ),
+      ).resolves.toBeDefined();
     });
 
     it('โยน 404 เมื่อไม่พบงาน', async () => {
       await expect(service.updateStatus(999, { status: TaskStatus.DONE })).rejects.toBeInstanceOf(
         NotFoundException,
+      );
+    });
+  });
+
+  describe('workflow ส่งตรวจ', () => {
+    it('ผู้รับผิดชอบส่งงานตรวจได้', async () => {
+      const task = taskRow({ status: TaskStatus.DOING, assignedUserId: 7 });
+      register(task);
+
+      await runWithRequestContext(
+        { userId: 7, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () => service.submitForReview(1),
+      );
+
+      expect(task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: TaskStatus.REVIEW, completedAt: null, updatedBy: 7 }),
+      );
+    });
+
+    it('ผู้ที่ไม่ใช่ผู้รับผิดชอบส่งงานแทนไม่ได้', async () => {
+      const task = taskRow({ status: TaskStatus.DOING, assignedUserId: 7 });
+      register(task);
+
+      await expect(
+        runWithRequestContext(
+          { userId: 8, ipAddress: null, userAgent: null, startedAt: Date.now() },
+          () => service.submitForReview(1),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('ห้ามปิดงานจากสถานะอื่นโดยข้ามการตรวจ', async () => {
+      const task = taskRow({ status: TaskStatus.DOING, assignedUserId: 7 });
+      register(task);
+
+      await expect(
+        runWithRequestContext(
+          { userId: 8, ipAddress: null, userAgent: null, startedAt: Date.now() },
+          () => service.updateStatus(1, { status: TaskStatus.DONE }),
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('ผู้ตรวจอนุมัติได้ แต่ผู้รับผิดชอบอนุมัติงานตัวเองไม่ได้', async () => {
+      const task = taskRow({ status: TaskStatus.REVIEW, assignedUserId: 7, assignedByUserId: 8 });
+      register(task);
+
+      await expect(
+        runWithRequestContext(
+          { userId: 7, ipAddress: null, userAgent: null, startedAt: Date.now() },
+          () => service.review(1, { status: TaskStatus.DONE }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      await runWithRequestContext(
+        { userId: 8, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () => service.review(1, { status: TaskStatus.DONE }),
+      );
+
+      expect(task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: TaskStatus.DONE, updatedBy: 8 }),
       );
     });
   });

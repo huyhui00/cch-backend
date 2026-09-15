@@ -100,6 +100,45 @@ export class ResolutionResponseDto {
 /**
  * สิ่งที่ระบบตรวจเจอตอนเปิดใบ — ใช้ *เสนอ* ประเภทการคิดเงิน ไม่ใช่บังคับ (BR-07)
  */
+export class WarrantyCoverageDto {
+  @ApiProperty({ example: 4 })
+  warrantyId: number;
+
+  @ApiProperty({ example: '2027-09-08' })
+  endDate: string;
+
+  @ApiProperty({ nullable: true })
+  scopeNote: string | null;
+}
+
+export class MaPlanItemCoverageDto {
+  @ApiProperty({ example: 1 })
+  id: number;
+
+  @ApiProperty({ example: 'Remote Support' })
+  title: string;
+
+  @ApiProperty({ nullable: true })
+  detail: string | null;
+}
+
+export class MaCoverageDto {
+  @ApiProperty({ example: 2 })
+  contractId: number;
+
+  @ApiProperty({ nullable: true, example: 'Standard MA' })
+  planName: string | null;
+
+  @ApiProperty({ nullable: true })
+  planDescription: string | null;
+
+  @ApiProperty({ type: [MaPlanItemCoverageDto] })
+  items: MaPlanItemCoverageDto[];
+
+  @ApiProperty({ example: '2027-12-31' })
+  endDate: string;
+}
+
 export class BillingSuggestionDto {
   @ApiProperty({
     enum: TicketBillingType,
@@ -128,10 +167,28 @@ export class BillingSuggestionDto {
 
   @ApiProperty({
     nullable: true,
+    description: 'สรุปขอบเขตประกันสำหรับให้เจ้าหน้าที่ตรวจประกอบการตัดสินใจ',
+  })
+  warrantyCoverage: WarrantyCoverageDto | null;
+
+  @ApiProperty({
+    nullable: true,
     description: 'สัญญา MA ที่ยัง ACTIVE อยู่ ณ วันที่แจ้ง',
     example: 2,
   })
   maContractId: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'แผน MA และรายการบริการย่อยของสัญญาที่พบ ใช้เป็นข้อมูลอ้างอิงเท่านั้น',
+  })
+  maCoverage: MaCoverageDto | null;
+
+  @ApiProperty({ nullable: true, description: 'โควตา MA ที่เหลือในรอบปัจจุบัน' })
+  maRemaining: number | null;
+
+  @ApiProperty({ nullable: true, description: 'โควตา MA เต็มแล้วหรือยัง' })
+  maIsExhausted: boolean | null;
 
   @ApiProperty({
     description:

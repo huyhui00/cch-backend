@@ -10,6 +10,7 @@ import { Op, type Transaction, type WhereOptions } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
+import { AccessControlService } from '../../common/services/access-control.service';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
 import {
@@ -144,6 +145,7 @@ export class TicketsService {
     @InjectConnection() private readonly sequelize: Sequelize,
     private readonly warrantiesService: WarrantiesService,
     private readonly maQuotaService: MaQuotaService,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   async findAll(query: QueryTicketsDto): Promise<PaginatedResult<TicketResponseDto>> {
@@ -293,9 +295,14 @@ export class TicketsService {
     this.assertNotInFuture(reportedAt, 'เวลาที่ลูกค้าแจ้งต้องไม่เป็นเวลาในอนาคต');
 
     const suggestion = await this.suggestBilling(dto.projectId ?? null, reportedAt);
+    const billingType = dto.billingType ?? suggestion.suggested ?? TicketBillingType.ONE_TIME;
 
     const year = new Date().getFullYear();
     const ticket = await this.sequelize.transaction(async (transaction) => {
+      if (billingType === TicketBillingType.MA_QUOTA) {
+        await this.assertMaQuotaAvailable(dto.projectId ?? null, reportedAt, transaction);
+      }
+
       const sequence = await nextSequenceNumber(this.sequelize, `TICKET:${year}`, transaction);
 
       return this.ticketModel.create(
@@ -307,7 +314,7 @@ export class TicketsService {
           description: dto.description ?? null,
           status: TicketStatus.RECEIVED,
           priority: dto.priority,
-          billingType: dto.billingType ?? suggestion.suggested ?? TicketBillingType.ONE_TIME,
+          billingType,
           warrantyId: suggestion.warrantyId,
           maContractId: suggestion.maContractId,
           reportedChannel: dto.reportedChannel,
@@ -651,6 +658,35 @@ export class TicketsService {
     return { [Op.or]: conditions };
   }
 
+  /** MA เต็มแล้วห้ามเปิด ticket แบบหักโควตา ตามกติกาใหม่ของการรับเรื่อง */
+  private async assertMaQuotaAvailable(
+    projectId: number | null,
+    reportedAt: Date,
+    transaction: Transaction,
+  ): Promise<void> {
+    if (projectId === null) {
+      throw new BadRequestException('เลือกโครงการก่อนใช้โควตา MA');
+    }
+
+    const contract = await this.maQuotaService.findActiveContract(
+      projectId,
+      reportedAt,
+      transaction,
+    );
+
+    if (!contract) {
+      throw new BadRequestException('ไม่พบสัญญา MA ที่ใช้งานได้สำหรับโครงการนี้');
+    }
+
+    const quota = await this.maQuotaService.getQuotaStatus(contract, reportedAt, transaction);
+
+    if (quota.willExceed) {
+      throw new BadRequestException(
+        `โควตา MA รอบนี้เต็มแล้ว (${quota.used}/${quota.quota}) กรุณาเปลี่ยนประเภทการคิดเงิน`,
+      );
+    }
+  }
+
   /**
    * ระบบเห็นอะไรบ้างตอนเปิดใบ — ใช้ *เสนอ* ประเภทการคิดเงิน (CLAUDE.md 9.3)
    *
@@ -665,7 +701,11 @@ export class TicketsService {
         warrantyId: null,
         warrantyEndDate: null,
         warrantyScopeNote: null,
+        warrantyCoverage: null,
         maContractId: null,
+        maCoverage: null,
+        maRemaining: null,
+        maIsExhausted: null,
         maIsReferenceOnly: false,
         reason: 'ไม่ได้ระบุโครงการ จึงตรวจประกันและสัญญา MA ให้ไม่ได้',
       };
@@ -676,13 +716,39 @@ export class TicketsService {
       this.maQuotaService.findActiveContract(projectId, onDate),
     ]);
 
+    const quota = contract ? await this.maQuotaService.getQuotaStatus(contract, onDate) : null;
+    const maRemaining = quota ? Math.max(quota.quota - quota.used, 0) : null;
+    const maIsExhausted = quota ? quota.willExceed : null;
+
     if (warranty) {
+      const maCoverage = contract
+        ? {
+            contractId: contract.id,
+            planName: contract.plan?.name ?? null,
+            planDescription: contract.plan?.description ?? null,
+            items: (contract.plan?.items ?? []).map((item) => ({
+              id: item.id,
+              title: item.title,
+              detail: item.detail,
+            })),
+            endDate: contract.endDate,
+          }
+        : null;
+
       return {
         suggested: TicketBillingType.WARRANTY,
         warrantyId: warranty.id,
         warrantyEndDate: warranty.endDate,
         warrantyScopeNote: warranty.scopeNote ?? null,
+        warrantyCoverage: {
+          warrantyId: warranty.id,
+          endDate: warranty.endDate,
+          scopeNote: warranty.scopeNote ?? null,
+        },
         maContractId: contract ? contract.id : null,
+        maCoverage,
+        maRemaining,
+        maIsExhausted,
         maIsReferenceOnly: contract !== null,
         reason:
           `อยู่ในระยะประกันถึง ${warranty.endDate} — ` +
@@ -696,7 +762,21 @@ export class TicketsService {
         warrantyId: null,
         warrantyEndDate: null,
         warrantyScopeNote: null,
+        warrantyCoverage: null,
         maContractId: contract.id,
+        maCoverage: {
+          contractId: contract.id,
+          planName: contract.plan?.name ?? null,
+          planDescription: contract.plan?.description ?? null,
+          items: (contract.plan?.items ?? []).map((item) => ({
+            id: item.id,
+            title: item.title,
+            detail: item.detail,
+          })),
+          endDate: contract.endDate,
+        },
+        maRemaining,
+        maIsExhausted,
         maIsReferenceOnly: false,
         reason: `มีสัญญา MA ที่ยังใช้งานอยู่ถึง ${contract.endDate}`,
       };
@@ -707,7 +787,11 @@ export class TicketsService {
       warrantyId: null,
       warrantyEndDate: null,
       warrantyScopeNote: null,
+      warrantyCoverage: null,
       maContractId: null,
+      maCoverage: null,
+      maRemaining: null,
+      maIsExhausted: null,
       maIsReferenceOnly: false,
       reason: 'ไม่พบประกันหรือสัญญา MA ที่ยังคุ้มครองโครงการนี้ ณ วันที่แจ้ง',
     };
@@ -814,7 +898,9 @@ export class TicketsService {
    * เหมือนกับการมอบหมาย task ใน Phase 5 มอบงานให้คนที่ลาออกไปแล้วไม่มีความหมาย
    */
   private async assertUserIsAssignable(userId: number): Promise<void> {
-    const user = await this.userModel.findByPk(userId, { attributes: ['id', 'status'] });
+    const user = await this.userModel.findByPk(userId, {
+      attributes: ['id', 'username', 'fullName', 'accountType', 'status'],
+    });
 
     if (!user) {
       throw new BadRequestException('ไม่พบพนักงานที่ระบุเป็นผู้รับผิดชอบ');
@@ -822,6 +908,16 @@ export class TicketsService {
 
     if (user.status !== UserStatus.ACTIVE) {
       throw new BadRequestException('พนักงานที่ระบุไม่ได้อยู่ในสถานะใช้งาน จึงมอบหมายงานให้ไม่ได้');
+    }
+
+    const canWork = await Promise.all(
+      ['ticket.view', 'ticket.update', 'ticket.resolve'].map((permission) =>
+        this.accessControl.hasPermission(user, permission),
+      ),
+    );
+
+    if (!canWork.every(Boolean)) {
+      throw new BadRequestException('พนักงานที่ระบุไม่มีสิทธิ์ทำงานใบแจ้งปัญหาประเภทนี้');
     }
   }
 

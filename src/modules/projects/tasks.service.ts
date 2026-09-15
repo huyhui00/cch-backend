@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/sequelize';
 import { Op, type Order, type Transaction, type WhereOptions } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
@@ -10,7 +16,20 @@ import {
   toPaginatedResult,
 } from '../../common/dto/pagination.dto';
 import { addDays } from '../../common/utils/date.util';
-import { Project, Task, TaskStatus, User, UserStatus } from '../../models';
+import { AccessControlService } from '../../common/services/access-control.service';
+import type { AuthenticatedUser } from '../../common/types/auth.types';
+import {
+  AccountType,
+  Project,
+  Task,
+  TaskStatus,
+  TaskSubmission,
+  TaskSubmissionStatus,
+  User,
+  UserStatus,
+} from '../../models';
+import { StorageService, type StoredFileStream } from '../files/storage.service';
+import { assertUploadable, buildStorageKey, type UploadedFileLike } from '../files/upload.util';
 import { ProjectsService } from './projects.service';
 import {
   type CompanyTaskResponseDto,
@@ -22,6 +41,7 @@ import {
   toTaskResponse,
   todayAsDateOnly,
 } from './dto/project.response';
+import { CreateTaskSubmissionDto, ReviewTaskDto } from './dto/task-submission.dto';
 import {
   CreateTaskDto,
   QueryCompanyTasksDto,
@@ -64,6 +84,26 @@ function assigneeInclude() {
   };
 }
 
+function assignedByInclude() {
+  return {
+    model: User,
+    as: 'assignedByUser',
+    attributes: ['id', 'username', 'fullName'],
+    required: false,
+    paranoid: false,
+  };
+}
+
+function submissionsInclude() {
+  return {
+    model: TaskSubmission,
+    as: 'submissions',
+    required: false,
+    separate: true,
+    order: [['createdAt', 'DESC']] as Order,
+  };
+}
+
 /** โครงการที่งานสังกัด — ใช้กับรายการรวมทั้งบริษัทที่มีงานหลายโครงการปนกัน */
 function projectInclude() {
   return {
@@ -89,9 +129,13 @@ function subTasksInclude() {
 export class TasksService {
   constructor(
     @InjectModel(Task) private readonly taskModel: typeof Task,
+    @InjectModel(TaskSubmission) private readonly submissionModel: typeof TaskSubmission,
+    @InjectModel(Project) private readonly projectModel: typeof Project,
     @InjectModel(User) private readonly userModel: typeof User,
     @InjectConnection() private readonly sequelize: Sequelize,
     private readonly projectsService: ProjectsService,
+    private readonly accessControl: AccessControlService,
+    private readonly storage: StorageService,
   ) {}
 
   /**
@@ -165,6 +209,7 @@ export class TasksService {
 
     if (dto.assignedUserId) {
       await this.assertAssigneeIsUsable(dto.assignedUserId);
+      await this.assertCanAssign(actorId);
     }
 
     this.assertDateOrder(dto.startDate ?? null, dto.dueDate ?? null);
@@ -179,6 +224,7 @@ export class TasksService {
       status,
       priority: dto.priority,
       assignedUserId: dto.assignedUserId ?? null,
+      assignedByUserId: dto.assignedUserId ? actorId : null,
       startDate: dto.startDate ?? null,
       dueDate: dto.dueDate ?? null,
       // สร้างมาเป็น DONE เลยก็ได้ กรณีบันทึกงานที่ทำเสร็จไปแล้วย้อนหลัง
@@ -195,7 +241,7 @@ export class TasksService {
 
   async findOne(id: number): Promise<TaskResponseDto> {
     const task = await this.taskModel.findByPk(id, {
-      include: [assigneeInclude(), subTasksInclude()],
+      include: [assigneeInclude(), assignedByInclude(), subTasksInclude(), submissionsInclude()],
     });
 
     if (!task) {
@@ -211,8 +257,11 @@ export class TasksService {
     query: PaginationDto,
   ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
     const { rows, count } = await this.taskModel.findAndCountAll({
-      where: { assignedUserId: userId },
-      include: [assigneeInclude(), projectInclude()],
+      where: {
+        assignedUserId: userId,
+        status: { [Op.notIn]: [TaskStatus.REVIEW, TaskStatus.DONE] },
+      },
+      include: [assigneeInclude(), assignedByInclude(), projectInclude()],
       order: [
         ['dueDate', 'ASC'],
         ['priority', 'DESC'],
@@ -237,6 +286,10 @@ export class TasksService {
       await this.assertAssigneeIsUsable(dto.assignedUserId);
     }
 
+    if (dto.assignedUserId !== undefined && dto.assignedUserId !== task.assignedUserId) {
+      await this.assertCanAssign(actorId);
+    }
+
     this.assertDateOrder(
       dto.startDate !== undefined ? (dto.startDate ?? null) : task.startDate,
       dto.dueDate !== undefined ? (dto.dueDate ?? null) : task.dueDate,
@@ -248,7 +301,12 @@ export class TasksService {
       ...(dto.description !== undefined ? { description: dto.description ?? null } : {}),
       ...(dto.status !== undefined ? this.statusPatch(task, dto.status) : {}),
       ...(dto.priority !== undefined ? { priority: dto.priority } : {}),
-      ...(dto.assignedUserId !== undefined ? { assignedUserId: dto.assignedUserId ?? null } : {}),
+      ...(dto.assignedUserId !== undefined
+        ? {
+            assignedUserId: dto.assignedUserId ?? null,
+            assignedByUserId: dto.assignedUserId ? actorId : null,
+          }
+        : {}),
       ...(dto.startDate !== undefined ? { startDate: dto.startDate ?? null } : {}),
       ...(dto.dueDate !== undefined ? { dueDate: dto.dueDate ?? null } : {}),
       ...(dto.estimatedHours !== undefined ? { estimatedHours: dto.estimatedHours ?? null } : {}),
@@ -271,9 +329,182 @@ export class TasksService {
     const actorId = getCurrentUserId();
     const task = await this.findOrFail(id);
 
+    if (dto.status === TaskStatus.REVIEW) {
+      throw new BadRequestException('กรุณาส่งรายงานผ่านเส้นทางส่งตรวจ');
+    }
+
+    if (dto.status === TaskStatus.DONE && task.status === TaskStatus.REVIEW) {
+      throw new BadRequestException('กรุณาตรวจงานผ่านเส้นทาง review');
+    }
+
+    this.assertStatusChangeAllowed(task, dto.status, actorId);
+
     await task.update({ ...this.statusPatch(task, dto.status), updatedBy: actorId });
 
     return this.findOne(id);
+  }
+
+  /** ผู้รับผิดชอบส่งงานให้ผู้มอบหมายตรวจ */
+  async submitForReview(id: number): Promise<TaskResponseDto> {
+    const actorId = getCurrentUserId();
+    const task = await this.findOrFail(id);
+
+    if (actorId === null) {
+      throw new ForbiddenException('ไม่พบผู้ใช้ปัจจุบัน');
+    }
+
+    if (task.assignedUserId !== actorId) {
+      throw new ForbiddenException('เฉพาะผู้รับผิดชอบเท่านั้นที่ส่งงานตรวจได้');
+    }
+
+    if (task.status === TaskStatus.DONE) {
+      throw new ConflictException('งานนี้ตรวจผ่านแล้ว');
+    }
+
+    const submission = await this.submissionModel.findOne({
+      where: { taskId: id, submittedByUserId: actorId, status: TaskSubmissionStatus.PENDING },
+      order: [['createdAt', 'DESC']],
+    });
+
+    if (!submission) {
+      throw new BadRequestException('กรุณาส่งรายงานผลการทำงานก่อนส่งตรวจ');
+    }
+
+    await task.update({ status: TaskStatus.REVIEW, completedAt: null, updatedBy: actorId });
+    return this.findOne(id);
+  }
+
+  /** ผู้มอบหมายหรือผู้มีสิทธิ์ตรวจอนุมัติ/ส่งงานกลับแก้ไข */
+  async review(id: number, dto: ReviewTaskDto): Promise<TaskResponseDto> {
+    const actorId = getCurrentUserId();
+    const task = await this.findOrFail(id);
+
+    if (task.status !== TaskStatus.REVIEW) {
+      throw new ConflictException('งานนี้ยังไม่อยู่ในสถานะรอตรวจ');
+    }
+
+    await this.assertCanReview(task, actorId);
+
+    if (dto.status !== TaskStatus.DONE && dto.status !== TaskStatus.DOING) {
+      throw new BadRequestException('ผลตรวจต้องเป็น DONE หรือ DOING เท่านั้น');
+    }
+
+    const submission = await this.submissionModel.findOne({
+      where: { taskId: id, status: TaskSubmissionStatus.PENDING },
+      order: [['createdAt', 'DESC']],
+    });
+
+    if (!submission) {
+      throw new BadRequestException('ไม่พบรายงานที่รอตรวจ');
+    }
+
+    await task.update({ ...this.statusPatch(task, dto.status), updatedBy: actorId });
+
+    await submission.update({
+      status:
+        dto.status === TaskStatus.DONE
+          ? TaskSubmissionStatus.APPROVED
+          : TaskSubmissionStatus.REJECTED,
+      reviewedByUserId: actorId,
+      reviewedAt: new Date(),
+      reviewNote: dto.reviewNote ?? null,
+      updatedBy: actorId,
+    });
+    return this.findOne(id);
+  }
+
+  private async assertCanReview(task: Task, actorId: number | null): Promise<void> {
+    if (actorId === null) {
+      throw new ForbiddenException('ไม่พบผู้ตรวจงานปัจจุบัน');
+    }
+
+    const actor = await this.userModel.findByPk(actorId, {
+      attributes: ['id', 'accountType'],
+    });
+
+    if (!actor) {
+      throw new ForbiddenException('ไม่พบผู้ตรวจงานปัจจุบัน');
+    }
+
+    if (actor.accountType === AccountType.SUPER_ADMIN || actor.accountType === AccountType.ADMIN) {
+      return;
+    }
+
+    if (task.assignedUserId === actorId) {
+      throw new ForbiddenException('ผู้รับผิดชอบไม่สามารถตรวจงานของตัวเองได้');
+    }
+
+    const project = await this.projectModel.findByPk(task.projectId, {
+      attributes: ['id', 'managerUserId'],
+    });
+
+    if (task.assignedByUserId !== actorId && project?.managerUserId !== actorId) {
+      throw new ForbiddenException('เฉพาะผู้มอบหมายหรือผู้จัดการโปรเจคเท่านั้นที่ตรวจงานได้');
+    }
+  }
+
+  /** บันทึกรายงานของผู้รับผิดชอบหนึ่งรอบ ก่อนกดส่งตรวจ */
+  async createSubmission(
+    id: number,
+    dto: CreateTaskSubmissionDto,
+    file?: UploadedFileLike,
+  ): Promise<TaskResponseDto> {
+    const actorId = getCurrentUserId();
+    const task = await this.findOrFail(id);
+
+    if (actorId === null) {
+      throw new ForbiddenException('ไม่พบผู้ใช้ปัจจุบัน');
+    }
+
+    if (task.assignedUserId !== actorId) {
+      throw new ForbiddenException('เฉพาะผู้รับผิดชอบเท่านั้นที่ส่งรายงานได้');
+    }
+
+    if (task.status === TaskStatus.DONE || task.status === TaskStatus.REVIEW) {
+      throw new ConflictException('งานนี้ยังส่งรายงานรอบใหม่ไม่ได้');
+    }
+
+    const fileName = file ? assertUploadable(file) : null;
+    const stored = file
+      ? await this.storage.put(
+          buildStorageKey(`tasks/${id}/submissions`, fileName as string),
+          file.buffer,
+          file.mimetype,
+        )
+      : null;
+
+    await this.submissionModel.create({
+      taskId: id,
+      submittedByUserId: actorId,
+      report: dto.report,
+      actualHours: dto.actualHours ?? null,
+      fileUrl: stored?.key ?? null,
+      fileName,
+      fileSize: file?.size ?? null,
+      mimeType: file?.mimetype ?? null,
+      status: TaskSubmissionStatus.PENDING,
+      createdBy: actorId,
+      updatedBy: actorId,
+    });
+
+    return this.findOne(id);
+  }
+
+  async openSubmissionFile(
+    id: number,
+  ): Promise<StoredFileStream & { fileName: string; mimeType: string | null }> {
+    const submission = await this.submissionModel.findByPk(id);
+
+    if (!submission || !submission.fileUrl) {
+      throw new NotFoundException('ไม่พบไฟล์รายงาน');
+    }
+
+    const file = await this.storage.get(submission.fileUrl);
+    return {
+      ...file,
+      fileName: submission.fileName ?? `task-submission-${id}`,
+      mimeType: submission.mimeType,
+    };
   }
 
   /**
@@ -397,6 +628,7 @@ export class TasksService {
    */
   async findCompanyTasks(
     query: QueryCompanyTasksDto,
+    user?: AuthenticatedUser,
   ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
     const where: WhereOptions<Task> = {};
 
@@ -410,6 +642,26 @@ export class TasksService {
 
     if (query.status) {
       Object.assign(where, { status: query.status });
+    }
+
+    if (query.status === TaskStatus.REVIEW && user) {
+      if (!(await this.accessControl.hasPermission(user, 'task.review'))) {
+        throw new ForbiddenException('คุณไม่มีสิทธิ์ตรวจงาน');
+      }
+
+      if (user.accountType === AccountType.USER) {
+        const managedProjects = await this.projectModel.findAll({
+          where: { managerUserId: user.id },
+          attributes: ['id'],
+        });
+        const projectIds = managedProjects.map((project) => project.id);
+        Object.assign(where, {
+          [Op.or]: [
+            { assignedByUserId: user.id },
+            ...(projectIds.length > 0 ? [{ projectId: { [Op.in]: projectIds } }] : []),
+          ],
+        });
+      }
     }
 
     if (query.priority) {
@@ -438,7 +690,7 @@ export class TasksService {
 
     const { rows, count } = await this.taskModel.findAndCountAll({
       where,
-      include: [assigneeInclude(), projectInclude()],
+      include: [assigneeInclude(), assignedByInclude(), projectInclude()],
       order,
       limit: query.limit,
       offset: query.offset,
@@ -632,7 +884,9 @@ export class TasksService {
   }
 
   private async assertAssigneeIsUsable(assignedUserId: number): Promise<void> {
-    const user = await this.userModel.findByPk(assignedUserId, { attributes: ['id', 'status'] });
+    const user = await this.userModel.findByPk(assignedUserId, {
+      attributes: ['id', 'username', 'accountType', 'status'],
+    });
 
     if (!user) {
       throw new BadRequestException('ไม่พบพนักงานที่ระบุเป็นผู้รับผิดชอบ');
@@ -640,6 +894,53 @@ export class TasksService {
 
     if (user.status !== UserStatus.ACTIVE) {
       throw new BadRequestException('พนักงานที่ระบุไม่ได้อยู่ในสถานะใช้งาน จึงมอบหมายงานให้ไม่ได้');
+    }
+
+    const canWork = await Promise.all(
+      ['task.view', 'task.update'].map((permission) =>
+        this.accessControl.hasPermission(user, permission),
+      ),
+    );
+
+    if (!canWork.every(Boolean)) {
+      throw new BadRequestException('พนักงานที่ระบุไม่มีสิทธิ์ทำงานประเภทนี้');
+    }
+  }
+
+  private async assertCanAssign(actorId: number | null): Promise<void> {
+    if (actorId === null) {
+      throw new ForbiddenException('ไม่พบผู้มอบหมายงาน');
+    }
+
+    const actor = await this.userModel.findByPk(actorId, {
+      attributes: ['id', 'username', 'accountType'],
+    });
+
+    if (!actor || !(await this.accessControl.hasPermission(actor, 'task.assign'))) {
+      throw new ForbiddenException('คุณไม่มีสิทธิ์มอบหมายงาน');
+    }
+  }
+
+  private assertStatusChangeAllowed(task: Task, status: TaskStatus, actorId: number | null): void {
+    if (status === TaskStatus.REVIEW) {
+      if (task.assignedUserId !== actorId) {
+        throw new ForbiddenException('เฉพาะผู้รับผิดชอบเท่านั้นที่ส่งงานตรวจได้');
+      }
+      return;
+    }
+
+    if (status === TaskStatus.DONE) {
+      if (task.status !== TaskStatus.REVIEW) {
+        throw new ConflictException('ต้องส่งงานตรวจสอบก่อนจึงจะปิดงานได้');
+      }
+      if (task.assignedUserId === actorId) {
+        throw new ForbiddenException('ผู้รับผิดชอบไม่สามารถตรวจงานของตัวเองได้');
+      }
+      return;
+    }
+
+    if (task.status === TaskStatus.REVIEW && task.assignedUserId === actorId) {
+      throw new ForbiddenException('งานที่ส่งตรวจแล้วต้องรอผลตรวจจากผู้มอบหมาย');
     }
   }
 

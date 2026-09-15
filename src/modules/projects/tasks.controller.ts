@@ -1,7 +1,30 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiParam,
+  ApiProduces,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { PaginationDto, type PaginatedResult } from '../../common/dto/pagination.dto';
 import {
@@ -10,6 +33,13 @@ import {
   TaskResponseDto,
 } from './dto/project.response';
 import {
+  MAX_UPLOAD_MB,
+  UPLOAD_INTERCEPTOR_OPTIONS,
+  ALLOWED_EXTENSIONS,
+  contentDisposition,
+  type UploadedFileLike,
+} from '../files/upload.util';
+import {
   QueryCompanyTasksDto,
   QueryDueSoonTasksDto,
   QueryOverdueTasksDto,
@@ -17,6 +47,7 @@ import {
   UpdateTaskOrderDto,
   UpdateTaskStatusDto,
 } from './dto/task.dto';
+import { CreateTaskSubmissionDto, ReviewTaskDto } from './dto/task-submission.dto';
 import { TasksService } from './tasks.service';
 
 /**
@@ -28,6 +59,55 @@ import { TasksService } from './tasks.service';
 @Controller('tasks')
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
+
+  @Get('submissions/:submissionId/download')
+  @RequirePermission('task.view')
+  @ApiProduces('application/octet-stream')
+  @ApiOperation({ summary: 'ดาวน์โหลดไฟล์รายงานการส่งตรวจ' })
+  @ApiParam({ name: 'submissionId', description: 'id ของรายงาน', example: 10 })
+  async downloadSubmission(
+    @Param('submissionId', ParseIntPipe) submissionId: number,
+  ): Promise<StreamableFile> {
+    const file = await this.tasksService.openSubmissionFile(submissionId);
+    return new StreamableFile(file.stream, {
+      type: file.mimeType ?? 'application/octet-stream',
+      disposition: contentDisposition(file.fileName),
+      length: file.contentLength ?? undefined,
+    });
+  }
+
+  @Post(':id/submissions')
+  @RequirePermission('task.update')
+  @UseInterceptors(FileInterceptor('file', UPLOAD_INTERCEPTOR_OPTIONS))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['report'],
+      properties: {
+        report: { type: 'string', description: 'รายงานผลการทำงาน' },
+        actualHours: { type: 'string', description: 'ชั่วโมงที่ใช้จริง' },
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: `ไฟล์รายงาน ไม่เกิน ${MAX_UPLOAD_MB} MB — รับ ${[...ALLOWED_EXTENSIONS].join(' ')}`,
+        },
+      },
+    },
+  })
+  @ApiOperation({ summary: 'บันทึกรายงานผลการทำงานก่อนส่งตรวจ' })
+  @ApiParam({ name: 'id', description: 'id ของงาน', example: 5 })
+  @ApiResponse({ status: 201, description: 'บันทึกรายงานแล้ว', type: TaskResponseDto })
+  async createSubmission(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateTaskSubmissionDto,
+    @UploadedFile() file?: UploadedFileLike,
+  ): Promise<{ data: TaskResponseDto; message: string }> {
+    return {
+      data: await this.tasksService.createSubmission(id, dto, file),
+      message: 'บันทึกรายงานแล้ว',
+    };
+  }
 
   @Get('me')
   @RequirePermission('task.view')
@@ -56,9 +136,10 @@ export class TasksController {
   @ApiResponse({ status: 200, description: 'สำเร็จ', type: [CompanyTaskResponseDto] })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   findCompanyTasks(
+    @CurrentUser() user: AuthenticatedUser,
     @Query() query: QueryCompanyTasksDto,
   ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
-    return this.tasksService.findCompanyTasks(query);
+    return this.tasksService.findCompanyTasks(query, user);
   }
 
   @Get('summary')
@@ -107,6 +188,15 @@ export class TasksController {
     return this.tasksService.findOverdue(query);
   }
 
+  @Get(':id')
+  @RequirePermission('task.view')
+  @ApiOperation({ summary: 'รายละเอียดงานพร้อมรายงานการส่งตรวจ' })
+  @ApiParam({ name: 'id', description: 'id ของงาน', example: 5 })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: TaskResponseDto })
+  findOne(@Param('id', ParseIntPipe) id: number): Promise<TaskResponseDto> {
+    return this.tasksService.findOne(id);
+  }
+
   @Patch(':id/status')
   @RequirePermission('task.update')
   @ApiOperation({
@@ -127,6 +217,35 @@ export class TasksController {
     return {
       data: await this.tasksService.updateStatus(id, dto),
       message: 'เปลี่ยนสถานะเรียบร้อย',
+    };
+  }
+
+  @Patch(':id/submit-review')
+  @RequirePermission('task.update')
+  @ApiOperation({ summary: 'ส่งงานให้ตรวจ' })
+  @ApiParam({ name: 'id', description: 'id ของงาน', example: 5 })
+  @ApiResponse({ status: 200, description: 'ส่งงานตรวจเรียบร้อย', type: TaskResponseDto })
+  async submitForReview(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<{ data: TaskResponseDto; message: string }> {
+    return {
+      data: await this.tasksService.submitForReview(id),
+      message: 'ส่งงานตรวจเรียบร้อย',
+    };
+  }
+
+  @Patch(':id/review')
+  @RequirePermission('task.review')
+  @ApiOperation({ summary: 'ตรวจงานและอนุมัติหรือส่งกลับแก้ไข' })
+  @ApiParam({ name: 'id', description: 'id ของงาน', example: 5 })
+  @ApiResponse({ status: 200, description: 'ตรวจงานเรียบร้อย', type: TaskResponseDto })
+  async review(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ReviewTaskDto,
+  ): Promise<{ data: TaskResponseDto; message: string }> {
+    return {
+      data: await this.tasksService.review(id, dto),
+      message: 'ตรวจงานเรียบร้อย',
     };
   }
 

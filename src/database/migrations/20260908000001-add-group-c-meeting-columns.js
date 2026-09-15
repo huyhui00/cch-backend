@@ -54,6 +54,16 @@ module.exports = {
 
   async down(queryInterface) {
     await queryInterface.removeIndex('deliveries', 'idx_deliveries_version');
+
+    const constraints = await queryInterface.getForeignKeyReferencesForTable('deliveries');
+    const deliveredByConstraint = constraints.find(
+      (constraint) => constraint.columnName === 'delivered_by_user_id',
+    );
+
+    if (deliveredByConstraint) {
+      await queryInterface.removeConstraint('deliveries', deliveredByConstraint.constraintName);
+    }
+
     await queryInterface.removeIndex('deliveries', 'idx_deliveries_delivered_by');
     await queryInterface.removeColumn('deliveries', 'delivered_by_user_id');
     await queryInterface.removeColumn('deliveries', 'version');
