@@ -14,6 +14,24 @@ import {
 } from '../../../models';
 import { MA_CONTRACT_PRICE_DESCRIPTION } from './ma-contract.dto';
 
+/**
+ * สถานะการคุ้มครองจริง — แยกจาก `status` ในฐาน เพราะ ACTIVE อาจยังไม่เริ่มหรือหมดช่วงไปแล้ว
+ * (ยังไม่มี scheduler ปรับเป็น EXPIRED จน Phase 11)
+ *
+ * หน้าจอใช้ค่านี้โชว์ป้าย: ยังไม่เริ่ม / คุ้มครองอยู่ / หมดอายุแล้ว
+ * อย่าใช้ `daysUntilExpiry` อย่างเดียวตัดสินว่าหมดอายุ เพราะสัญญายังไม่เริ่มก็มีค่าบวกได้
+ */
+export enum MaContractCoverageState {
+  /** DRAFT / CANCELLED / RENEWED / EXPIRED ในฐาน — ไม่ได้คุ้มครอง */
+  INACTIVE = 'INACTIVE',
+  /** ACTIVE แต่ยังไม่ถึง startDate */
+  NOT_STARTED = 'NOT_STARTED',
+  /** ACTIVE และวันนี้ตกในช่วง startDate..endDate */
+  IN_FORCE = 'IN_FORCE',
+  /** ACTIVE แต่เลย endDate แล้ว */
+  ENDED = 'ENDED',
+}
+
 export class MaPlanItemResponseDto {
   @ApiProperty({ example: 7 })
   id: number;
@@ -225,14 +243,27 @@ export class MaContractResponseDto {
 
   @ApiProperty({
     description:
-      'ยังคุ้มครองอยู่จริงหรือไม่ ณ วันนี้ — คิดจากช่วงวันที่คู่กับสถานะ ไม่ได้อ่านจาก status ' +
-      'อย่างเดียว เพราะยังไม่มี scheduler ปรับ EXPIRED ให้จนกว่าจะถึง Phase 11',
+      'สถานะการคุ้มครองจริง ณ วันนี้ — หน้าจอต้องอ่านค่านี้ (หรือ isCurrentlyActive) ' +
+      'ห้ามเดาจาก status อย่างเดียว และห้ามตีความ daysUntilExpiry < 0 เป็นหมดอายุ ' +
+      'เมื่อสัญญาเพิ่งยังไม่เริ่ม (NOT_STARTED)',
+    enum: MaContractCoverageState,
+    example: MaContractCoverageState.IN_FORCE,
+  })
+  coverageState: MaContractCoverageState;
+
+  @ApiProperty({
+    description:
+      'ยังคุ้มครองอยู่จริงหรือไม่ ณ วันนี้ — เทียบเท่า coverageState === IN_FORCE ' +
+      'คิดจากช่วงวันที่คู่กับสถานะ ไม่ได้อ่านจาก status อย่างเดียว เพราะยังไม่มี ' +
+      'scheduler ปรับ EXPIRED ให้จนกว่าจะถึง Phase 11',
     example: true,
   })
   isCurrentlyActive: boolean;
 
   @ApiProperty({
-    description: 'เหลืออีกกี่วันจะหมดอายุ ติดลบแปลว่าหมดไปแล้ว',
+    description:
+      'เหลืออีกกี่วันจะถึง endDate ติดลบแปลว่าเลยวันสิ้นสุดแล้ว ' +
+      'ค่าบวกไม่ได้แปลว่าใช้งานอยู่ — ต้องดู coverageState / isCurrentlyActive ด้วย',
     example: 21,
   })
   daysUntilExpiry: number;
@@ -514,17 +545,34 @@ export function isContractCurrentlyActive(
   contract: MaContract,
   today = todayAsDateOnly(),
 ): boolean {
-  return (
-    contract.status === MaContractStatus.ACTIVE &&
-    contract.startDate <= today &&
-    contract.endDate >= today
-  );
+  return resolveContractCoverageState(contract, today) === MaContractCoverageState.IN_FORCE;
+}
+
+export function resolveContractCoverageState(
+  contract: Pick<MaContract, 'status' | 'startDate' | 'endDate'>,
+  today = todayAsDateOnly(),
+): MaContractCoverageState {
+  if (contract.status !== MaContractStatus.ACTIVE) {
+    return MaContractCoverageState.INACTIVE;
+  }
+
+  if (contract.startDate > today) {
+    return MaContractCoverageState.NOT_STARTED;
+  }
+
+  if (contract.endDate < today) {
+    return MaContractCoverageState.ENDED;
+  }
+
+  return MaContractCoverageState.IN_FORCE;
 }
 
 export function toMaContractResponse(
   contract: MaContract,
   extra: { addons?: MaAddon[]; quota?: QuotaStatusResponseDto | null } = {},
 ): MaContractResponseDto {
+  const coverageState = resolveContractCoverageState(contract);
+
   const response: MaContractResponseDto = {
     id: contract.id,
     customerId: contract.customerId,
@@ -547,7 +595,8 @@ export function toMaContractResponse(
     startDate: contract.startDate,
     endDate: contract.endDate,
     status: contract.status,
-    isCurrentlyActive: isContractCurrentlyActive(contract),
+    coverageState,
+    isCurrentlyActive: coverageState === MaContractCoverageState.IN_FORCE,
     daysUntilExpiry: daysUntil(contract.endDate),
     signedDate: contract.signedDate,
     signedFileUrl: contract.signedFileUrl,

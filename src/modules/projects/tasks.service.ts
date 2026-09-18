@@ -20,6 +20,8 @@ import { AccessControlService } from '../../common/services/access-control.servi
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import {
   AccountType,
+  Document,
+  DocumentType,
   Project,
   Task,
   TaskStatus,
@@ -131,6 +133,7 @@ export class TasksService {
     @InjectModel(Task) private readonly taskModel: typeof Task,
     @InjectModel(TaskSubmission) private readonly submissionModel: typeof TaskSubmission,
     @InjectModel(Project) private readonly projectModel: typeof Project,
+    @InjectModel(Document) private readonly documentModel: typeof Document,
     @InjectModel(User) private readonly userModel: typeof User,
     @InjectConnection() private readonly sequelize: Sequelize,
     private readonly projectsService: ProjectsService,
@@ -400,17 +403,58 @@ export class TasksService {
 
     await task.update({ ...this.statusPatch(task, dto.status), updatedBy: actorId });
 
+    const finalStatus =
+      dto.status === TaskStatus.DONE ? TaskSubmissionStatus.APPROVED : TaskSubmissionStatus.REJECTED;
+
     await submission.update({
-      status:
-        dto.status === TaskStatus.DONE
-          ? TaskSubmissionStatus.APPROVED
-          : TaskSubmissionStatus.REJECTED,
+      status: finalStatus,
       reviewedByUserId: actorId,
       reviewedAt: new Date(),
       reviewNote: dto.reviewNote ?? null,
       updatedBy: actorId,
     });
+
+    if (dto.status === TaskStatus.DONE && submission.fileUrl) {
+      if (actorId === null) {
+        throw new ForbiddenException('ไม่พบผู้ตรวจงานปัจจุบัน');
+      }
+
+      await this.attachApprovedSubmissionToProject(task, submission, actorId);
+    }
+
     return this.findOne(id);
+  }
+
+  private async attachApprovedSubmissionToProject(
+    task: Task,
+    submission: TaskSubmission,
+    actorId: number,
+  ): Promise<void> {
+    const project = await this.projectModel.findByPk(task.projectId, {
+      attributes: ['id', 'customerId'],
+    });
+
+    if (!project) {
+      return;
+    }
+
+    await this.documentModel.create({
+      customerId: project.customerId,
+      projectId: task.projectId,
+      docType: DocumentType.OTHER,
+      title: submission.fileName ?? `งาน-${task.id}-ไฟล์แนบ`,
+      fileUrl: submission.fileUrl,
+      fileName: submission.fileName ?? `งาน-${task.id}-ไฟล์แนบ`,
+      fileSize: submission.fileSize ?? null,
+      mimeType: submission.mimeType ?? null,
+      note:
+        `ไฟล์ที่ส่งมาจากงาน ${task.title ?? `#${task.id}`} — ${submission.report || 'ส่งรายงานเพื่อขอตรวจ'}`.slice(
+          0,
+          500,
+        ),
+      createdBy: actorId,
+      updatedBy: actorId,
+    });
   }
 
   private async assertCanReview(task: Task, actorId: number | null): Promise<void> {

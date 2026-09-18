@@ -6,7 +6,7 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import { type PaginatedResult } from '../../common/dto/pagination.dto';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
-import { ProjectResponseDto } from './dto/project.response';
+import { ProjectReportDto, ProjectResponseDto } from './dto/project.response';
 import { ProjectsService } from './projects.service';
 
 /**
@@ -31,6 +31,23 @@ export class ProjectsController {
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   findAll(@Query() query: QueryProjectsDto): Promise<PaginatedResult<ProjectResponseDto>> {
     return this.projectsService.findAll(query);
+  }
+
+  @Get(':id/report')
+  @RequirePermission('project.view')
+  @ApiOperation({
+    summary: 'B-6 — สรุปตัวเลขรายงานของโปรเจคนี้',
+    description:
+      'ใช้วาดบล็อก「รายงานของโปรเจคนี้」บนหน้ารายละเอียด — ความคืบหน้า (สูตรเดียวกับ ' +
+      'GET /projects/:id) + จำนวนใบแจ้งปัญหา + จำนวนใบส่งมอบ + จำนวนสัญญา MA ' +
+      'นับแถวที่ยังไม่ soft delete ของโปรเจคนี้ ไม่กรองสถานะย่อย',
+  })
+  @ApiParam({ name: 'id', description: 'id ของโครงการ', example: 1 })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: ProjectReportDto })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  @ApiResponse({ status: 404, description: 'ไม่พบข้อมูลโครงการ' })
+  getReport(@Param('id', ParseIntPipe) id: number): Promise<ProjectReportDto> {
+    return this.projectsService.getReport(id);
   }
 
   @Get(':id')

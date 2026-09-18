@@ -11,11 +11,14 @@ import {
   AccountType,
   Customer,
   CustomerStatus,
+  Delivery,
+  MaContract,
   Project,
   ProjectPriority,
   ProjectStatus,
   Task,
   TaskStatus,
+  Ticket,
   User,
   UserStatus,
 } from '../../models';
@@ -36,6 +39,7 @@ interface ModelMock {
   findAll: jest.Mock;
   findAndCountAll: jest.Mock;
   create: jest.Mock;
+  count: jest.Mock;
 }
 
 function modelMock(): ModelMock {
@@ -45,6 +49,7 @@ function modelMock(): ModelMock {
     findAll: jest.fn(),
     findAndCountAll: jest.fn(),
     create: jest.fn(),
+    count: jest.fn().mockResolvedValue(0),
   };
 }
 
@@ -100,6 +105,9 @@ describe('ProjectsService', () => {
   let taskModel: ModelMock;
   let customerModel: ModelMock;
   let userModel: ModelMock;
+  let ticketModel: ModelMock;
+  let deliveryModel: ModelMock;
+  let maContractModel: ModelMock;
   let customersService: { createRecord: jest.Mock };
   let accessControl: { hasPermission: jest.Mock };
   /** ของที่ส่งเข้า callback ของ transaction — ใช้ยืนยันว่าทุกการเขียนอยู่ในทรานแซกชันเดียวกัน */
@@ -111,6 +119,9 @@ describe('ProjectsService', () => {
     taskModel = modelMock();
     customerModel = modelMock();
     userModel = modelMock();
+    ticketModel = modelMock();
+    deliveryModel = modelMock();
+    maContractModel = modelMock();
     customersService = { createRecord: jest.fn().mockResolvedValue({ id: 55 }) };
     accessControl = { hasPermission: jest.fn().mockResolvedValue(true) };
     const sequelize = {
@@ -132,6 +143,9 @@ describe('ProjectsService', () => {
       taskModel as unknown as typeof Task,
       customerModel as unknown as typeof Customer,
       userModel as unknown as typeof User,
+      ticketModel as unknown as typeof Ticket,
+      deliveryModel as unknown as typeof Delivery,
+      maContractModel as unknown as typeof MaContract,
       customersService as unknown as CustomersService,
       accessControl as unknown as AccessControlService,
       sequelize as unknown as Sequelize,
@@ -237,6 +251,53 @@ describe('ProjectsService', () => {
       const progress = await service.calculateProgress(1);
 
       expect(progress.overdueTasks).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // B-6 — สรุปตัวเลขรายงานของโปรเจค
+  // -------------------------------------------------------------------------
+  describe('getReport', () => {
+    it('คืนความคืบหน้าและนับใบปัญหา ส่งมอบ สัญญา MA ของโปรเจค', async () => {
+      taskModel.findAll.mockResolvedValue([
+        taskRow(TaskStatus.DONE),
+        taskRow(TaskStatus.DONE),
+        taskRow(TaskStatus.DOING),
+      ]);
+      ticketModel.count.mockResolvedValue(4);
+      deliveryModel.count.mockResolvedValue(2);
+      maContractModel.count.mockResolvedValue(1);
+
+      const report = await service.getReport(1);
+
+      expect(report).toEqual({
+        projectId: 1,
+        progress: {
+          totalTasks: 3,
+          doneTasks: 2,
+          percent: 66.67,
+          overdueTasks: 0,
+          byStatus: {
+            TODO: 0,
+            DOING: 1,
+            WAITING: 0,
+            REVIEW: 0,
+            DONE: 2,
+          },
+        },
+        ticketCount: 4,
+        deliveryCount: 2,
+        maContractCount: 1,
+      });
+      expect(ticketModel.count).toHaveBeenCalledWith({ where: { projectId: 1 } });
+      expect(deliveryModel.count).toHaveBeenCalledWith({ where: { projectId: 1 } });
+      expect(maContractModel.count).toHaveBeenCalledWith({ where: { projectId: 1 } });
+    });
+
+    it('โยน 404 เมื่อไม่พบโครงการ', async () => {
+      projectModel.findByPk.mockResolvedValue(null);
+
+      await expect(service.getReport(999)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

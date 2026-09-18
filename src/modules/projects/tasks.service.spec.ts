@@ -10,7 +10,7 @@ import {
 import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
-import { Task, TaskPriority, TaskStatus, TaskSubmission, User, UserStatus } from '../../models';
+import { Document, Task, TaskPriority, TaskStatus, TaskSubmission, User, UserStatus } from '../../models';
 import { TasksService } from './tasks.service';
 import type { ProjectsService } from './projects.service';
 import { addDays } from '../../common/utils/date.util';
@@ -82,6 +82,7 @@ describe('TasksService', () => {
   let taskModel: ModelMock;
   let submissionModel: ModelMock;
   let projectModel: ModelMock;
+  let documentModel: ModelMock;
   let userModel: ModelMock;
   let sequelize: { transaction: jest.Mock };
   let projectsService: { findOrFail: jest.Mock };
@@ -96,6 +97,7 @@ describe('TasksService', () => {
     taskModel = modelMock();
     submissionModel = modelMock();
     projectModel = modelMock();
+    documentModel = modelMock();
     userModel = modelMock();
     registry = new Map();
     sequelize = {
@@ -118,6 +120,7 @@ describe('TasksService', () => {
       taskModel as unknown as typeof Task,
       submissionModel as unknown as typeof TaskSubmission,
       projectModel as never,
+      documentModel as unknown as typeof Document,
       userModel as unknown as typeof User,
       sequelize as unknown as Sequelize,
       projectsService as unknown as ProjectsService,
@@ -298,6 +301,54 @@ describe('TasksService', () => {
 
       expect(task.update).toHaveBeenCalledWith(
         expect.objectContaining({ status: TaskStatus.DONE, updatedBy: 8 }),
+      );
+    });
+
+    it('เมื่ออนุมัติแล้วให้ย้ายไฟล์ที่ส่งมาจาก submission เข้าเอกสารของโปรเจค', async () => {
+      const task = taskRow({
+        id: 1,
+        status: TaskStatus.REVIEW,
+        assignedUserId: 7,
+        assignedByUserId: 8,
+        projectId: 15,
+        title: 'ติดตั้งระบบ CRM',
+      });
+      const submission = {
+        id: 21,
+        taskId: 1,
+        status: 'PENDING',
+        fileUrl: 'tasks/1/submissions/abc.pdf',
+        fileName: 'abc.pdf',
+        fileSize: 2048,
+        mimeType: 'application/pdf',
+        report: 'รายงานเสร็จแล้ว',
+        update: jest.fn().mockResolvedValue(true),
+      };
+      const project = { id: 15, customerId: 88 };
+
+      register(task);
+      submissionModel.findOne.mockResolvedValue(submission);
+      projectModel.findByPk.mockResolvedValue(project);
+      documentModel.create.mockResolvedValue({ id: 99 });
+
+      await runWithRequestContext(
+        { userId: 8, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () => service.review(1, { status: TaskStatus.DONE, reviewNote: 'อนุมัติแล้ว' }),
+      );
+
+      expect(documentModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 15,
+          customerId: 88,
+          title: 'abc.pdf',
+          fileUrl: 'tasks/1/submissions/abc.pdf',
+          fileName: 'abc.pdf',
+          fileSize: 2048,
+          mimeType: 'application/pdf',
+          note: expect.stringContaining('ติดตั้งระบบ CRM'),
+          createdBy: 8,
+          updatedBy: 8,
+        }),
       );
     });
   });

@@ -247,4 +247,37 @@ describe('Projects + ผู้ใช้ — ข้อตกลงประชุ
         .expect(200);
     });
   });
+
+  describe('B-6 — สรุปตัวเลขรายงานของโปรเจค', () => {
+    it('GET /projects/:id/report คืนความคืบหน้าและตัวนับที่เกี่ยวข้อง', async () => {
+      const created = await as(superToken, 'post', '/api/projects')
+        .send({
+          customerId: existingCustomerId,
+          name: `รายงานโปรเจค ${stamp}`,
+          status: 'IN_PROGRESS',
+          priority: 'NORMAL',
+        })
+        .expect(201);
+
+      const projectId = (created.body as ApiResponse<ProjectPayload>).data.id;
+
+      const response = await as(superToken, 'get', `/api/projects/${projectId}/report`).expect(200);
+      const report = (
+        response.body as ApiResponse<{
+          projectId: number;
+          progress: { percent: number; totalTasks: number };
+          ticketCount: number;
+          deliveryCount: number;
+          maContractCount: number;
+        }>
+      ).data;
+
+      expect(report.projectId).toBe(projectId);
+      expect(report.progress.totalTasks).toBe(0);
+      expect(report.progress.percent).toBe(0);
+      expect(report.ticketCount).toBe(0);
+      expect(report.deliveryCount).toBe(0);
+      expect(report.maContractCount).toBe(0);
+    });
+  });
 });

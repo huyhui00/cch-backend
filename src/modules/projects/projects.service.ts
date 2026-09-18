@@ -14,11 +14,22 @@ import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagina
 import { AccessControlService } from '../../common/services/access-control.service';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
-import { Customer, Project, Task, TaskStatus, User, UserStatus } from '../../models';
+import {
+  Customer,
+  Delivery,
+  MaContract,
+  Project,
+  Task,
+  TaskStatus,
+  Ticket,
+  User,
+  UserStatus,
+} from '../../models';
 import { CustomersService } from '../customers/customers.service';
 import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
 import {
   type ProjectProgressDto,
+  type ProjectReportDto,
   type ProjectResponseDto,
   isTaskOverdue,
   toProjectResponse,
@@ -66,6 +77,9 @@ export class ProjectsService {
     @InjectModel(Task) private readonly taskModel: typeof Task,
     @InjectModel(Customer) private readonly customerModel: typeof Customer,
     @InjectModel(User) private readonly userModel: typeof User,
+    @InjectModel(Ticket) private readonly ticketModel: typeof Ticket,
+    @InjectModel(Delivery) private readonly deliveryModel: typeof Delivery,
+    @InjectModel(MaContract) private readonly maContractModel: typeof MaContract,
     private readonly customersService: CustomersService,
     private readonly accessControl: AccessControlService,
     @InjectConnection() private readonly sequelize: Sequelize,
@@ -126,6 +140,31 @@ export class ProjectsService {
     }
 
     return toProjectResponse(project, await this.calculateProgress(id));
+  }
+
+  /**
+   * B-6 — สรุปตัวเลขสำหรับบล็อก「รายงานของโปรเจคนี้」
+   *
+   * ความคืบหน้าใช้สูตรเดียวกับ `GET /projects/:id` (`calculateProgress`)
+   * จำนวนใบปัญหา / ส่งมอบ / สัญญา MA นับแถวที่ยังไม่ soft delete ของโปรเจคนี้
+   */
+  async getReport(id: number): Promise<ProjectReportDto> {
+    await this.findOrFail(id);
+
+    const [progress, ticketCount, deliveryCount, maContractCount] = await Promise.all([
+      this.calculateProgress(id),
+      this.ticketModel.count({ where: { projectId: id } }),
+      this.deliveryModel.count({ where: { projectId: id } }),
+      this.maContractModel.count({ where: { projectId: id } }),
+    ]);
+
+    return {
+      projectId: id,
+      progress,
+      ticketCount,
+      deliveryCount,
+      maContractCount,
+    };
   }
 
   /**

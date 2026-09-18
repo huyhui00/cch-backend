@@ -496,7 +496,7 @@ return true;
 | B-3 | **สร้างโปรเจคพร้อมลูกค้าในฟอร์มเดียว** — พิมพ์ 2–3 ตัวค้นลูกค้าเก่า หรือกรอกลูกค้าใหม่ แล้วบันทึกแยกสองตาราง | BE+FE | ✅ BE เสร็จ 11 ก.ย. — `POST /api/projects` รับ `newCustomer` (ดูกฎ Phase 5) |
 | B-4 | งานย่อยแยกออกเป็นเมนู "งาน" (กระดาน) หน้าโปรเจคเหลือรายละเอียด ความคืบหน้า เอกสาร รายงาน | FE | ⬜ |
 | B-5 | **เอกสารโปรเจค** — ชื่อ + ไฟล์ + รายละเอียด ไม่ต้องแยกประเภท ดาวน์โหลดย้อนหลังได้ (Phase 9) | BE+FE | ✅ BE เสร็จ 11 ก.ย. — เก็บในเครื่องไปก่อนจนกว่าจะได้ key ของ R2 (ดูกฎ Phase 9) |
-| B-6 | รายงานรายโปรเจคในหน้าโปรเจค | BE+FE | ⬜ ต้องเสนอ endpoint |
+| B-6 | รายงานรายโปรเจคในหน้าโปรเจค | BE+FE | ✅ BE เสร็จ — `GET /api/projects/:id/report` (ความคืบหน้า + นับใบปัญหา/ส่งมอบ/สัญญา MA) · FE เปลี่ยนไปเรียกเส้นนี้แทนการประกอบเอง |
 | B-7 | ใบแจ้งปัญหา: รับเรื่องไม่ต้องระบุผู้รับผิดชอบ มีสถานะ "ส่งงานแล้ว" คั่นก่อนผู้รับผิดชอบกดเริ่มงานเอง | BE+FE | ✅ BE ปรับ `RECEIVED → ASSIGNED → IN_PROGRESS` แล้ว · FE ใช้ `PATCH /api/tickets/:id/start` |
 | B-8 | หมวดหมู่ปัญหาตอนเปิดใบ | BE+FE | ⬜ รอ Q11 |
 | B-9 | ตอนเปิดใบให้เห็นโควตา MA ที่ใช้ไป ถ้าเกินให้พนักงานตัดสินว่าคิดเงินหรือไม่ | BE+FE | ⬜ ต้องเสนอ endpoint (ตอนนี้ข้อเสนอการคิดเงินได้หลังสร้างใบแล้วเท่านั้น) |
@@ -562,7 +562,7 @@ return true;
 - **Endpoint ที่มีแล้ว** — auth (login/refresh/logout/me), users (list/create/update/roles/status/
   me-password), roles (CRUD + permissions), permissions (list), audit-logs (list), health,
   customers (CRUD + detail), contacts (CRUD), communication-logs (CRUD + detail),
-  projects (list/detail/create/update), projects/:id/tasks (CRUD),
+  projects (list/detail/create/update/report), projects/:id/tasks (CRUD),
   tasks (company list/summary/due-soon/overdue, status, order),
   projects/:id/deliveries (list/create), deliveries (detail/update/acceptance),
   deliveries/:id/warranties (create), warranties (expiring/detail/update),
@@ -578,7 +578,7 @@ return true;
   reports (contract-value by-customer/by-type/upcoming, service-cost, ma-contract-overlaps),
   customers/:id/overview,
   projects/:id/documents (list/upload), documents (detail/update/delete/download)
-  — รวม 111 เส้น (นับรวม `/api/health`)
+  — รวม 112 เส้น (นับรวม `/api/health`)
 - **เทสต์คุมกฎธุรกิจ 516 เคส 20 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10
   ทั้งหมดเป็น unit test ที่ mock model ไม่แตะฐานข้อมูลจริง รันจบใน ~19 วินาที
   **ถ้าจะแก้กฎธุรกิจข้อไหน ให้แก้เทสต์ที่คุมข้อนั้นไปพร้อมกัน** ไม่ใช่ลบทิ้งให้ผ่าน
@@ -613,6 +613,10 @@ return true;
 **กฎธุรกิจที่ Phase 5 บังคับไว้**
 - ความคืบหน้าโครงการ = (task ที่ DONE / task ทั้งหมด) x 100 นับ task ทุกชั้นแบบแบน
   ไม่ถ่วงน้ำหนักด้วย estimated_hours เพราะไม่ได้กรอกกันทุกงาน โครงการที่ยังไม่มี task ได้ 0%
+- **B-6 สรุปตัวเลขบนหน้ารายละเอียดโปรเจค = `GET /api/projects/:id/report`**
+  คืน `progress` (สูตรเดียวกับรายละเอียดโปรเจค) + `ticketCount` + `deliveryCount` +
+  `maContractCount` นับแถวที่ยังไม่ soft delete ของโปรเจคนั้น ไม่กรองสถานะย่อย
+  หน้าจอต้องเรียกเส้นนี้แทนการประกอบตัวเลขเองจากรายการในหน้า
 - **สถานะงานเปลี่ยนไปไหนก็ได้ ไม่บังคับลำดับ** เพราะงานจริงถอยกลับได้ (REVIEW ไม่ผ่าน -> DOING)
   เป็น DONE แล้วระบบใส่ `completed_at` ให้ ถอยออกจาก DONE แล้วล้างค่า และเป็น DONE ซ้ำไม่ทับเวลาเดิม
 - **จัดลำดับ** ส่งตำแหน่งปลายทาง ระบบเรียงพี่น้องทั้งกลุ่มใหม่เป็น 0,1,2,... ไม่ใช่แก้ค่าตัวเดียว
@@ -849,8 +853,12 @@ return true;
 - **สัญญาไม่มี DELETE** ที่ไม่เอาแล้วให้เปลี่ยนเป็น CANCELLED (เหตุผลเดียวกับโครงการและใบส่งมอบ)
   ส่วน **แผนลบได้เฉพาะที่ยังไม่มีสัญญาอ้างอยู่** แผนที่ถูกใช้แล้วให้ปิดด้วย `is_active = false`
   ซึ่งซ่อนจากตัวเลือกตอนทำสัญญาใหม่ แต่สัญญาเดิมยังอ่านเนื้อหาได้
-- **หน้าจอต้องอ่าน `isCurrentlyActive` ไม่ใช่ `status`** เหมือนกับประกันใน Phase 6 —
-  ยังไม่มี scheduler ปรับเป็น EXPIRED จนกว่าจะถึง Phase 11 แถวที่หมดอายุจึงค้างเป็น ACTIVE
+- **หน้าจอต้องอ่าน `coverageState` / `isCurrentlyActive` ไม่ใช่ `status` อย่างเดียว**
+  เหมือนกับประกันใน Phase 6 — ยังไม่มี scheduler ปรับเป็น EXPIRED จนกว่าจะถึง Phase 11
+  แถวที่หมดอายุจึงค้างเป็น ACTIVE · `coverageState` มี 4 ค่า:
+  `INACTIVE` (ร่าง/ยกเลิก/ต่อแล้ว) · `NOT_STARTED` (ACTIVE แต่ยังไม่ถึงวันเริ่ม) ·
+  `IN_FORCE` (= `isCurrentlyActive`) · `ENDED` (ACTIVE แต่เลยวันสิ้นสุด)
+  **ห้าม** เอา `daysUntilExpiry` บวกแล้วติดป้าย「หมดอายุแล้ว」เพราะสัญญายังไม่เริ่มก็มีค่าบวกได้
 - **ราคาเป็น `string` ตลอดสาย ไม่ใช่ `number`** `DECIMAL(15,2)` ละเอียดกว่า `number`
   ของ JavaScript ถ้ารับเป็น number ค่าจะถูกปัดตั้งแต่ยังไม่ถึงฐานข้อมูล และ Sequelize
   ก็คืน DECIMAL มาเป็น string อยู่แล้ว รับเป็น string ตั้งแต่ต้นทางจึงไม่มีจุดแปลงชนิดเลย

@@ -251,6 +251,30 @@ export class ProjectProgressDto {
   byStatus: Record<string, number>;
 }
 
+/**
+ * B-6 — สรุปตัวเลขบนหน้ารายละเอียดโปรเจค (ประชุมครั้งที่ 3)
+ *
+ * FE เคยประกอบจากข้อมูลในหน้าเองชั่วคราว เพราะยังไม่มีเส้นนี้
+ * นับแถวที่ยังไม่ soft delete ตาม project_id — ไม่กรองสถานะย่อย
+ * (CANCELLED / CLOSED ยังถูกนับ เพราะยังอยู่ในประวัติของโปรเจค)
+ */
+export class ProjectReportDto {
+  @ApiProperty({ example: 1 })
+  projectId: number;
+
+  @ApiProperty({ type: ProjectProgressDto })
+  progress: ProjectProgressDto;
+
+  @ApiProperty({ description: 'จำนวนใบแจ้งปัญหาของโปรเจคนี้', example: 3 })
+  ticketCount: number;
+
+  @ApiProperty({ description: 'จำนวนใบส่งมอบของโปรเจคนี้', example: 2 })
+  deliveryCount: number;
+
+  @ApiProperty({ description: 'จำนวนสัญญา MA ของโปรเจคนี้', example: 1 })
+  maContractCount: number;
+}
+
 export class ProjectResponseDto {
   @ApiProperty({ example: 1 })
   id: number;
