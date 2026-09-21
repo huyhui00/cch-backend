@@ -9,7 +9,7 @@ import { Op, type Transaction, type WhereOptions } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
-import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
+import { nextGeneratedCode } from '../../common/utils/code-sequence.util';
 import {
   CommunicationLog,
   Contact,
@@ -182,7 +182,7 @@ export class CustomersService {
       await this.assertOwnerExists(dto.ownerUserId);
     }
 
-    const code = `CUS-${String(await nextSequenceNumber(this.sequelize, 'CUSTOMER', transaction)).padStart(3, '0')}`;
+    const code = await nextGeneratedCode(this.sequelize, 'CUSTOMER', transaction);
 
     return this.customerModel.create(
       {

@@ -69,3 +69,20 @@ export class ChangePasswordDto {
   @MaxLength(MAX_PASSWORD_LENGTH, { message: 'รหัสผ่านใหม่ต้องยาวไม่เกิน 72 ตัวอักษร' })
   newPassword: string;
 }
+
+/**
+ * ผู้ดูแลตั้งรหัสใหม่ให้พนักงานที่ลืม — ไม่ต้องรู้รหัสเดิม
+ * ไม่มีลิงก์สาธารณะและไม่ส่งรหัสออกนอกระบบ (ไม่มีอีเมล)
+ */
+export class ResetPasswordDto {
+  @ApiProperty({
+    description: 'รหัสผ่านใหม่ที่ผู้ดูแลตั้งให้ ยาว 8-72 ตัวอักษร',
+    minLength: MIN_PASSWORD_LENGTH,
+    maxLength: MAX_PASSWORD_LENGTH,
+    example: 'TempPassw0rd!',
+  })
+  @IsString({ message: 'รหัสผ่านใหม่ต้องเป็นข้อความ' })
+  @MinLength(MIN_PASSWORD_LENGTH, { message: 'รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัวอักษร' })
+  @MaxLength(MAX_PASSWORD_LENGTH, { message: 'รหัสผ่านใหม่ต้องยาวไม่เกิน 72 ตัวอักษร' })
+  newPassword: string;
+}

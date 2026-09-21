@@ -19,7 +19,12 @@ import { AccountType, Role, User, UserRole, UserStatus } from '../../models';
 import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { AssignableCapability } from './dto/query-assignable-users.dto';
-import { AssignRolesDto, ChangePasswordDto, UpdateUserStatusDto } from './dto/user-actions.dto';
+import {
+  AssignRolesDto,
+  ChangePasswordDto,
+  ResetPasswordDto,
+  UpdateUserStatusDto,
+} from './dto/user-actions.dto';
 import { type AssignableUserDto, type UserResponseDto, toUserResponse } from './dto/user.response';
 
 /** ฟิลด์ที่ยอมให้เรียงลำดับได้ — กันค่าแปลกปลอมจาก query string sortBy หลุดเข้า ORDER BY */
@@ -309,6 +314,35 @@ export class UsersService {
       // เปลี่ยนรหัสผ่านแล้วต้องล็อกอินใหม่ทุกอุปกรณ์ เผื่อกรณีที่เปลี่ยนเพราะสงสัยว่ารหัสหลุด
       refreshTokenHash: null,
       updatedBy: user.id,
+    });
+  }
+
+  /**
+   * ผู้ดูแลตั้งรหัสใหม่ให้พนักงานที่ลืม — ไม่ต้องรู้รหัสเดิม
+   *
+   * ใช้สิทธิ์ `user.reset_password` (SUPER_ADMIN / ADMIN ผ่านอยู่แล้วตามตาราง 4.1)
+   * ไม่มีลิงก์สาธารณะ: คนที่ลืมรหัสเข้าหน้าในระบบไม่ได้ ต้องให้คนที่ล็อกอินอยู่ทำให้
+   * รหัสชั่วคราวบอกนอกระบบ (LINE/ปากเปล่า) ตาม BR-02
+   */
+  async resetPassword(
+    id: number,
+    dto: ResetPasswordDto,
+    actor: AuthenticatedUser,
+  ): Promise<void> {
+    if (id === actor.id) {
+      throw new BadRequestException(
+        'ตั้งรหัสผ่านของตนเองผ่านเส้นนี้ไม่ได้ กรุณาใช้หน้าเปลี่ยนรหัสผ่าน',
+      );
+    }
+
+    const user = await this.findOrFail(id);
+
+    this.assertCanManage(actor, user);
+
+    await user.update({
+      passwordHash: await hashPassword(dto.newPassword, this.saltRounds),
+      refreshTokenHash: null,
+      updatedBy: actor.id,
     });
   }
 

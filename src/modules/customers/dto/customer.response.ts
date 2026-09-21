@@ -62,7 +62,7 @@ export class CustomerResponseDto {
   @ApiProperty({ example: 1 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'CUS-001' })
+  @ApiProperty({ nullable: true, example: 'CUS69-0001' })
   code: string | null;
 
   @ApiProperty({ example: 'บริษัท ตัวอย่าง จำกัด' })

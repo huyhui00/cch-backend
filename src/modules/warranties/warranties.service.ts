@@ -11,7 +11,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import { addMonths, toDateOnly, todayAsDateOnly } from '../../common/utils/date.util';
-import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
+import { nextGeneratedCode } from '../../common/utils/code-sequence.util';
 import {
   AcceptanceStatus,
   Customer,
@@ -148,15 +148,14 @@ export class WarrantiesService {
     await this.assertNotDuplicate(deliveryId, dto.durationMonth);
     await this.assertMaContractMatchesProject(dto.maContractId, delivery.projectId);
 
-    const year = new Date().getFullYear();
     const warranty = await this.sequelize.transaction(async (transaction) => {
-      const sequence = await nextSequenceNumber(this.sequelize, `WARRANTY:${year}`, transaction);
+      const warrantyNo = await nextGeneratedCode(this.sequelize, 'WARRANTY', transaction);
 
       return this.warrantyModel.create(
         {
           deliveryId,
           projectId: delivery.projectId,
-          warrantyNo: `WAR-${year}-${String(sequence).padStart(3, '0')}`,
+          warrantyNo,
           maContractId: dto.maContractId ?? null,
           durationMonth: dto.durationMonth,
           startDate,

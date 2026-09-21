@@ -159,7 +159,8 @@ export class CreateUserDto {
 /**
  * แก้ไขข้อมูลผู้ใช้ — ไม่รวม username, password และ roleIds
  *   username  เปลี่ยนไม่ได้ เพราะเป็นตัวอ้างอิงใน audit log ย้อนหลัง
- *   password  เปลี่ยนผ่าน PATCH /api/users/me/password เท่านั้น
+ *   password  เปลี่ยนเองผ่าน PATCH /api/users/me/password
+ *             ผู้ดูแลตั้งให้ใหม่ผ่าน POST /api/users/:id/reset-password
  *   roleIds   ผูก/ถอดผ่าน PUT /api/users/:id/roles เท่านั้น
  */
 export class UpdateUserDto extends PartialType(

@@ -16,7 +16,7 @@ export class FollowUpCustomerSummaryDto {
   @ApiProperty({ example: 'บริษัท ตัวอย่าง จำกัด' })
   name: string;
 
-  @ApiProperty({ nullable: true, example: 'CUS-0001' })
+  @ApiProperty({ nullable: true, example: 'CUS69-0001' })
   code: string | null;
 }
 
@@ -24,7 +24,7 @@ export class FollowUpProjectSummaryDto {
   @ApiProperty({ example: 3 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'PRJ-2026-003' })
+  @ApiProperty({ nullable: true, example: 'PRJ69-0003' })
   code: string | null;
 
   @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })

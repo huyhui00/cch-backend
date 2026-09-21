@@ -12,7 +12,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { getCurrentUserId } from '../../common/context/request-context';
 import { AccessControlService } from '../../common/services/access-control.service';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
-import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
+import { nextGeneratedCode } from '../../common/utils/code-sequence.util';
 import {
   Contact,
   Customer,
@@ -297,19 +297,18 @@ export class TicketsService {
     const suggestion = await this.suggestBilling(dto.projectId ?? null, reportedAt);
     const billingType = dto.billingType ?? suggestion.suggested ?? TicketBillingType.ONE_TIME;
 
-    const year = new Date().getFullYear();
     const ticket = await this.sequelize.transaction(async (transaction) => {
       if (billingType === TicketBillingType.MA_QUOTA) {
         await this.assertMaQuotaAvailable(dto.projectId ?? null, reportedAt, transaction);
       }
 
-      const sequence = await nextSequenceNumber(this.sequelize, `TICKET:${year}`, transaction);
+      const ticketNo = await nextGeneratedCode(this.sequelize, 'TICKET', transaction);
 
       return this.ticketModel.create(
         {
           customerId: dto.customerId,
           projectId: dto.projectId ?? null,
-          ticketNo: `TK-${year}-${String(sequence).padStart(3, '0')}`,
+          ticketNo,
           title: dto.title,
           description: dto.description ?? null,
           status: TicketStatus.RECEIVED,

@@ -223,7 +223,7 @@ export class MaContractResponseDto {
   @ApiProperty({ nullable: true, type: MaContractPlanSummaryDto })
   plan: MaContractPlanSummaryDto | null;
 
-  @ApiProperty({ nullable: true, example: 'MA-2026-014' })
+  @ApiProperty({ nullable: true, example: 'MA69-0014' })
   contractNo: string | null;
 
   @ApiProperty({ description: MA_CONTRACT_PRICE_DESCRIPTION, example: '48000.00' })
@@ -307,7 +307,7 @@ export class MaContractPrintCustomerDto {
   @ApiProperty({ example: 1 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'CUS-001' })
+  @ApiProperty({ nullable: true, example: 'CUS69-0001' })
   code: string | null;
 
   @ApiProperty({ example: 'บริษัท ตัวอย่าง จำกัด' })
@@ -350,7 +350,7 @@ export class MaContractPrintProjectDto {
   @ApiProperty({ example: 3 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'PRJ-2026-003' })
+  @ApiProperty({ nullable: true, example: 'PRJ69-0003' })
   code: string | null;
 
   @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
@@ -408,7 +408,7 @@ export class MaContractPrintTermsDto {
 
   @ApiProperty({
     nullable: true,
-    example: 'MA-2026-014',
+    example: 'MA69-0014',
     description:
       'หน้าจอซ่อนช่องนี้ตอนกรอก (ตกลง 10 ก.ย.) — เป็น null ให้ซ่อนบรรทัดนี้บนหน้าพิมพ์ด้วย',
   })

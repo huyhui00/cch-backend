@@ -13,7 +13,7 @@ import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import { AccessControlService } from '../../common/services/access-control.service';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
-import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
+import { nextGeneratedCode } from '../../common/utils/code-sequence.util';
 import {
   Customer,
   Delivery,
@@ -209,14 +209,13 @@ export class ProjectsService {
       const customerId = newCustomer
         ? (await this.customersService.createRecord(newCustomer, actorId, transaction)).id
         : (dto.customerId as number);
-      const year = new Date().getFullYear();
-      const sequence = await nextSequenceNumber(this.sequelize, `PROJECT:${year}`, transaction);
+      const code = await nextGeneratedCode(this.sequelize, 'PROJECT', transaction);
 
       const project = await this.projectModel.create(
         {
           customerId,
           name: dto.name,
-          code: `PRJ-${year}-${String(sequence).padStart(3, '0')}`,
+          code,
           description: dto.description ?? null,
           projectType: dto.projectType ?? null,
           status: dto.status,

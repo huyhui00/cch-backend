@@ -45,7 +45,7 @@ export class CustomerContractValueDto {
   @ApiProperty({ example: 'บริษัท ตัวอย่าง จำกัด' })
   customerName: string;
 
-  @ApiProperty({ nullable: true, example: 'CUS-0001' })
+  @ApiProperty({ nullable: true, example: 'CUS69-0001' })
   customerCode: string | null;
 
   @ApiProperty({ description: 'มูลค่าตามสัญญาจากโครงการ', example: '1850000.00' })
@@ -166,7 +166,7 @@ export class UpcomingContractItemDto {
   @ApiProperty({ example: 12 })
   contractId: number;
 
-  @ApiProperty({ nullable: true, example: 'MA-2026-014' })
+  @ApiProperty({ nullable: true, example: 'MA69-0014' })
   contractNo: string | null;
 
   @ApiProperty({ example: 1 })
@@ -272,7 +272,7 @@ export class OverlappingContractDto {
   @ApiProperty({ example: 12 })
   contractId: number;
 
-  @ApiProperty({ nullable: true, example: 'MA-2026-014' })
+  @ApiProperty({ nullable: true, example: 'MA69-0014' })
   contractNo: string | null;
 
   @ApiProperty({ example: 3 })
@@ -378,7 +378,7 @@ export class OverviewContractDto {
   @ApiProperty({ example: 12 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'MA-2026-014' })
+  @ApiProperty({ nullable: true, example: 'MA69-0014' })
   contractNo: string | null;
 
   @ApiProperty({ example: 3 })
@@ -404,7 +404,7 @@ export class OverviewTicketDto {
   @ApiProperty({ example: 7 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'TK-2026-001' })
+  @ApiProperty({ nullable: true, example: 'TK69-0006' })
   ticketNo: string | null;
 
   @ApiProperty({ example: 'หน้าจอรายงานโหลดไม่ขึ้น' })
@@ -498,7 +498,7 @@ export class CustomerOverviewDto {
   @ApiProperty({ example: 'บริษัท ตัวอย่าง จำกัด' })
   customerName: string;
 
-  @ApiProperty({ nullable: true, example: 'CUS-0001' })
+  @ApiProperty({ nullable: true, example: 'CUS69-0001' })
   customerCode: string | null;
 
   @ApiProperty({ example: 'ACTIVE' })

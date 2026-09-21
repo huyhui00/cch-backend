@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -18,7 +20,12 @@ import { type PaginatedResult } from '../../common/dto/pagination.dto';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
-import { AssignRolesDto, ChangePasswordDto, UpdateUserStatusDto } from './dto/user-actions.dto';
+import {
+  AssignRolesDto,
+  ChangePasswordDto,
+  ResetPasswordDto,
+  UpdateUserStatusDto,
+} from './dto/user-actions.dto';
 import { AssignableUserDto, UserResponseDto } from './dto/user.response';
 import { UsersService } from './users.service';
 
@@ -159,6 +166,34 @@ export class UsersController {
     return {
       data: await this.usersService.assignRoles(id, dto, actor),
       message: 'บันทึกบทบาทเรียบร้อย',
+    };
+  }
+
+  @Post(':id/reset-password')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('user.reset_password')
+  @ApiOperation({
+    summary: 'ตั้งรหัสผ่านใหม่ให้ผู้ใช้ที่ลืมรหัส',
+    description:
+      'ผู้ดูแลตั้งรหัสชั่วคราวให้โดยไม่ต้องรู้รหัสเดิม แล้วบอกพนักงานนอกระบบ (LINE/ปากเปล่า) ' +
+      'หลังสำเร็จ session ที่ค้างอยู่ถูกตัดทันที ผู้ถูกตั้งรหัสต้องเข้าสู่ระบบใหม่ ' +
+      'ตั้งรหัสของตนเองไม่ได้ — ใช้ PATCH /api/users/me/password ' +
+      'บัญชี SUPER_ADMIN ถูกตั้งรหัสได้โดย SUPER_ADMIN เท่านั้น',
+  })
+  @ApiParam({ name: 'id', description: 'id ของผู้ใช้ที่ลืมรหัส', example: 5 })
+  @ApiResponse({ status: 200, description: 'ตั้งรหัสผ่านใหม่เรียบร้อย' })
+  @ApiResponse({ status: 400, description: 'ตั้งรหัสผ่านของตนเอง หรือรหัสใหม่ไม่ถูกต้อง' })
+  @ApiResponse({ status: 403, description: 'ไม่มีสิทธิ์ตั้งรหัสผ่านให้บัญชีนี้' })
+  @ApiResponse({ status: 404, description: 'ไม่พบข้อมูลผู้ใช้' })
+  async resetPassword(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ResetPasswordDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<{ data: null; message: string }> {
+    await this.usersService.resetPassword(id, dto, actor);
+    return {
+      data: null,
+      message: 'ตั้งรหัสผ่านใหม่เรียบร้อย ผู้ใช้ต้องเข้าสู่ระบบใหม่',
     };
   }
 

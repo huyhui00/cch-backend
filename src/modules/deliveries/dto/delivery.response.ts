@@ -64,7 +64,7 @@ export class DeliveryResponseDto {
   @ApiProperty({ type: DeliveryProjectSummaryDto, nullable: true })
   project: DeliveryProjectSummaryDto | null;
 
-  @ApiProperty({ nullable: true, example: 'DN-2026-001' })
+  @ApiProperty({ nullable: true, example: 'DLV69-0003' })
   deliveryNo: string | null;
 
   @ApiProperty({ example: 'ส่งมอบระบบเฟสที่ 1 พร้อมคู่มือการใช้งาน' })

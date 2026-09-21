@@ -265,7 +265,7 @@ export class TicketResponseDto {
   @ApiProperty({ example: 7 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'TK-2026-001' })
+  @ApiProperty({ nullable: true, example: 'TK69-0006' })
   ticketNo: string | null;
 
   @ApiProperty({ example: 1 })

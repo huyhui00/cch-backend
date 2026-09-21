@@ -2,9 +2,22 @@ import { QueryTypes, type Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 /**
- * Allocates the next number for a scope while holding the scope row lock.
- * The caller must use the same transaction for allocation and record creation.
+ * รหัสที่ระบบออกให้ — รูปแบบสั้น `TK69-0006`
+ *   คำนำหน้า + ปี พ.ศ. สองหลัก + เลขรัน 4 หลัก
+ * ปีใช้ พ.ศ. เพราะเป็นรหัสที่พนักงานไทยอ่านบนหน้าจอ ไม่ใช่รหัสในฐานข้อมูล
  */
+export const CODE_PREFIX = {
+  CUSTOMER: 'CUS',
+  PROJECT: 'PRJ',
+  TICKET: 'TK',
+  DELIVERY: 'DLV',
+  WARRANTY: 'WAR',
+  MA_CONTRACT: 'MA',
+} as const;
+
+export type GeneratedCodeKind = keyof typeof CODE_PREFIX;
+
+/** Allocates the next number for a scope while holding the scope row lock. */
 export async function nextSequenceNumber(
   sequelize: Sequelize,
   sequenceKey: string,
@@ -38,4 +51,30 @@ export async function nextSequenceNumber(
   );
 
   return nextValue;
+}
+
+export function buddhistYearShort(date: Date = new Date()): string {
+  return String((date.getFullYear() + 543) % 100).padStart(2, '0');
+}
+
+export function formatGeneratedCode(
+  prefix: string,
+  sequence: number,
+  date: Date = new Date(),
+): string {
+  return `${prefix}${buddhistYearShort(date)}-${String(sequence).padStart(4, '0')}`;
+}
+
+export async function nextGeneratedCode(
+  sequelize: Sequelize,
+  kind: GeneratedCodeKind,
+  transaction: Transaction,
+  date: Date = new Date(),
+): Promise<string> {
+  const sequence = await nextSequenceNumber(
+    sequelize,
+    `${kind}:${date.getFullYear()}`,
+    transaction,
+  );
+  return formatGeneratedCode(CODE_PREFIX[kind], sequence, date);
 }

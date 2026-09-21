@@ -35,7 +35,7 @@ export class WarrantyMaContractSummaryDto {
   @ApiProperty({ example: 3 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'MA-2026-001' })
+  @ApiProperty({ nullable: true, example: 'MA69-0001' })
   contractNo: string | null;
 
   @ApiProperty({ enum: MaContractStatus, description: 'สถานะที่บันทึกไว้ของสัญญา' })
@@ -71,7 +71,7 @@ export class WarrantySummaryDto {
   @ApiProperty({ example: 4 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'WAR-2026-001' })
+  @ApiProperty({ nullable: true, example: 'WAR69-0008' })
   warrantyNo: string | null;
 
   @ApiProperty({ example: 12 })
@@ -97,7 +97,7 @@ export class WarrantyResponseDto {
   @ApiProperty({ example: 4 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'WAR-2026-001' })
+  @ApiProperty({ nullable: true, example: 'WAR69-0008' })
   warrantyNo: string | null;
 
   @ApiProperty({

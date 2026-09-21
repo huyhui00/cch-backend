@@ -10,7 +10,7 @@ import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
-import { nextSequenceNumber } from '../../common/utils/code-sequence.util';
+import { nextGeneratedCode } from '../../common/utils/code-sequence.util';
 import { toDateOnly, todayAsDateOnly } from '../../common/utils/date.util';
 import {
   AcceptanceStatus,
@@ -218,20 +218,14 @@ export class DeliveriesService {
     this.assertNotInFuture(deliveredAt);
 
     const delivery = await this.sequelize.transaction(async (transaction) => {
-      const sequence = await nextSequenceNumber(
-        this.sequelize,
-        `DELIVERY:${projectId}`,
-        transaction,
-      );
+      const deliveryNo = await nextGeneratedCode(this.sequelize, 'DELIVERY', transaction);
 
       return this.deliveryModel.create(
         {
           projectId,
           title: dto.title,
           version: dto.version ?? null,
-          deliveryNo:
-            `DLV-${project.code ?? `PRJ-${new Date().getFullYear()}-${String(projectId).padStart(3, '0')}`}-` +
-            String(sequence).padStart(2, '0'),
+          deliveryNo,
           description: dto.description ?? null,
           deliveredAt,
           acceptanceStatus: AcceptanceStatus.PENDING,

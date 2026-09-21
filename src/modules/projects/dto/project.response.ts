@@ -147,7 +147,7 @@ export class TaskProjectSummaryDto {
   @ApiProperty({ example: 1 })
   id: number;
 
-  @ApiProperty({ nullable: true, example: 'PRJ-2026-001' })
+  @ApiProperty({ nullable: true, example: 'PRJ69-0001' })
   code: string | null;
 
   @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
@@ -285,7 +285,7 @@ export class ProjectResponseDto {
   @ApiProperty({ type: CustomerSummaryDto, nullable: true })
   customer: CustomerSummaryDto | null;
 
-  @ApiProperty({ nullable: true, example: 'PRJ-2026-001' })
+  @ApiProperty({ nullable: true, example: 'PRJ69-0001' })
   code: string | null;
 
   @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
