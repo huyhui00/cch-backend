@@ -33,13 +33,10 @@ export class DeliveryProjectSummaryDto {
   customerId: number;
 }
 
-/** ไฟล์แนบของใบส่งมอบ — ไฟล์จริงอยู่บน R2 ที่นี่คืน object key ไม่ใช่ URL สาธารณะ */
+/** ไฟล์แนบของใบส่งมอบ — ไม่คืน object key ให้ดาวน์โหลดผ่าน downloadUrl */
 export class AttachmentSummaryDto {
   @ApiProperty({ example: 12 })
   id: number;
-
-  @ApiProperty({ example: 'deliveries/2026/dn-2026-001-signed.pdf' })
-  fileUrl: string;
 
   @ApiProperty({ example: 'ใบส่งมอบเซ็นแล้ว.pdf' })
   fileName: string;
@@ -49,6 +46,12 @@ export class AttachmentSummaryDto {
 
   @ApiProperty({ nullable: true, example: 'application/pdf' })
   mimeType: string | null;
+
+  @ApiProperty({
+    description: 'path ดาวน์โหลดที่ต้องแนบ Authorization — ไม่ใช่ลิงก์สาธารณะ',
+    example: '/api/attachments/12/download',
+  })
+  downloadUrl: string;
 
   @ApiProperty()
   createdAt: Date;
@@ -144,10 +147,10 @@ function toUserSummary(
 export function toAttachmentSummary(attachment: Attachment): AttachmentSummaryDto {
   return {
     id: attachment.id,
-    fileUrl: attachment.fileUrl,
     fileName: attachment.fileName,
-    fileSize: attachment.fileSize,
+    fileSize: attachment.fileSize === null ? null : Number(attachment.fileSize),
     mimeType: attachment.mimeType,
+    downloadUrl: `/api/attachments/${attachment.id}/download`,
     createdAt: attachment.createdAt,
   };
 }

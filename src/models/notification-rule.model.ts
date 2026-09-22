@@ -14,6 +14,21 @@ export enum NotificationEventType {
   CUSTOMER_IDLE = 'CUSTOMER_IDLE',
 }
 
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface NotificationRuleCreationAttributes {
+  name: string;
+  eventType: NotificationEventType;
+  daysBefore?: number | null;
+  isActive?: boolean;
+  targetRoleId?: number | null;
+  targetUserId?: number | null;
+  messageTemplate?: string | null;
+  sendLine?: boolean;
+  cronExpression?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 /**
  * กติกาการแจ้งเตือนที่ scheduler เอาไปรัน
  *
@@ -21,7 +36,10 @@ export enum NotificationEventType {
  * ไม่มีทางเลือกที่ยิงหาลูกค้าได้เลยแม้แต่ช่องเดียว
  */
 @Table({ tableName: 'notification_rules', underscored: true, timestamps: true, paranoid: true })
-export class NotificationRule extends AuditedModel<NotificationRule> {
+export class NotificationRule extends AuditedModel<
+  NotificationRule,
+  NotificationRuleCreationAttributes
+> {
   @Column({ type: DataType.STRING(150), allowNull: false })
   name: string;
 

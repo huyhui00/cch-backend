@@ -13,6 +13,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { MaModule } from './modules/ma/ma.module';
 import { ProjectsModule } from './modules/projects/projects.module';
@@ -22,6 +23,7 @@ import { SurveysModule } from './modules/surveys/surveys.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { UsersModule } from './modules/users/users.module';
 import { WarrantiesModule } from './modules/warranties/warranties.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -48,9 +50,8 @@ import { WarrantiesModule } from './modules/warranties/warranties.module';
     TicketsModule,
     ReportsModule,
     DocumentsModule,
-
-    // M11 แจ้งเตือน ถูกเลื่อนไปทำทีหลัง ไม่ได้ตัดออกจากขอบเขต
-    // NotificationsModule
+    AttachmentsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [

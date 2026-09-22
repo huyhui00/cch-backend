@@ -401,7 +401,7 @@ return true;
 | Q15 | รหัส (ปัญหา / โปรเจค / ลูกค้า) ให้ระบบออกอัตโนมัติได้ไหม รูปแบบอะไร | ✅ **ออกอัตโนมัติแล้ว** — รูปแบบสั้น `คำนำหน้า + ปี พ.ศ. สองหลัก + เลข 4 หลัก` เช่น `TK69-0006` (ใบปัญหา) · `CUS69-0001` · `PRJ69-0001` · `DLV69-0003` · `WAR69-0008` · `MA69-0014` · แถวเก่าที่สร้างก่อนหน้านี้ไม่ถูกเขียนทับ | — |
 | Q16 | งานติดตามทุกงานต้องมีโปรเจคไหม หรือยังตามลูกค้าที่ไม่มีโปรเจคได้ (เช่น ลูกค้า INACTIVE ที่จะเสนอ MA) | ⬜ **ถามวันจันทร์** — ตอนนี้ API ให้ `projectId` เป็นตัวเลือก หน้าจอบังคับเองได้ | — |
 | Q17 | ผู้ใช้ที่ถือหลาย role อยู่แล้ว (ก่อนเปลี่ยนเป็น role เดียว) ให้เหลืออันไหน | 🟡 **ข้อมูลตัวอย่างแก้แล้ว 12 ก.ย.** — wichai ถูกย้ายไปบทบาทรวม「ดูแลลูกค้าและใบแจ้งปัญหา」ตามวิธีที่พี่เลี้ยงบอก ส่วน**ข้อมูลจริงยังต้องถาม** ว่าแต่ละคนควรเหลือบทบาทไหน ระบบยังไม่ลบให้เอง | — |
-| Q18 | แบบประเมินต้องผูกกับการแก้ปัญหาแต่ละครั้งด้วยไหม หรือผูกกับโปรเจคพอ | ⬜ **ถามวันจันทร์** — ผูกโปรเจคได้แล้ว (`survey_assignments.project_id`) ผูกใบแจ้งปัญหายังไม่มีคอลัมน์ | — |
+| Q18 | แบบประเมินต้องผูกกับการแก้ปัญหาแต่ละครั้งด้วยไหม หรือผูกกับโปรเจคพอ | ✅ **ตอบแล้ว** — **ผูกกับโปรเจคพอ** ไม่ต้องผูกใบแจ้งปัญหา (`survey_assignments.project_id` มีอยู่แล้ว ห้ามเพิ่ม `ticket_id`) | — |
 | Q19 | โควตา MA มีกี่ประเภท (แก้บั๊ก / อบรมผู้ใช้ใหม่ / ...) และแต่ละแผนได้เท่าไร | ⬜ **ถามวันจันทร์** — พี่เลี้ยงให้ "ลองออกแบบดู" ตอนนี้นับได้ประเภทเดียว (`bug_quota_per_month`) มี `onsite_quota_per_month` แต่ไม่ได้ใช้ | 8 |
 | Q20 | สถานะใบแจ้งปัญหาใหม่ "ส่งงานให้ผู้รับผิดชอบแล้ว" คั่นระหว่าง RECEIVED กับ IN_PROGRESS และผู้รับผิดชอบกดเริ่มงานเอง | ✅ **ยืนยันจากไฟล์ประชุมรอบที่ 3** — ใช้สถานะ `ASSIGNED` แสดงว่า "ส่งงานแล้ว" และให้ผู้รับผิดชอบกดเริ่มเอง | — |
 
@@ -451,8 +451,8 @@ return true;
 | 12 | **Follow-ups (M7)** | ✅ เสร็จ 10 ก.ย. |
 | 13 | **Surveys (M8)** | ✅ เสร็จ 10 ก.ย. |
 | 10 | **Reports + Analytics (M10) + M1-05/M1-06** | ✅ เสร็จ 10 ก.ย. |
-| 9 | Documents + Files (R2, M9) | 🔄 **เอกสารโครงการเสร็จ 11 ก.ย.** (B-5) — รอ key ของ R2 จากพี่เลี้ยง (ระหว่างนี้เก็บในเครื่อง) · ที่เหลือ: ไฟล์แนบของบันทึกการติดต่อ (BR-02), สแกนสัญญา MA (BR-12), ใบส่งมอบ, ใบแจ้งปัญหา — ใช้ `StorageService` ตัวเดียวกัน |
-| 11 | Notifications + Scheduler + LINE (M11) | ⬜ เลื่อนไปหลัง — FE ใช้ mock ไปก่อนได้ |
+| 9 | Documents + Files (R2, M9) | ✅ **เอกสารโปรเจค (B-5) + ไฟล์แนบทั่วไปเสร็จ** — `POST/GET/PATCH/DELETE /api/attachments` + download · รองรับ COMMUNICATION_LOG / DELIVERY / TICKET / TICKET_RESOLUTION / MA_CONTRACT · รอ key ของ R2 จากพี่เลี้ยง (ระหว่างนี้เก็บ local ได้) |
+| 11 | Notifications + Scheduler + LINE (M11) | ✅ **โครงหลักเสร็จ 22 ก.ย.** — ส่ง LINE จริงได้ · กฎ/รายการแจ้งเตือน · cron รายชั่วโมง · `POST /notifications/run` + `test-line` · ยังไม่มี webhook รับ follow เพื่อผูก `lineUserId` อัตโนมัติ (ตั้งผ่าน `PUT /users/:id` ไปก่อน) · `DELIVERY_DUE` ข้ามเพราะยังไม่มี due ในใบส่งมอบ |
 
 **✅ ปรับลำดับแล้ว 10 ก.ย. 2026 (ทีม frontend ยืนยัน)** — ตารางข้างบนเรียงตามลำดับที่ทำจริง
 ไม่ใช่ตามเลข Phase เดิม เหตุผล:
@@ -499,13 +499,13 @@ return true;
 | B-6 | รายงานรายโปรเจคในหน้าโปรเจค | BE+FE | ✅ BE เสร็จ — `GET /api/projects/:id/report` (ความคืบหน้า + นับใบปัญหา/ส่งมอบ/สัญญา MA) · FE เปลี่ยนไปเรียกเส้นนี้แทนการประกอบเอง |
 | B-7 | ใบแจ้งปัญหา: รับเรื่องไม่ต้องระบุผู้รับผิดชอบ มีสถานะ "ส่งงานแล้ว" คั่นก่อนผู้รับผิดชอบกดเริ่มงานเอง | BE+FE | ✅ BE ปรับ `RECEIVED → ASSIGNED → IN_PROGRESS` แล้ว · FE ใช้ `PATCH /api/tickets/:id/start` |
 | B-8 | หมวดหมู่ปัญหาตอนเปิดใบ | BE+FE | ⬜ รอ Q11 |
-| B-9 | ตอนเปิดใบให้เห็นโควตา MA ที่ใช้ไป ถ้าเกินให้พนักงานตัดสินว่าคิดเงินหรือไม่ | BE+FE | ⬜ ต้องเสนอ endpoint (ตอนนี้ข้อเสนอการคิดเงินได้หลังสร้างใบแล้วเท่านั้น) |
+| B-9 | ตอนเปิดใบให้เห็นโควตา MA ที่ใช้ไป ถ้าเกินให้พนักงานตัดสินว่าคิดเงินหรือไม่ | BE+FE | ✅ BE+FE เสร็จ — FE ยึด `GET /api/tickets/billing-suggestion` เป็นหลัก (suggested เป็นค่าเริ่มต้น คนเปลี่ยนได้ · แถบสรุปประกัน/โควตา/ป้ายอ้างอิงเมื่ออยู่ในประกัน) |
 | B-10 | **แสดงรหัสทุกที่** และค้นปัญหาเก่าได้เมื่อข้อมูลเยอะ (ค้นด้วยรหัส / ลูกค้า / โปรเจค) | BE+FE | ✅ BE ออกรหัสอัตโนมัติรูปแบบสั้นแล้ว (`TK69-0006`) · ค้น `?search=` ของใบแจ้งปัญหาค้นชื่อ/รหัสลูกค้าและโครงการด้วย · FE แสดงรหัสที่ API คืน |
 | B-11 | หน้ารายละเอียดปัญหา: รายการรอบ คลิกแต่ละรอบเห็น stepper + ประวัติพร้อมวันที่ | BE+FE | ⬜ ต้องออกแบบ — วันที่รายรอบไม่ได้ถูกเก็บแยก (`closed_at` ถูกล้างตอน reopen) มีแต่ใน audit log |
 | B-12 | พิมพ์ใบยืนยันการแก้ไขให้ลูกค้าเซ็น แล้วสแกนแนบกลับ | BE+FE | ⬜ |
 | B-13 | ประกันผูกกับ MA ให้รู้ว่าประกันนี้รวมแผนไหน | BE+FE | ✅ BE เสร็จ 12 ก.ย. — `warranties.ma_contract_id` (migration `20260912000001`) ไม่บังคับกรอก อ้างอิงอย่างเดียว ไม่แตะการคิดเงิน (ดูกฎ Phase 6) |
 | B-14 | **งานติดตามผูกกับโปรเจค** ไม่ใช่ลูกค้าอย่างเดียว | BE+FE | ✅ BE เสร็จ 11 ก.ย. — `follow_ups.project_id` (migration `20260911000002`) ดูกฎ M7 |
-| B-15 | การส่งแบบประเมินผูกกับโปรเจค (หรือการแก้ปัญหาแต่ละครั้ง) | FE | 🟡 ผูกโปรเจคได้แล้ว (`projectId`) · ผูกใบแจ้งปัญหารอ Q18 |
+| B-15 | การส่งแบบประเมินผูกกับโปรเจค | BE+FE | ✅ BE เสร็จแล้ว (`projectId`) · **ไม่ผูกใบแจ้งปัญหา** (Q18) — FE ใช้ `projectId` ได้เลย |
 | B-16 | ทุกหน้าที่เป็นตารางเลือกจำนวนแถว 10/20/50/100 ได้ | FE | ✅ backend รับ `limit` สูงสุด 100 อยู่แล้ว |
 | B-17 | โควตา MA หลายประเภท (แก้บั๊ก / อบรมผู้ใช้ใหม่) | BE+FE | ⬜ รอ Q19 |
 
@@ -523,12 +523,13 @@ return true;
   `permissions` + `role_permissions` และแก้ตัวเลข 75/72 ในหัวข้อ 4.1
 
 **2. ของที่เตรียมไว้ให้งานที่ยังไม่ทำ — เก็บไว้**
-- Phase 11: ตาราง `notification_rules`, `notifications`, สิทธิ์ `notification.*`, env `LINE_*` และ
-  `SCHEDULER_ENABLED`, `ScheduleModule` ใน app.module (ยังไม่มี cron job), `users.line_user_id`
-- Phase 9 ส่วนที่เหลือ: สิทธิ์ `file.*`, `attachments.uploaded_by_user_id`
+- ~~Phase 11: ตาราง/สิทธิ์/env~~ — **โมดูลใช้งานแล้ว** เหลือ webhook ผูก `line_user_id` อัตโนมัติ
+  กับเหตุการณ์ `DELIVERY_DUE` (ยังไม่มี due date ใน schema)
 - ยังไม่ตัดสิน: `customer.export`, `report.export` (A-8), `documents.doc_no/issued_date`,
   `ma_plans.onsite_quota_per_month` (Q19)
 - `role.view` / `permission.view` ไม่มี endpoint ใช้ แต่เป็นส่วนของ `SUPER_ADMIN_ONLY_PERMISSIONS` (9.4) ห้ามลบ
+- `attachments` ref_type `PROJECT` / `CUSTOMER` / `FOLLOW_UP` ยังไม่อนุญาตอัปโหลดผ่าน `/api/attachments`
+  (โปรเจคใช้ตาราง `documents` อยู่แล้ว)
 
 **3. ช่องว่างที่เจอระหว่างตรวจ — ไม่ใช่ของเกิน แต่เป็นของที่ขาด**
 - ~~`user.reset_password` ไม่มี endpoint~~ — **เสร็จแล้ว** `POST /api/users/:id/reset-password`
@@ -578,11 +579,13 @@ return true;
   survey-assignments/:id/response,
   reports (contract-value by-customer/by-type/upcoming, service-cost, ma-contract-overlaps),
   customers/:id/overview,
-  projects/:id/documents (list/upload), documents (detail/update/delete/download)
-  — รวม 113 เส้น (นับรวม `/api/health`)
-- **เทสต์คุมกฎธุรกิจ 520 เคส 21 ไฟล์** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10
-  ทั้งหมดเป็น unit test ที่ mock model ไม่แตะฐานข้อมูลจริง รันจบใน ~19 วินาที
-  **ถ้าจะแก้กฎธุรกิจข้อไหน ให้แก้เทสต์ที่คุมข้อนั้นไปพร้อมกัน** ไม่ใช่ลบทิ้งให้ผ่าน
+  projects/:id/documents (list/upload), documents (detail/update/delete/download),
+  attachments (list/detail/upload/update/delete/download),
+  customers/:id/overview,
+  notifications (list/detail/read/run/test-line),
+  notification-rules (CRUD),
+ — รวม ~130 เส้น (นับรวม `/api/health`)
+- **เทสต์คุมกฎธุรกิจ ~526 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
 - **e2e 110 เคส 11 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`, `tasks`, `deliveries`, `projects`, `documents`, `users-reset-password`) — รันด้วย `npm run test:e2e`
   แยกจาก `npm test` เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่
   `test/global-setup.js` สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
@@ -724,8 +727,9 @@ return true;
   `isFinal` ไม่ส่งมา = คงค่าเดิม (ตรวจรับซ้ำโดยไม่ตอบคำถามเรื่องครั้งสุดท้ายไม่ล้างค่า)
 - ใบส่งมอบและใบประกัน **ไม่มี DELETE** — ใบส่งมอบเป็นจุดตั้งต้นของประกัน ถ้าลบได้
   ประกันจะไร้ที่มา ประกันที่ยกเลิกให้เปลี่ยน `status` เป็น VOID แทน
-- ไฟล์แนบของใบส่งมอบ (`attachments.ref_type = 'DELIVERY'`) **อ่านได้อย่างเดียวตอนนี้**
-  คืนมาใน endpoint รายละเอียด ส่วนการอัปโหลดจริงเป็นของโมดูล Files ใน Phase 9
+- ไฟล์แนบของใบส่งมอบ (`attachments.ref_type = 'DELIVERY'`) คืนในรายละเอียดเป็น
+  `downloadUrl` (`/api/attachments/:id/download`) — อัปโหลดด้วย `POST /api/attachments`
+  (refType=DELIVERY) สิทธิ์ `file.upload` / ดาวน์โหลดใช้ `file.view` หรือ `file.download`
 - **ประกันผูกสัญญา MA ได้ (`warranties.ma_contract_id` — ประชุม 11 ก.ย. B-13, ยืนยัน Q14 12 ก.ย.)**
   พี่เลี้ยง: "การรับประกัน ขอบเขต **เราดึงสัญญาบำรุงรักษา MA เข้าไปด้วยนะ** ... จะได้รู้ว่าประกันตัวนี้
   มันรวม MA ตัวไหน ผูกรูปแบบไหน Standard/Basic"
@@ -1038,7 +1042,21 @@ return true;
   ถูกคีย์เข้ามาทีหลัง (บริษัทเก็บเป็นกระดาษมา 4 ปี) ถ้ากรองด้วยวันที่บันทึก
   ตัวเลขจะกองอยู่ที่วันคีย์ข้อมูล ไม่ใช่วันที่เกิดจริง
 
-**กฎที่ Phase 9 (เอกสาร/ไฟล์) บังคับไว้ — เริ่มจากเอกสารโครงการ (ประชุม 11 ก.ย. B-5)**
+**กฎที่ Phase 9 (เอกสาร/ไฟล์) บังคับไว้ — เอกสารโครงการ (B-5) + ไฟล์แนบทั่วไป**
+
+นอกจากเอกสารโปรเจคแล้ว มี API กลางสำหรับไฟล์แนบ polymorphic:
+
+- **Endpoint**: `GET/POST /api/attachments`, `GET/PATCH/DELETE /api/attachments/:id`,
+  `GET /api/attachments/:id/download`
+- **สิทธิ์** `file.view` (รายการ/รายละเอียด/ดาวน์โหลด — หรือ `file.download` สำหรับดาวน์โหลด),
+  `file.upload`, `file.delete`
+- **refType ที่อัปโหลดได้**: `COMMUNICATION_LOG` (BR-02), `DELIVERY`, `TICKET`,
+  `TICKET_RESOLUTION`, `MA_CONTRACT` (BR-12 — อัปเดต `signed_file_url` ให้ด้วย)
+- **ห้าม** ใช้เส้นนี้แทนเอกสารโปรเจค (`PROJECT`) — ยังใช้ `/api/projects/:id/documents`
+- **ไม่คืน object key** มีแต่ `downloadUrl` · soft delete แถวอย่างเดียว ไฟล์ในที่เก็บไม่ถูกลบ
+- ใช้ `StorageService` ตัวเดียวกับเอกสารโปรเจค
+
+**เอกสารโครงการ (ประชุม 11 ก.ย. B-5)**
 - **Endpoint**: `GET/POST /api/projects/:projectId/documents`, `GET/PATCH/DELETE /api/documents/:id`,
   `GET /api/documents/:id/download` — สิทธิ์ `document.view/create/update/delete` (ดาวน์โหลดใช้ `document.view`)
 - **ที่เก็บไฟล์อยู่ที่ `StorageService` (`modules/files/`) ที่เดียว** ไฟล์แนบของส่วนอื่นที่ยังไม่ทำ
@@ -1145,6 +1163,16 @@ return true;
 - request ที่ล้มเหลวถูก log เสมอไม่ว่า `REQUEST_LOG` เป็นอะไร
 - ไม่ log body ของ request เพราะมีรหัสผ่านปนในบางเส้น — ข้อมูลที่เปลี่ยนจริงอยู่ใน `audit_logs`
 - `/api/health` ถูกข้ามไม่ log เพราะถูกยิงถี่จนกลบบรรทัดอื่น
+
+**กฎธุรกิจที่ Phase 11 (Notifications + LINE) บังคับไว้**
+- **BR-11** — แจ้งเฉพาะพนักงาน (`notifications.target_user_id` → `users`) ไม่มีทางยิงหาลูกค้า
+- กฎต้องมี `targetRoleId` หรือ `targetUserId` อย่างน้อยหนึ่งอย่าง
+- ส่ง LINE ด้วย `LineMessagingService` (Messaging API push) ไม่ใช้ SDK · ไม่มี token = บันทึก FAILED
+- กันสแปม: event + ผู้รับ + ref เดียวกันในวันเดียวกันสร้างได้ครั้งเดียว
+- `SCHEDULER_ENABLED=false` ปิด cron รายชั่วโมง · ยังยิงมือได้ที่ `POST /api/notifications/run`
+- `POST /api/notifications/test-line` ทดสอบช่องทางอย่างเดียว ไม่สร้างแถว notifications
+- `lineUserId` ตั้งผ่าน `PUT /api/users/:id` ไปก่อน ยังไม่มี webhook ผูกตอนแอดเพื่อน (Q8)
+- `DELIVERY_DUE` ใน enum มีแล้วแต่ **ยังไม่รัน** เพราะใบส่งมอบไม่มี due date
 
 **กับดักทางเทคนิคที่เจอและต้องระวังตลอดไป**
 - **ห้ามใช้ include object ตัวเดียวกันซ้ำ** ทั้งที่ระดับบนและซ้อนใต้ include อื่น

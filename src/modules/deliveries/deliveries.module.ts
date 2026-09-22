@@ -18,7 +18,7 @@ import { ProjectDeliveriesController } from './project-deliveries.controller';
  * ทิศทางการพึ่งพาเป็นทางเดียว deliveries -> warranties เท่านั้น
  *
  * Attachment ถูก register ไว้เพื่ออ่านไฟล์แนบของใบส่งมอบ (ref_type = DELIVERY)
- * การอัปโหลดจริงเป็นของโมดูล Files ใน Phase 9
+ * การอัปโหลดใช้ AttachmentsModule (`POST /api/attachments`)
  */
 @Module({
   imports: [

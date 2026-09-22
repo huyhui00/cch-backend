@@ -11,13 +11,31 @@ export enum NotificationStatus {
   READ = 'READ',
 }
 
+/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
+export interface NotificationCreationAttributes {
+  ruleId?: number | null;
+  targetUserId: number;
+  eventType: NotificationEventType;
+  title: string;
+  message?: string | null;
+  refType?: string | null;
+  refId?: number | null;
+  status?: NotificationStatus;
+  scheduledAt?: Date | null;
+  sentAt?: Date | null;
+  readAt?: Date | null;
+  errorMessage?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 /**
  * BR-11 — แจ้งเตือนภายในบริษัทเท่านั้น ไม่ยิงหาลูกค้า
  * target_user_id จึงเป็น NOT NULL และชี้ไปที่ users เท่านั้น
  * ไม่มีคอลัมน์ customer_id หรือ contact_id ในตารางนี้โดยเจตนา
  */
 @Table({ tableName: 'notifications', underscored: true, timestamps: true, paranoid: true })
-export class Notification extends AuditedModel<Notification> {
+export class Notification extends AuditedModel<Notification, NotificationCreationAttributes> {
   @ForeignKey(() => NotificationRule)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'rule_id' })
   ruleId: number | null;

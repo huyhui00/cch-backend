@@ -21,6 +21,19 @@ export const ATTACHMENT_REF_TYPES = [
 
 export type AttachmentRefType = (typeof ATTACHMENT_REF_TYPES)[number];
 
+export interface AttachmentCreationAttributes {
+  refType: AttachmentRefType | string;
+  refId: number;
+  fileUrl: string;
+  fileName: string;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  uploadedByUserId?: number | null;
+  note?: string | null;
+  createdBy?: number | null;
+  updatedBy?: number | null;
+}
+
 /**
  * ไฟล์แนบแบบ polymorphic — ผูกกับตารางไหนก็ได้ผ่าน (ref_type, ref_id)
  *
@@ -31,7 +44,7 @@ export type AttachmentRefType = (typeof ATTACHMENT_REF_TYPES)[number];
  * ไฟล์จริงอยู่บน Cloudflare R2 ที่นี่เก็บแค่ object key
  */
 @Table({ tableName: 'attachments', underscored: true, timestamps: true, paranoid: true })
-export class Attachment extends AuditedModel<Attachment> {
+export class Attachment extends AuditedModel<Attachment, AttachmentCreationAttributes> {
   @Column({ type: DataType.STRING(50), allowNull: false, field: 'ref_type' })
   refType: string;
 
