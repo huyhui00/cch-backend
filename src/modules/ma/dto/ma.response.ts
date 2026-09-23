@@ -301,6 +301,28 @@ export class MaContractResponseDto {
   updatedAt: Date;
 }
 
+/**
+ * สรุปโควตา MA ของโปรเจคหนึ่ง — ประชุมทบทวน: ดูการใช้โควตาที่โปรเจค ไม่ยัดในหน้ารายการสัญญา
+ */
+export class ProjectMaQuotaItemDto {
+  @ApiProperty({ type: () => MaContractResponseDto })
+  contract: MaContractResponseDto;
+
+  @ApiProperty({
+    type: QuotaStatusResponseDto,
+    description: 'สถานะโควตารอบปัจจุบันของสัญญานี้ (สูตรเดียวกับ GET /ma-contracts/:id/quota)',
+  })
+  quota: QuotaStatusResponseDto;
+}
+
+export class ProjectMaQuotaSummaryDto {
+  @ApiProperty({ example: 3 })
+  projectId: number;
+
+  @ApiProperty({ type: [ProjectMaQuotaItemDto] })
+  items: ProjectMaQuotaItemDto[];
+}
+
 // ---- M6-08 ข้อมูลสำหรับพิมพ์ร่างสัญญา ----------------------------------------
 
 export class MaContractPrintCustomerDto {

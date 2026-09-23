@@ -15,9 +15,13 @@ import { Warranty } from './warranty.model';
  */
 export enum TicketStatus {
   RECEIVED = 'RECEIVED',
+  /** ซัพพอร์ตส่งเข้าคิวกลางแล้ว รอแอดมินรับเรื่อง / จัดแจง (C-1) */
+  WAITING_ADMIN = 'WAITING_ADMIN',
   ASSIGNED = 'ASSIGNED',
   IN_PROGRESS = 'IN_PROGRESS',
   RESOLVED = 'RESOLVED',
+  /** แอดมินตรวจผ่านแล้ว รอซัพพอร์ตบอกลูกค้า (C-1) */
+  WAITING_SUPPORT = 'WAITING_SUPPORT',
   REOPENED = 'REOPENED',
   CLOSED = 'CLOSED',
 }
@@ -55,7 +59,8 @@ export enum TicketPriority {
  * ตารางนี้เก็บ "ตัวปัญหา" ส่วนแต่ละรอบที่ลงมือแก้อยู่ที่ ticket_resolutions
  * ห้ามยุบสองตารางนี้เข้าด้วยกัน เพราะรอบที่ 2 จะทับประวัติของรอบที่ 1
  *
- * หน้าจอ "รอรับการแก้ไข" = WHERE status IN ('RECEIVED','ASSIGNED','REOPENED','IN_PROGRESS')
+ * หน้าจอ "รอรับการแก้ไข" = WHERE status IN
+ * ('RECEIVED','WAITING_ADMIN','ASSIGNED','REOPENED','IN_PROGRESS')
  */
 /** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface TicketCreationAttributes {
@@ -74,6 +79,7 @@ export interface TicketCreationAttributes {
   reportedByContactId?: number | null;
   assignedUserId?: number | null;
   receivedByUserId?: number | null;
+  claimedByAdminUserId?: number | null;
   resolutionCount?: number;
   firstResponseAt?: Date | null;
   resolvedAt?: Date | null;
@@ -162,6 +168,14 @@ export class Ticket extends AuditedModel<Ticket, TicketCreationAttributes> {
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'received_by_user_id' })
   receivedByUserId: number | null;
 
+  /**
+   * แอดมินที่กดรับคิวจากซัพพอร์ต (C-1 คิวดึง)
+   * คนละคนกับ receivedByUserId (ซัพพอร์ตรับเรื่อง) และ assignedUserId (พนักงานแก้)
+   */
+  @ForeignKey(() => User)
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'claimed_by_admin_user_id' })
+  claimedByAdminUserId: number | null;
+
   /** จำนวนรอบที่แก้ไปแล้ว เพิ่มขึ้นทุกครั้งที่สร้าง resolution (CLAUDE.md 9.1) */
   @Column({
     type: DataType.INTEGER,
@@ -203,13 +217,16 @@ export class Ticket extends AuditedModel<Ticket, TicketCreationAttributes> {
   @BelongsTo(() => Contact)
   reportedByContact: Contact;
 
-  // มี FK ไป users สองตัวในตารางเดียวกัน จึงต้องระบุชื่อ FK ให้ชัดทั้งคู่
-  // ถ้าปล่อยให้ Sequelize เดาเอง มันจะผูกทั้งสอง association เข้ากับคอลัมน์เดียวกัน
+  // มี FK ไป users สามตัวในตารางเดียวกัน จึงต้องระบุชื่อ FK ให้ชัดทุกตัว
+  // ถ้าปล่อยให้ Sequelize เดาเอง มันจะผูก association เข้ากับคอลัมน์เดียวกัน
   @BelongsTo(() => User, 'assignedUserId')
   assignedUser: User;
 
   @BelongsTo(() => User, 'receivedByUserId')
   receivedByUser: User;
+
+  @BelongsTo(() => User, 'claimedByAdminUserId')
+  claimedByAdminUser: User;
 
   @HasMany(() => TicketResolution)
   resolutions: TicketResolution[];

@@ -159,5 +159,97 @@ describe('Permissions (e2e)', () => {
         .set('Authorization', `Bearer ${userToken}`)
         .expect(expected);
     });
+
+    it('คิวซัพพอร์ตแยกจากเปิดใบ — มี ticket.support_queue ถึงเข้าได้ (C-1)', async () => {
+      // pranee = บทบาทซัพพอร์ตตัวอย่าง ต้องได้สิทธิ์คิวหลัง migration/seed
+      const me = await api()
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${userToken}`)
+        .expect(200);
+
+      const permissions = (me.body as ApiResponse<{ permissions: string[] }>).data.permissions;
+      expect(permissions).toContain('ticket.support_queue');
+
+      await api()
+        .get('/api/tickets/support-queue?tab=AWAITING_SEND')
+        .set('Authorization', `Bearer ${userToken}`)
+        .expect(200);
+    });
+  });
+
+  describe('ticket.support_queue แยกจาก ticket.create', () => {
+    let superToken: string;
+    const stamp = Date.now();
+
+    beforeAll(async () => {
+      superToken = await login(
+        process.env.SUPER_ADMIN_USERNAME ?? 'superadmin',
+        process.env.SUPER_ADMIN_PASSWORD ?? '',
+      );
+    });
+
+    it('บัญชีมีแค่ ticket.view + ticket.create เข้าปัญหาได้แต่คิวซัพพอร์ตได้ 403', async () => {
+      const catalog = await api()
+        .get('/api/permissions')
+        .set('Authorization', `Bearer ${superToken}`)
+        .expect(200);
+
+      const groups = (
+        catalog.body as ApiResponse<{ module: string; permissions: { id: number; code: string }[] }[]>
+      ).data;
+      const allPerms = groups.flatMap((group) => group.permissions);
+      expect(allPerms.some((item) => item.code === 'ticket.support_queue')).toBe(true);
+
+      const viewId = allPerms.find((item) => item.code === 'ticket.view')?.id;
+      const createId = allPerms.find((item) => item.code === 'ticket.create')?.id;
+      expect(viewId).toBeDefined();
+      expect(createId).toBeDefined();
+
+      const roleRes = await api()
+        .post('/api/roles')
+        .set('Authorization', `Bearer ${superToken}`)
+        .send({
+          name: `เปิดใบอย่างเดียว ${stamp}`,
+          description: 'Developer แบบมีแค่ view+create',
+          permissionIds: [viewId, createId],
+        })
+        .expect(201);
+
+      const roleId = (roleRes.body as ApiResponse<{ id: number }>).data.id;
+
+      const username = `dev_open_${stamp}`;
+      const password = 'DevOpen@1234';
+      await api()
+        .post('/api/users')
+        .set('Authorization', `Bearer ${superToken}`)
+        .send({
+          username,
+          password,
+          fullName: 'Developer เปิดใบอย่างเดียว',
+          accountType: 'USER',
+          roleIds: [roleId],
+        })
+        .expect(201);
+
+      const token = await login(username, password);
+
+      const me = await api().get('/api/auth/me').set('Authorization', `Bearer ${token}`).expect(200);
+      const permissions = (me.body as ApiResponse<{ permissions: string[] }>).data.permissions;
+      expect(permissions).toContain('ticket.view');
+      expect(permissions).toContain('ticket.create');
+      expect(permissions).not.toContain('ticket.support_queue');
+
+      await api().get('/api/tickets?limit=1').set('Authorization', `Bearer ${token}`).expect(200);
+
+      await api()
+        .get('/api/tickets/support-queue?tab=AWAITING_SEND')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      await api()
+        .get('/api/tickets/admin-queue?tab=AWAITING_CLAIM')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
   });
 });

@@ -437,6 +437,44 @@ describe('MaContractsService', () => {
     });
   });
 
+  describe('listQuotaForProject', () => {
+    it('คืนโควตาทุกสัญญาของโปรเจคด้วยสูตรเดียวกับ getQuota', async () => {
+      contractModel.findAll.mockResolvedValue([
+        contractRow({ id: 12 }),
+        contractRow({ id: 13, contractNo: 'MA-2026-015' }),
+      ]);
+      quotaService.getQuotaStatus
+        .mockResolvedValueOnce(QUOTA_STATUS)
+        .mockResolvedValueOnce({ ...QUOTA_STATUS, contractId: 13, used: 0, willExceed: false });
+
+      const summary = await service.listQuotaForProject(3);
+
+      expect(summary.projectId).toBe(3);
+      expect(summary.items).toHaveLength(2);
+      expect(summary.items[0].contract.id).toBe(12);
+      expect(summary.items[0].quota.remaining).toBe(3);
+      expect(summary.items[1].quota.contractId).toBe(13);
+      expect(summary.items[1].quota.remaining).toBe(5);
+      expect(contractModel.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { projectId: 3 } }),
+      );
+    });
+
+    it('โปรเจคไม่มีสัญญา → items ว่าง', async () => {
+      contractModel.findAll.mockResolvedValue([]);
+
+      const summary = await service.listQuotaForProject(3);
+
+      expect(summary).toEqual({ projectId: 3, items: [] });
+    });
+
+    it('ไม่พบโปรเจค → 404', async () => {
+      projectModel.findByPk.mockResolvedValue(null);
+
+      await expect(service.listQuotaForProject(99)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   // -------------------------------------------------------------------------
   // M6-08 ข้อมูลสำหรับพิมพ์ร่างสัญญา
   // -------------------------------------------------------------------------

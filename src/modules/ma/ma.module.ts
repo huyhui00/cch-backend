@@ -29,6 +29,6 @@ import { MaQuotaService } from './ma-quota.service';
   ],
   controllers: [MaPlansController, MaContractsController],
   providers: [MaQuotaService, MaPlansService, MaContractsService],
-  exports: [MaQuotaService],
+  exports: [MaQuotaService, MaContractsService],
 })
 export class MaModule {}

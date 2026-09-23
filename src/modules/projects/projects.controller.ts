@@ -5,6 +5,9 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { type PaginatedResult } from '../../common/dto/pagination.dto';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
+import { QueryQuotaDto } from '../ma/dto/ma-contract.dto';
+import { ProjectMaQuotaSummaryDto } from '../ma/dto/ma.response';
+import { MaContractsService } from '../ma/ma-contracts.service';
 import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
 import { ProjectReportDto, ProjectResponseDto } from './dto/project.response';
 import { ProjectsService } from './projects.service';
@@ -19,7 +22,10 @@ import { ProjectsService } from './projects.service';
 @ApiBearerAuth('access-token')
 @Controller('projects')
 export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+  constructor(
+    private readonly projectsService: ProjectsService,
+    private readonly maContractsService: MaContractsService,
+  ) {}
 
   @Get()
   @RequirePermission('project.view')
@@ -48,6 +54,30 @@ export class ProjectsController {
   @ApiResponse({ status: 404, description: 'ไม่พบข้อมูลโครงการ' })
   getReport(@Param('id', ParseIntPipe) id: number): Promise<ProjectReportDto> {
     return this.projectsService.getReport(id);
+  }
+
+  @Get(':id/ma-quota')
+  @RequirePermission('ma.view')
+  @ApiOperation({
+    summary: 'สรุปโควตา MA ของโปรเจคนี้',
+    description:
+      'ประชุมทบทวนระบบ: การใช้โควตา/ครั้งที่เหลือให้ดูที่โปรเจค ไม่ยัดในหน้ารายการสัญญา ' +
+      'คืนสัญญาทุกฉบับของโปรเจคนี้พร้อมสถานะโควตารอบปัจจุบัน ' +
+      '(สูตรเดียวกับ GET /ma-contracts/:id/quota) — หน้าจออ่าน contract.isCurrentlyActive ' +
+      'กับ quota.remaining / isExhausted · ยังเป็นถังเดียว (bug) ตามที่พัก Q19 ไว้',
+  })
+  @ApiParam({ name: 'id', description: 'id ของโครงการ', example: 1 })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: ProjectMaQuotaSummaryDto })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  @ApiResponse({ status: 404, description: 'ไม่พบข้อมูลโครงการ' })
+  getMaQuota(
+    @Param('id', ParseIntPipe) id: number,
+    @Query() query: QueryQuotaDto,
+  ): Promise<ProjectMaQuotaSummaryDto> {
+    return this.maContractsService.listQuotaForProject(
+      id,
+      query.onDate ? new Date(query.onDate) : undefined,
+    );
   }
 
   @Get(':id')

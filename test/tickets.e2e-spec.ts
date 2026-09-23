@@ -37,6 +37,10 @@ interface TicketPayload {
   isPending: boolean;
   resolutionCount: number;
   billingType: string;
+  claimedByAdminUserId: number | null;
+  claimedByAdminUser: { id: number; fullName: string } | null;
+  assignedUserId: number | null;
+  receivedByUserId: number | null;
   resolutions: { id: number; round: number; detail: string }[];
 }
 
@@ -216,9 +220,15 @@ describe('Tickets (e2e)', () => {
     expect(ids).toContain(openId);
     expect(ids).not.toContain(closedId);
 
-    // ทุกแถวที่คืนมาต้องอยู่ในสามสถานะที่ยังไม่จบเท่านั้น
+    // ทุกแถวที่คืนมาต้องอยู่ในสถานะที่ยังไม่จบเท่านั้น
     for (const item of items) {
-      expect(['RECEIVED', 'REOPENED', 'IN_PROGRESS']).toContain(item.status);
+      expect([
+        'RECEIVED',
+        'WAITING_ADMIN',
+        'ASSIGNED',
+        'REOPENED',
+        'IN_PROGRESS',
+      ]).toContain(item.status);
       expect(item.isPending).toBe(true);
     }
   });
@@ -252,8 +262,11 @@ describe('Tickets (e2e)', () => {
   });
 
   it('ใบที่กลับมาเป็นซ้ำ มอบหมายแล้วให้ผู้รับผิดชอบกดเริ่มงาน ครบวงจร BR-04', async () => {
-    // RESOLVED → REOPENED → ASSIGNED → IN_PROGRESS → RESOLVED (รอบที่ 2)
+    // RECEIVED → send/claim → ASSIGNED → IN_PROGRESS → RESOLVED → REOPENED → ASSIGNED → …
     const ticketId = await openTicket(`ปัญหาที่กลับมาแล้วต้องมีคนหยิบ ${stamp}`);
+
+    await authed('patch', `/api/tickets/${ticketId}/send-to-admin`).send({}).expect(200);
+    await authed('patch', `/api/tickets/${ticketId}/claim`).send({}).expect(200);
 
     const assignTo = () =>
       authed('patch', `/api/tickets/${ticketId}/assign`).send({ assignedUserId: actorId });
@@ -268,7 +281,7 @@ describe('Tickets (e2e)', () => {
       .send({ reason: 'อาการเดิมกลับมา' })
       .expect(200);
 
-    // ส่งงานรอบใหม่ แล้วผู้รับผิดชอบกดเริ่มเอง
+    // ส่งงานรอบใหม่ แล้วผู้รับผิดชอบกดเริ่มเอง (จาก REOPENED ไม่ต้อง claim ซ้ำ)
     const restarted = await assignTo().expect(200);
     const ticket = (restarted.body as ApiResponse<TicketPayload>).data;
     expect(ticket.status).toBe('ASSIGNED');
@@ -435,5 +448,73 @@ describe('Tickets (e2e)', () => {
 
     const none = await authed('get', `/api/tickets?search=ไม่มีทางตรงแน่นอน-${stamp}`).expect(200);
     expect((none.body as ApiResponse<ListPayload<TicketPayload>>).data.total).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // C-1 คิวดึง: ซัพพอร์ตส่ง → แอดมินรับ → มอบหมาย → แก้ → ส่งกลับ → บอกลูกค้า
+  // -------------------------------------------------------------------------
+  it('คิวดึงซัพพอร์ต–แอดมินครบวงจร และแยกผู้รับเรื่อง / ผู้รับคิว / ผู้แก้', async () => {
+    const ticketId = await openTicket(`คิวดึง C-1 ${stamp}`);
+
+    const supportQueue = await authed(
+      'get',
+      `/api/tickets/support-queue?tab=AWAITING_SEND&search=${stamp}`,
+    ).expect(200);
+    expect(
+      (supportQueue.body as ApiResponse<ListPayload<TicketPayload>>).data.items.map((i) => i.id),
+    ).toContain(ticketId);
+
+    const sent = await authed('patch', `/api/tickets/${ticketId}/send-to-admin`).send({}).expect(200);
+    expect((sent.body as ApiResponse<TicketPayload>).data.status).toBe('WAITING_ADMIN');
+    expect((sent.body as ApiResponse<TicketPayload>).data.claimedByAdminUserId).toBeNull();
+
+    const adminWaiting = await authed(
+      'get',
+      `/api/tickets/admin-queue?tab=AWAITING_CLAIM&search=${stamp}`,
+    ).expect(200);
+    expect(
+      (adminWaiting.body as ApiResponse<ListPayload<TicketPayload>>).data.items.map((i) => i.id),
+    ).toContain(ticketId);
+
+    // มอบหมายก่อนรับคิวไม่ได้
+    await authed('patch', `/api/tickets/${ticketId}/assign`)
+      .send({ assignedUserId: actorId })
+      .expect(400);
+
+    const claimed = await authed('patch', `/api/tickets/${ticketId}/claim`).send({}).expect(200);
+    const afterClaim = (claimed.body as ApiResponse<TicketPayload>).data;
+    expect(afterClaim.claimedByAdminUserId).toBe(actorId);
+    expect(afterClaim.claimedByAdminUser?.id).toBe(actorId);
+
+    // รับซ้ำไม่ได้
+    await authed('patch', `/api/tickets/${ticketId}/claim`).send({}).expect(409);
+
+    await authed('patch', `/api/tickets/${ticketId}/assign`)
+      .send({ assignedUserId: actorId })
+      .expect(200);
+    await authed('patch', `/api/tickets/${ticketId}/start`).send({}).expect(200);
+    await addResolution(ticketId, 'แก้จากคิวดึง').expect(201);
+
+    const returned = await authed('patch', `/api/tickets/${ticketId}/return-to-support`)
+      .send({})
+      .expect(200);
+    expect((returned.body as ApiResponse<TicketPayload>).data.status).toBe('WAITING_SUPPORT');
+
+    const supportReturned = await authed(
+      'get',
+      `/api/tickets/support-queue?tab=RETURNED&search=${stamp}`,
+    ).expect(200);
+    expect(
+      (supportReturned.body as ApiResponse<ListPayload<TicketPayload>>).data.items.map((i) => i.id),
+    ).toContain(ticketId);
+
+    const notified = await authed('patch', `/api/tickets/${ticketId}/customer-notified`)
+      .send({ note: 'แจ้งลูกค้าทาง LINE แล้ว' })
+      .expect(200);
+    const closed = (notified.body as ApiResponse<TicketPayload>).data;
+    expect(closed.status).toBe('CLOSED');
+    expect(closed.claimedByAdminUserId).toBe(actorId);
+    expect(closed.assignedUserId).toBe(actorId);
+    expect(closed.receivedByUserId).toBe(actorId);
   });
 });

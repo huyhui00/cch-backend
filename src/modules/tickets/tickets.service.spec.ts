@@ -81,6 +81,8 @@ function baseTicketRow() {
     assignedUser: null,
     receivedByUserId: null as number | null,
     receivedByUser: null,
+    claimedByAdminUserId: null as number | null,
+    claimedByAdminUser: null,
     warrantyId: null as number | null,
     maContractId: null as number | null,
     resolutionCount: 0,
@@ -768,6 +770,7 @@ describe('TicketsService', () => {
 
       expect(captured.status[Op.in]).toEqual([
         TicketStatus.RECEIVED,
+        TicketStatus.WAITING_ADMIN,
         TicketStatus.ASSIGNED,
         TicketStatus.REOPENED,
         TicketStatus.IN_PROGRESS,
@@ -994,14 +997,38 @@ describe('TicketsService', () => {
   // มอบหมายผู้รับผิดชอบ
   // -------------------------------------------------------------------------
   describe('assign', () => {
-    it('ใบที่ยัง RECEIVED ถูกเลื่อนเป็น ASSIGNED เมื่อมอบหมาย', async () => {
-      const ticket = ticketRow({ status: TicketStatus.RECEIVED });
+    it('ใบ WAITING_ADMIN ที่แอดมินรับคิวแล้วถูกเลื่อนเป็น ASSIGNED เมื่อมอบหมาย', async () => {
+      const ticket = ticketRow({
+        status: TicketStatus.WAITING_ADMIN,
+        claimedByAdminUserId: 2,
+      });
       ticketModel.findByPk.mockResolvedValue(ticket);
 
       await service.assign(7, { assignedUserId: 4 });
 
       expect(ticket.update).toHaveBeenCalledWith(
         expect.objectContaining({ assignedUserId: 4, status: TicketStatus.ASSIGNED }),
+      );
+    });
+
+    it('มอบหมายจาก RECEIVED โดยตรงไม่ได้ — ต้องส่งหัวหน้าก่อน (C-1)', async () => {
+      const ticket = ticketRow({ status: TicketStatus.RECEIVED });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await expect(service.assign(7, { assignedUserId: 4 })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('มอบหมายจาก WAITING_ADMIN ที่ยังไม่มีคนรับคิวไม่ได้', async () => {
+      const ticket = ticketRow({
+        status: TicketStatus.WAITING_ADMIN,
+        claimedByAdminUserId: null,
+      });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await expect(service.assign(7, { assignedUserId: 4 })).rejects.toBeInstanceOf(
+        BadRequestException,
       );
     });
 
@@ -1064,6 +1091,9 @@ describe('TicketsService', () => {
 
     it('มอบหมายให้พนักงานที่ลาออกแล้วไม่ได้', async () => {
       // ต่างจากการบันทึกย้อนหลัง — นี่คือการมอบงานใหม่ ต้องเป็นคนที่ยังทำงานอยู่
+      ticketModel.findByPk.mockResolvedValue(
+        ticketRow({ status: TicketStatus.WAITING_ADMIN, claimedByAdminUserId: 2 }),
+      );
       userModel.findByPk.mockResolvedValue({ id: 4, status: UserStatus.RESIGNED });
 
       await expect(service.assign(7, { assignedUserId: 4 })).rejects.toBeInstanceOf(
@@ -1076,6 +1106,79 @@ describe('TicketsService', () => {
 
       await expect(service.assign(7, { assignedUserId: 4 })).rejects.toBeInstanceOf(
         BadRequestException,
+      );
+    });
+  });
+
+  describe('sendToAdmin / claim / returnToSupport / customerNotified', () => {
+    it('ส่งหัวหน้าจาก RECEIVED เป็น WAITING_ADMIN และล้าง claim/assignee', async () => {
+      const ticket = ticketRow({
+        status: TicketStatus.RECEIVED,
+        assignedUserId: 4,
+        claimedByAdminUserId: 2,
+      });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await service.sendToAdmin(7);
+
+      expect(ticket.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: TicketStatus.WAITING_ADMIN,
+          claimedByAdminUserId: null,
+          assignedUserId: null,
+        }),
+      );
+    });
+
+    it('แอดมินรับคิวได้เมื่อยังไม่มีคนรับ', async () => {
+      const ticket = ticketRow({
+        status: TicketStatus.WAITING_ADMIN,
+        claimedByAdminUserId: null,
+      });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await runWithRequestContext(
+        { userId: 9, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        async () => {
+          await service.claim(7);
+        },
+      );
+
+      expect(ticket.update).toHaveBeenCalledWith(
+        expect.objectContaining({ claimedByAdminUserId: 9 }),
+      );
+    });
+
+    it('รับคิวซ้ำไม่ได้', async () => {
+      ticketModel.findByPk.mockResolvedValue(
+        ticketRow({ status: TicketStatus.WAITING_ADMIN, claimedByAdminUserId: 2 }),
+      );
+
+      await expect(service.claim(7)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('ตรวจผ่านจาก RESOLVED เป็น WAITING_SUPPORT', async () => {
+      const ticket = ticketRow({ status: TicketStatus.RESOLVED });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await service.returnToSupport(7);
+
+      expect(ticket.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: TicketStatus.WAITING_SUPPORT }),
+      );
+    });
+
+    it('บอกลูกค้าแล้วปิดจาก WAITING_SUPPORT', async () => {
+      const ticket = ticketRow({ status: TicketStatus.WAITING_SUPPORT, description: 'เดิม' });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await service.customerNotified(7, { note: 'แจ้งลูกค้าทาง LINE แล้ว' });
+
+      expect(ticket.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: TicketStatus.CLOSED,
+          closedAt: expect.any(Date),
+        }),
       );
     });
   });

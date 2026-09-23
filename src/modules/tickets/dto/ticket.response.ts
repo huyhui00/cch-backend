@@ -18,10 +18,31 @@ import {
  */
 export const PENDING_TICKET_STATUSES: readonly TicketStatus[] = [
   TicketStatus.RECEIVED,
+  TicketStatus.WAITING_ADMIN,
   TicketStatus.ASSIGNED,
   TicketStatus.REOPENED,
   TicketStatus.IN_PROGRESS,
 ];
+
+/** แท็บคิวซัพพอร์ต */
+export enum SupportQueueTab {
+  /** รับเรื่องแล้ว รอส่งหัวหน้า */
+  AWAITING_SEND = 'AWAITING_SEND',
+  /** แอดมินตรวจผ่านแล้ว รอบอกลูกค้า */
+  RETURNED = 'RETURNED',
+}
+
+/** แท็บคิวแอดมิน */
+export enum AdminQueueTab {
+  /** รอแอดมินกดรับเรื่อง */
+  AWAITING_CLAIM = 'AWAITING_CLAIM',
+  /** รับคิวแล้ว รอจัดแจงพนักงาน */
+  CLAIMED = 'CLAIMED',
+  /** พนักงานแก้เสร็จ (RESOLVED) รอตรวจผ่าน */
+  AWAITING_REVIEW = 'AWAITING_REVIEW',
+  /** ส่งกลับซัพพอร์ตแล้ว รอบอกลูกค้า */
+  WITH_SUPPORT = 'WITH_SUPPORT',
+}
 
 export class UserSummaryDto {
   @ApiProperty({ example: 3 })
@@ -290,7 +311,8 @@ export class TicketResponseDto {
   status: TicketStatus;
 
   @ApiProperty({
-    description: 'ยังรอการแก้ไขอยู่หรือไม่ = สถานะอยู่ใน RECEIVED, REOPENED, IN_PROGRESS',
+    description:
+      'ยังรอการแก้ไขอยู่หรือไม่ = สถานะอยู่ใน RECEIVED, WAITING_ADMIN, ASSIGNED, REOPENED, IN_PROGRESS',
     example: true,
   })
   isPending: boolean;
@@ -327,6 +349,20 @@ export class TicketResponseDto {
 
   @ApiProperty({ type: UserSummaryDto, nullable: true, description: 'ผู้รับเรื่อง แยกจากผู้แก้ไข' })
   receivedByUser: UserSummaryDto | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 2,
+    description: 'แอดมินผู้รับคิวจากซัพพอร์ต (C-1) — คนละคนกับผู้รับเรื่องและผู้แก้',
+  })
+  claimedByAdminUserId: number | null;
+
+  @ApiProperty({
+    type: UserSummaryDto,
+    nullable: true,
+    description: 'แอดมินผู้รับคิว',
+  })
+  claimedByAdminUser: UserSummaryDto | null;
 
   @ApiProperty({ nullable: true, example: 4 })
   warrantyId: number | null;
@@ -437,6 +473,8 @@ export function toTicketResponse(
     assignedUser: toUserSummary(ticket.assignedUser),
     receivedByUserId: ticket.receivedByUserId,
     receivedByUser: toUserSummary(ticket.receivedByUser),
+    claimedByAdminUserId: ticket.claimedByAdminUserId,
+    claimedByAdminUser: toUserSummary(ticket.claimedByAdminUser),
     warrantyId: ticket.warrantyId,
     maContractId: ticket.maContractId,
     resolutionCount: ticket.resolutionCount,

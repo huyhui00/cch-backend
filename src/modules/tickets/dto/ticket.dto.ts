@@ -19,6 +19,9 @@ import {
   TicketReportedChannel,
   TicketStatus,
 } from '../../../models';
+import { AdminQueueTab, SupportQueueTab } from './ticket.response';
+
+export { AdminQueueTab, SupportQueueTab };
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -318,7 +321,8 @@ export class QueryTicketsDto extends PaginationDto {
   @ApiPropertyOptional({ enum: TicketStatus, description: 'กรองตามสถานะ' })
   @IsOptional()
   @IsEnum(TicketStatus, {
-    message: 'สถานะต้องเป็น RECEIVED, IN_PROGRESS, RESOLVED, REOPENED หรือ CLOSED',
+    message:
+      'สถานะต้องเป็น RECEIVED, WAITING_ADMIN, ASSIGNED, IN_PROGRESS, RESOLVED, WAITING_SUPPORT, REOPENED หรือ CLOSED',
   })
   status?: TicketStatus;
 
@@ -371,4 +375,28 @@ export class QueryPendingTicketsDto extends PaginationDto {
   @IsOptional()
   @IsEnum(TicketPriority, { message: 'ความสำคัญต้องเป็น LOW, NORMAL, HIGH หรือ URGENT' })
   priority?: TicketPriority;
+}
+
+/** คิวซัพพอร์ต — แท็บบังคับ */
+export class QuerySupportQueueDto extends PaginationDto {
+  @ApiProperty({
+    enum: SupportQueueTab,
+    description: 'AWAITING_SEND = รอส่งหัวหน้า · RETURNED = แอดมินส่งกลับมา',
+  })
+  @IsEnum(SupportQueueTab, { message: 'tab ต้องเป็น AWAITING_SEND หรือ RETURNED' })
+  tab!: SupportQueueTab;
+}
+
+/** คิวแอดมิน — แท็บบังคับ */
+export class QueryAdminQueueDto extends PaginationDto {
+  @ApiProperty({
+    enum: AdminQueueTab,
+    description:
+      'AWAITING_CLAIM = รอรับเรื่อง · CLAIMED = รับแล้วรอจัดแจง · ' +
+      'AWAITING_REVIEW = รอตรวจผ่าน · WITH_SUPPORT = ส่งซัพพอร์ตแล้ว',
+  })
+  @IsEnum(AdminQueueTab, {
+    message: 'tab ต้องเป็น AWAITING_CLAIM, CLAIMED, AWAITING_REVIEW หรือ WITH_SUPPORT',
+  })
+  tab!: AdminQueueTab;
 }

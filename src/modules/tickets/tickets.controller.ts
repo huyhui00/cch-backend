@@ -9,7 +9,9 @@ import {
   BillingSuggestionQueryDto,
   CloseTicketDto,
   CreateTicketDto,
+  QueryAdminQueueDto,
   QueryPendingTicketsDto,
+  QuerySupportQueueDto,
   UpdateTicketDto,
   QueryTicketsDto,
   ReopenTicketDto,
@@ -50,7 +52,7 @@ export class TicketsController {
   @ApiOperation({
     summary: 'หน้าจอรอรับการแก้ไข',
     description:
-      'เฉพาะใบที่สถานะเป็น RECEIVED, REOPENED หรือ IN_PROGRESS (CLAUDE.md 9.1) ' +
+      'เฉพาะใบที่สถานะเป็น RECEIVED, WAITING_ADMIN, ASSIGNED, REOPENED หรือ IN_PROGRESS ' +
       'ไม่เปิดให้กรองด้วย status เพราะชุดสถานะเป็นนิยามของหน้าจอนี้ ' +
       'เรียงงานด่วนขึ้นก่อน แล้วค้างนานสุดขึ้นก่อนในระดับความสำคัญเดียวกัน',
   })
@@ -58,6 +60,35 @@ export class TicketsController {
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   findPending(@Query() query: QueryPendingTicketsDto): Promise<PaginatedResult<TicketResponseDto>> {
     return this.ticketsService.findPending(query);
+  }
+
+  @Get('support-queue')
+  @RequirePermission('ticket.support_queue')
+  @ApiOperation({
+    summary: 'คิวซัพพอร์ต (C-1)',
+    description:
+      'ต้องมีสิทธิ์ ticket.support_queue (แยกจาก ticket.view / ticket.create ของหน้าปัญหา) · ' +
+      'แท็บ AWAITING_SEND = รับเรื่องแล้วรอส่งหัวหน้า · RETURNED = แอดมินตรวจผ่านแล้วรอบอกลูกค้า',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [TicketResponseDto] })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  findSupportQueue(
+    @Query() query: QuerySupportQueueDto,
+  ): Promise<PaginatedResult<TicketResponseDto>> {
+    return this.ticketsService.findSupportQueue(query);
+  }
+
+  @Get('admin-queue')
+  @RequirePermission('ticket.assign')
+  @ApiOperation({
+    summary: 'คิวแอดมิน / หัวหน้า (C-1)',
+    description:
+      'AWAITING_CLAIM = รอรับเรื่อง · CLAIMED = รับแล้วรอจัดแจง · ' +
+      'AWAITING_REVIEW = รอตรวจผ่าน (RESOLVED) · WITH_SUPPORT = ส่งซัพพอร์ตแล้ว',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [TicketResponseDto] })
+  findAdminQueue(@Query() query: QueryAdminQueueDto): Promise<PaginatedResult<TicketResponseDto>> {
+    return this.ticketsService.findAdminQueue(query);
   }
 
   @Get('billing-suggestion')
@@ -141,14 +172,13 @@ export class TicketsController {
   @ApiOperation({
     summary: 'มอบหมายผู้รับผิดชอบแก้ไข',
     description:
-      'แยกจากผู้รับเรื่องที่บันทึกไว้ตอนเปิดใบ (A-3) — ใบที่เป็น RECEIVED หรือ REOPENED ' +
-      'จะถูกเลื่อนเป็น ASSIGNED (ส่งงานแล้ว) ผู้รับผิดชอบต้องกดเริ่มงานเองจึงเป็น IN_PROGRESS ' +
-      'ด้วยการมอบหมายซ้ำ แม้เป็นคนเดิมก็ตาม (BR-04) ส่ง assignedUserId เป็น null เพื่อถอนการมอบหมาย ' +
-      'ผู้รับผิดชอบต้องเป็นพนักงานที่ยังอยู่ในสถานะใช้งาน',
+      'แยกจากผู้รับเรื่องและแอดมินผู้รับคิว (C-1) — มอบจาก WAITING_ADMIN ได้หลังกดรับเรื่องแล้ว ' +
+      'หรือจาก REOPENED · ไม่มอบจาก RECEIVED ตรง ๆ (ต้องส่งหัวหน้าก่อน) ' +
+      'เลื่อนเป็น ASSIGNED แล้วผู้รับผิดชอบกด start เอง · ส่ง null เพื่อถอนการมอบหมาย',
   })
   @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
   @ApiResponse({ status: 200, description: 'มอบหมายเรียบร้อย', type: TicketResponseDto })
-  @ApiResponse({ status: 400, description: 'ปัญหาปิดงานแล้ว หรือพนักงานไม่อยู่ในสถานะใช้งาน' })
+  @ApiResponse({ status: 400, description: 'ปัญหาปิดงานแล้ว หรือยังไม่ผ่านขั้นส่ง/รับคิว' })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   @ApiResponse({ status: 404, description: 'ไม่พบรายการปัญหานี้' })
   async assign(
@@ -156,6 +186,82 @@ export class TicketsController {
     @Body() dto: AssignTicketDto,
   ): Promise<{ data: TicketResponseDto; message: string }> {
     return { data: await this.ticketsService.assign(id, dto), message: 'มอบหมายเรียบร้อย' };
+  }
+
+  @Patch(':id/send-to-admin')
+  @RequirePermission('ticket.support_queue')
+  @ApiOperation({
+    summary: 'ซัพพอร์ตส่งเข้าคิวกลางให้หัวหน้า (C-1)',
+    description:
+      'ต้องมี ticket.support_queue · จาก RECEIVED หรือ REOPENED → WAITING_ADMIN · ' +
+      'ไม่เลือกแอดมิน · ล้าง claim และผู้แก้เดิม',
+  })
+  @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
+  @ApiResponse({ status: 200, description: 'ส่งให้หัวหน้าแล้ว', type: TicketResponseDto })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  @ApiResponse({ status: 409, description: 'สถานะไม่ถูกต้อง' })
+  async sendToAdmin(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<{ data: TicketResponseDto; message: string }> {
+    return {
+      data: await this.ticketsService.sendToAdmin(id),
+      message: 'ส่งให้หัวหน้าแล้ว',
+    };
+  }
+
+  @Patch(':id/claim')
+  @RequirePermission('ticket.assign')
+  @ApiOperation({
+    summary: 'แอดมินรับเรื่องจากคิวกลาง (C-1)',
+    description: 'ตั้ง claimedByAdminUserId เป็นผู้กด · ใบที่มีคนรับแล้วกดซ้ำไม่ได้',
+  })
+  @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
+  @ApiResponse({ status: 200, description: 'รับเรื่องเรียบร้อย', type: TicketResponseDto })
+  @ApiResponse({ status: 409, description: 'ไม่อยู่ในคิวหรือมีคนรับแล้ว' })
+  async claim(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<{ data: TicketResponseDto; message: string }> {
+    return { data: await this.ticketsService.claim(id), message: 'รับเรื่องเรียบร้อย' };
+  }
+
+  @Patch(':id/return-to-support')
+  @RequirePermission('ticket.assign')
+  @ApiOperation({
+    summary: 'แอดมินตรวจผ่าน ส่งกลับซัพพอร์ต (C-1)',
+    description: 'จาก RESOLVED → WAITING_SUPPORT ให้ซัพพอร์ตบอกลูกค้า',
+  })
+  @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
+  @ApiResponse({ status: 200, description: 'ส่งกลับซัพพอร์ตแล้ว', type: TicketResponseDto })
+  @ApiResponse({ status: 409, description: 'ยังไม่ใช่สถานะ RESOLVED' })
+  async returnToSupport(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<{ data: TicketResponseDto; message: string }> {
+    return {
+      data: await this.ticketsService.returnToSupport(id),
+      message: 'ส่งกลับซัพพอร์ตแล้ว',
+    };
+  }
+
+  @Patch(':id/customer-notified')
+  @RequirePermission('ticket.support_queue')
+  @ApiOperation({
+    summary: 'ซัพพอร์ตบอกลูกค้าแล้ว ปิดใบ (C-1)',
+    description:
+      'ต้องมี ticket.support_queue · จาก WAITING_SUPPORT → CLOSED · ' +
+      'คนละสิทธิ์กับ PATCH /:id/close (ticket.close) ที่ปิดใบจากหน้ารายละเอียด',
+  })
+  @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
+  @ApiResponse({ status: 200, description: 'บอกลูกค้าแล้ว ปิดใบเรียบร้อย', type: TicketResponseDto })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  @ApiResponse({ status: 409, description: 'ยังไม่ใช่สถานะรอซัพพอร์ตบอกลูกค้า' })
+  async customerNotified(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CloseTicketDto,
+  ): Promise<{ data: TicketResponseDto; message: string }> {
+    return {
+      data: await this.ticketsService.customerNotified(id, dto),
+      message: 'บอกลูกค้าแล้ว ปิดใบเรียบร้อย',
+    };
   }
 
   @Patch(':id/start')

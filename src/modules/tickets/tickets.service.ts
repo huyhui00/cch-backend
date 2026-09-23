@@ -31,28 +31,38 @@ import {
   AssignTicketDto,
   CloseTicketDto,
   CreateTicketDto,
+  QueryAdminQueueDto,
   QueryPendingTicketsDto,
+  QuerySupportQueueDto,
   UpdateTicketDto,
   QueryTicketsDto,
   ReopenTicketDto,
 } from './dto/ticket.dto';
 import {
+  AdminQueueTab,
   type BillingSuggestionDto,
   PENDING_TICKET_STATUSES,
   type ResolutionCreatedDto,
+  SupportQueueTab,
   type TicketResponseDto,
   toTicketResponse,
 } from './dto/ticket.response';
 
 /**
  * สถานะที่การมอบหมายจะพาไป ASSIGNED — ผู้รับผิดชอบต้องกดเริ่มงานเอง
- * RECEIVED = เพิ่งรับเรื่อง, REOPENED = ปัญหาเดิมกลับมาและยังไม่มีใครหยิบรอบใหม่ (BR-04)
+ * WAITING_ADMIN = แอดมินรับคิวแล้ว (ต้องมี claimedByAdminUserId) · REOPENED = ปัญหาเดิมกลับมา
+ * ไม่มอบจาก RECEIVED ตรง ๆ — ต้องส่งหัวหน้าก่อน (C-1)
  */
 export const CLOSED_TICKET_RESOLUTION_MESSAGE =
   'ปัญหานี้ปิดงานแล้ว ถ้าอาการเดิมกลับมาให้กด "ปัญหาเดิมกลับมา" เพื่อเปิดใบนี้ก่อน ' +
   'แล้วจึงบันทึกการแก้ไขรอบถัดไป';
 
 const ASSIGNABLE_TICKET_STATUSES: readonly TicketStatus[] = [
+  TicketStatus.WAITING_ADMIN,
+  TicketStatus.REOPENED,
+];
+
+const SEND_TO_ADMIN_STATUSES: readonly TicketStatus[] = [
   TicketStatus.RECEIVED,
   TicketStatus.REOPENED,
 ];
@@ -108,12 +118,23 @@ function receivedByUserInclude() {
   };
 }
 
+function claimedByAdminUserInclude() {
+  return {
+    model: User,
+    as: 'claimedByAdminUser',
+    attributes: ['id', 'username', 'fullName'],
+    required: false,
+    paranoid: false,
+  };
+}
+
 function listIncludes() {
   return [
     customerInclude(),
     projectInclude(),
     assignedUserInclude(),
     receivedByUserInclude(),
+    claimedByAdminUserInclude(),
     reportedByContactInclude(),
   ];
 }
@@ -229,6 +250,67 @@ export class TicketsService {
     if (query.priority) {
       Object.assign(where, { priority: query.priority });
     }
+
+    if (query.search) {
+      Object.assign(where, await this.searchCondition(query.search, ['title', 'ticketNo']));
+    }
+
+    const { rows, count } = await this.ticketModel.findAndCountAll({
+      where,
+      include: listIncludes(),
+      distinct: true,
+      order: [
+        ['priority', 'DESC'],
+        ['reportedAt', 'ASC'],
+        ['id', 'ASC'],
+      ],
+      limit: query.limit,
+      offset: query.offset,
+    });
+
+    return toPaginatedResult(
+      rows.map((ticket) => toTicketResponse(ticket)),
+      count,
+      query,
+    );
+  }
+
+  /** คิวซัพพอร์ต — รอส่งหัวหน้า / แอดมินส่งกลับมา (C-1) */
+  async findSupportQueue(
+    query: QuerySupportQueueDto,
+  ): Promise<PaginatedResult<TicketResponseDto>> {
+    const where: WhereOptions<Ticket> =
+      query.tab === SupportQueueTab.AWAITING_SEND
+        ? { status: TicketStatus.RECEIVED }
+        : { status: TicketStatus.WAITING_SUPPORT };
+
+    if (query.search) {
+      Object.assign(where, await this.searchCondition(query.search, ['title', 'ticketNo']));
+    }
+
+    const { rows, count } = await this.ticketModel.findAndCountAll({
+      where,
+      include: listIncludes(),
+      distinct: true,
+      order: [
+        ['priority', 'DESC'],
+        ['reportedAt', 'ASC'],
+        ['id', 'ASC'],
+      ],
+      limit: query.limit,
+      offset: query.offset,
+    });
+
+    return toPaginatedResult(
+      rows.map((ticket) => toTicketResponse(ticket)),
+      count,
+      query,
+    );
+  }
+
+  /** คิวแอดมิน — รับเรื่อง / จัดแจง / ตรวจผ่าน (C-1) */
+  async findAdminQueue(query: QueryAdminQueueDto): Promise<PaginatedResult<TicketResponseDto>> {
+    const where: WhereOptions<Ticket> = this.adminQueueWhere(query.tab);
 
     if (query.search) {
       Object.assign(where, await this.searchCondition(query.search, ['title', 'ticketNo']));
@@ -397,13 +479,9 @@ export class TicketsService {
   /**
    * มอบหมายผู้รับผิดชอบแก้ไข — แยกจากผู้รับเรื่องที่บันทึกไว้ตอนเปิดใบ (A-3)
    *
-   * ใบที่เป็น RECEIVED หรือ REOPENED จะถูกเลื่อนเป็น ASSIGNED ก่อน ผู้รับผิดชอบต้องกดเริ่มงานเอง
-   * จึงจะเป็น IN_PROGRESS ส่วนใบที่อยู่สถานะอื่นแล้วไม่ถูกแตะสถานะ
-   * — ถอนการมอบหมาย (ส่ง null) ก็ไม่ย้อนสถานะกลับ เพราะงานที่เริ่มไปแล้วยังเริ่มไปแล้ว
-   *
-   * REOPENED ต้องอยู่ในนี้ด้วย ไม่งั้นใบที่ปัญหาเดิมกลับมาจะไม่มีทางไป IN_PROGRESS เลย
-   * ขัดกับ BR-04 (`RESOLVED → REOPENED → IN_PROGRESS`) หยิบงานรอบใหม่จึงทำด้วยการ
-   * มอบหมายซ้ำ แม้จะเป็นคนเดิมก็ตาม
+   * C-1: มอบจาก WAITING_ADMIN ได้เฉพาะหลังแอดมินกดรับคิวแล้ว · จาก REOPENED ได้ตาม BR-04
+   * ไม่มอบจาก RECEIVED ตรง ๆ — ต้องส่งหัวหน้าก่อน
+   * ถอนการมอบหมาย (ส่ง null) ไม่ย้อนสถานะกลับ
    */
   async assign(id: number, dto: AssignTicketDto): Promise<TicketResponseDto> {
     const actorId = getCurrentUserId();
@@ -417,6 +495,18 @@ export class TicketsService {
       await this.assertUserIsAssignable(dto.assignedUserId);
     }
 
+    if (dto.assignedUserId !== null) {
+      if (ticket.status === TicketStatus.RECEIVED) {
+        throw new BadRequestException(
+          'ต้องส่งให้หัวหน้าและให้แอดมินรับเรื่องก่อนมอบหมายพนักงาน',
+        );
+      }
+
+      if (ticket.status === TicketStatus.WAITING_ADMIN && !ticket.claimedByAdminUserId) {
+        throw new BadRequestException('ต้องกดรับเรื่องก่อนมอบหมายพนักงาน');
+      }
+    }
+
     const shouldAssign =
       dto.assignedUserId !== null && ASSIGNABLE_TICKET_STATUSES.includes(ticket.status);
 
@@ -424,6 +514,94 @@ export class TicketsService {
       assignedUserId: dto.assignedUserId,
       ...(shouldAssign ? { status: TicketStatus.ASSIGNED } : {}),
       ...(dto.dueAt !== undefined ? { dueAt: dto.dueAt ? new Date(dto.dueAt) : null } : {}),
+      updatedBy: actorId,
+    });
+
+    return this.findOne(id);
+  }
+
+  /**
+   * ซัพพอร์ตส่งเข้าคิวกลางให้แอดมิน — ไม่เลือกคน (C-1)
+   * จาก RECEIVED / REOPENED → WAITING_ADMIN · ล้าง claim และผู้แก้เดิม
+   */
+  async sendToAdmin(id: number): Promise<TicketResponseDto> {
+    const actorId = getCurrentUserId();
+    const ticket = await this.findOrFail(id);
+
+    if (!SEND_TO_ADMIN_STATUSES.includes(ticket.status)) {
+      throw new ConflictException('ใบนี้ไม่อยู่ในสถานะที่ส่งให้หัวหน้าได้');
+    }
+
+    await ticket.update({
+      status: TicketStatus.WAITING_ADMIN,
+      claimedByAdminUserId: null,
+      assignedUserId: null,
+      updatedBy: actorId,
+    });
+
+    return this.findOne(id);
+  }
+
+  /**
+   * แอดมินกดรับคิว — คนแรกที่กดเป็น claimedByAdminUserId (C-1)
+   */
+  async claim(id: number): Promise<TicketResponseDto> {
+    const actorId = getCurrentUserId();
+    const ticket = await this.findOrFail(id);
+
+    if (ticket.status !== TicketStatus.WAITING_ADMIN) {
+      throw new ConflictException('ใบนี้ไม่อยู่ในคิวรอแอดมินรับเรื่อง');
+    }
+
+    if (ticket.claimedByAdminUserId) {
+      throw new ConflictException('ใบนี้มีแอดมินรับเรื่องไปแล้ว');
+    }
+
+    await ticket.update({
+      claimedByAdminUserId: actorId,
+      updatedBy: actorId,
+    });
+
+    return this.findOne(id);
+  }
+
+  /**
+   * แอดมินตรวจผ่าน → ส่งกลับซัพพอร์ตให้บอกลูกค้า (C-1)
+   * จาก RESOLVED → WAITING_SUPPORT
+   */
+  async returnToSupport(id: number): Promise<TicketResponseDto> {
+    const actorId = getCurrentUserId();
+    const ticket = await this.findOrFail(id);
+
+    if (ticket.status !== TicketStatus.RESOLVED) {
+      throw new ConflictException('ต้องบันทึกผลการแก้ไขให้เป็น RESOLVED ก่อนส่งกลับซัพพอร์ต');
+    }
+
+    await ticket.update({
+      status: TicketStatus.WAITING_SUPPORT,
+      updatedBy: actorId,
+    });
+
+    return this.findOne(id);
+  }
+
+  /**
+   * ซัพพอร์ตบอกลูกค้าแล้ว → ปิดใบ (C-1)
+   * จาก WAITING_SUPPORT → CLOSED
+   */
+  async customerNotified(id: number, dto: CloseTicketDto): Promise<TicketResponseDto> {
+    const actorId = getCurrentUserId();
+    const ticket = await this.findOrFail(id);
+
+    if (ticket.status !== TicketStatus.WAITING_SUPPORT) {
+      throw new ConflictException('ใบนี้ยังไม่ได้อยู่ในสถานะรอซัพพอร์ตบอกลูกค้า');
+    }
+
+    await ticket.update({
+      status: TicketStatus.CLOSED,
+      closedAt: new Date(),
+      description: this.appendNote(ticket.description, dto.note, 'บอกลูกค้าแล้ว'),
+      ...(dto.extraCharge !== undefined ? { extraCharge: dto.extraCharge ?? null } : {}),
       updatedBy: actorId,
     });
 
@@ -584,6 +762,7 @@ export class TicketsService {
 
     await ticket.update({
       status: TicketStatus.REOPENED,
+      claimedByAdminUserId: null,
       ...(ticket.status === TicketStatus.CLOSED ? { closedAt: null } : {}),
       description: this.appendNote(ticket.description, dto.reason, 'เปิดกลับมาอีกครั้ง'),
       updatedBy: actorId,
@@ -619,6 +798,29 @@ export class TicketsService {
   }
 
   // ---- helpers -------------------------------------------------------------
+
+  private adminQueueWhere(tab: AdminQueueTab): WhereOptions<Ticket> {
+    switch (tab) {
+      case AdminQueueTab.AWAITING_CLAIM:
+        return {
+          status: TicketStatus.WAITING_ADMIN,
+          claimedByAdminUserId: null,
+        };
+      case AdminQueueTab.CLAIMED:
+        return {
+          status: TicketStatus.WAITING_ADMIN,
+          claimedByAdminUserId: { [Op.ne]: null },
+        };
+      case AdminQueueTab.AWAITING_REVIEW:
+        return { status: TicketStatus.RESOLVED };
+      case AdminQueueTab.WITH_SUPPORT:
+        return { status: TicketStatus.WAITING_SUPPORT };
+      default: {
+        const _exhaustive: never = tab;
+        return _exhaustive;
+      }
+    }
+  }
 
   /**
    * เงื่อนไขค้นหาใบแจ้งปัญหา — ค้นจากฟิลด์ของใบ **และ** ชื่อ/รหัสของลูกค้าและโครงการ

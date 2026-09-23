@@ -34,6 +34,8 @@ import {
   type MaAddonResponseDto,
   type MaContractPrintDto,
   type MaContractResponseDto,
+  type ProjectMaQuotaItemDto,
+  type ProjectMaQuotaSummaryDto,
   type QuotaStatusResponseDto,
   toMaAddonResponse,
   toMaContractPrint,
@@ -453,6 +455,41 @@ export class MaContractsService {
   }
 
   // ---- โควตา ---------------------------------------------------------------
+
+  /**
+   * สรุปโควตาของสัญญา MA ทั้งหมดในโปรเจคหนึ่ง
+   *
+   * ประชุมทบทวนระบบ: การใช้โควตา/ครั้งที่เหลือให้ดูที่โปรเจค (ใหญ่ → ย่อย)
+   * หน้ารายการสัญญาเป็นภาพรวมอย่างเดียว ไม่ยัดรายการใช้ทุกโปรเจคเข้าไป
+   * รูปโควตาต่อฉบับใช้ `buildQuotaStatus()` ตัวเดียวกับ GET /ma-contracts/:id/quota
+   */
+  async listQuotaForProject(
+    projectId: number,
+    onDate?: Date,
+  ): Promise<ProjectMaQuotaSummaryDto> {
+    await this.findProjectOrFail(projectId);
+
+    const contracts = await this.contractModel.findAll({
+      where: { projectId },
+      include: [planInclude(), customerInclude(), projectInclude()],
+      order: [
+        ['endDate', 'DESC'],
+        ['id', 'DESC'],
+      ],
+    });
+
+    const asOf = onDate ?? new Date();
+    const items: ProjectMaQuotaItemDto[] = [];
+
+    for (const contract of contracts) {
+      items.push({
+        contract: toMaContractResponse(contract),
+        quota: await this.buildQuotaStatus(contract, asOf),
+      });
+    }
+
+    return { projectId, items };
+  }
 
   /** สถานะโควตาของรอบที่วันที่กำหนดตกอยู่ — ใช้โชว์บนหน้าจอสัญญาและก่อนกดบันทึกการแก้ไข */
   async getQuota(contractId: number, onDate?: Date): Promise<QuotaStatusResponseDto> {

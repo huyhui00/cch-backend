@@ -198,6 +198,8 @@ module.exports = {
         'ticket.update',
         'ticket.resolve',
         'ticket.reopen',
+        'ticket.close',
+        'ticket.support_queue',
       ],
       'ฝ่ายขาย': [
         'customer.view',
