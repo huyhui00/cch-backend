@@ -25,6 +25,7 @@ import {
   UserStatus,
 } from '../../models';
 import { MaQuotaService } from '../ma/ma-quota.service';
+import { TicketWorkflowNotifyService } from '../notifications/ticket-workflow-notify.service';
 import { WarrantiesService } from '../warranties/warranties.service';
 import { CreateResolutionDto } from './dto/resolution.dto';
 import {
@@ -167,6 +168,7 @@ export class TicketsService {
     private readonly warrantiesService: WarrantiesService,
     private readonly maQuotaService: MaQuotaService,
     private readonly accessControl: AccessControlService,
+    private readonly ticketWorkflowNotify: TicketWorkflowNotifyService,
   ) {}
 
   async findAll(query: QueryTicketsDto): Promise<PaginatedResult<TicketResponseDto>> {
@@ -517,7 +519,11 @@ export class TicketsService {
       updatedBy: actorId,
     });
 
-    return this.findOne(id);
+    const result = await this.findOne(id);
+    if (dto.assignedUserId !== null) {
+      await this.ticketWorkflowNotify.notifyAssigned(result, actorId);
+    }
+    return result;
   }
 
   /**
@@ -539,7 +545,9 @@ export class TicketsService {
       updatedBy: actorId,
     });
 
-    return this.findOne(id);
+    const result = await this.findOne(id);
+    await this.ticketWorkflowNotify.notifySentToAdmin(result, actorId);
+    return result;
   }
 
   /**
@@ -582,7 +590,9 @@ export class TicketsService {
       updatedBy: actorId,
     });
 
-    return this.findOne(id);
+    const result = await this.findOne(id);
+    await this.ticketWorkflowNotify.notifyReturnedToSupport(result, actorId);
+    return result;
   }
 
   /**
@@ -734,6 +744,8 @@ export class TicketsService {
     if (!resolution) {
       throw new NotFoundException('ไม่พบรอบการแก้ไขที่เพิ่งบันทึก');
     }
+
+    await this.ticketWorkflowNotify.notifyAwaitingReview(ticket, actorId);
 
     return { ticket, resolution, quota: outcome.quota };
   }

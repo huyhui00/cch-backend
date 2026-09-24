@@ -18,6 +18,7 @@ const CODE = 'ticket.support_queue';
 const SUPPORT_ROLE_NAMES = [
   'ดูแลใบแจ้งปัญหา',
   'ฝ่ายซัพพอร์ต',
+  'ซัพพอร์ตรับเรื่อง',
   'ดูแลลูกค้าและใบแจ้งปัญหา',
 ];
 

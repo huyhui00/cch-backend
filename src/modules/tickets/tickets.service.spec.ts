@@ -198,6 +198,12 @@ describe('TicketsService', () => {
       warrantiesService as unknown as WarrantiesService,
       maQuotaService as unknown as MaQuotaService,
       accessControl as never,
+      {
+        notifySentToAdmin: jest.fn().mockResolvedValue(undefined),
+        notifyAwaitingReview: jest.fn().mockResolvedValue(undefined),
+        notifyReturnedToSupport: jest.fn().mockResolvedValue(undefined),
+        notifyAssigned: jest.fn().mockResolvedValue(undefined),
+      } as never,
     );
   });
 
@@ -1009,6 +1015,26 @@ describe('TicketsService', () => {
       expect(ticket.update).toHaveBeenCalledWith(
         expect.objectContaining({ assignedUserId: 4, status: TicketStatus.ASSIGNED }),
       );
+      expect(
+        (service as unknown as { ticketWorkflowNotify: { notifyAssigned: jest.Mock } })
+          .ticketWorkflowNotify.notifyAssigned,
+      ).toHaveBeenCalled();
+    });
+
+    it('ถอนการมอบหมายไม่แจ้งเตือน', async () => {
+      const ticket = ticketRow({
+        status: TicketStatus.ASSIGNED,
+        assignedUserId: 4,
+        claimedByAdminUserId: 2,
+      });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+      const notify = (
+        service as unknown as { ticketWorkflowNotify: { notifyAssigned: jest.Mock } }
+      ).ticketWorkflowNotify.notifyAssigned;
+
+      await service.assign(7, { assignedUserId: null });
+
+      expect(notify).not.toHaveBeenCalled();
     });
 
     it('มอบหมายจาก RECEIVED โดยตรงไม่ได้ — ต้องส่งหัวหน้าก่อน (C-1)', async () => {

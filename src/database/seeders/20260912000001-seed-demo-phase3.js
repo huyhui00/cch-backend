@@ -28,12 +28,12 @@
 
 const MARKER_TICKET_NO = 'TK-DEMO-001';
 
-const ROLE_SUPPORT = 'ดูแลใบแจ้งปัญหา';
+const ROLE_SUPPORT = 'ซัพพอร์ตรับเรื่อง';
 const ROLE_SALES = 'ดูแลลูกค้าและงานขาย';
-const ROLE_BOTH = 'ดูแลลูกค้าและใบแจ้งปัญหา';
+const ROLE_STAFF = 'พนักงานแก้ใบ';
 
 /**
- * สิทธิ์ของแต่ละบทบาท
+ * สิทธิ์ของแต่ละบทบาท — ตรงสาย C-1
  *
  * **ห้ามใส่สิทธิ์ที่ยังไม่มี endpoint รองรับ** (`customer.delete`, `file.*`, `task.assign`,
  * `audit.view`, `*.export`) เพราะจะกลายเป็นช่องติ๊กที่ติ๊กแล้วไม่มีผล ซึ่งคนเดโมจะงง
@@ -44,16 +44,17 @@ const ROLE_BOTH = 'ดูแลลูกค้าและใบแจ้งป�
  *
  * `ticket.support_queue` **ต้องมี** ในบทบาทซัพพอร์ต — แยกจาก ticket.view/create ของหน้าปัญหา
  *
+ * `ticket.resolve` อยู่ที่พนักงานแก้ใบ ไม่ใช่ซัพพอร์ต
+ *
  * `project.create` ไม่อยู่ในบทบาทซัพพอร์ตเช่นกัน — การเปิดโปรเจคใหม่ไม่ใช่หน้าที่ของ
  * คนดูแลใบแจ้งปัญหา ถ้าใส่เข้าไปก็เท่ากับกลับไปเป็น "บทบาทเดียวทำได้ทุกอย่าง"
  *
- * `ma.view` **ต้องมี** ไม่งั้นแถบโควตา MA ตอนเปิดใบจะได้ 403 แล้วหายไปเงียบ ๆ
+ * `ma.view` **ต้องมี** ในซัพพอร์ต ไม่งั้นแถบโควตา MA ตอนเปิดใบจะได้ 403 แล้วหายไปเงียบ ๆ
  */
 const SUPPORT_CODES = [
   'ticket.view',
   'ticket.create',
   'ticket.update',
-  'ticket.resolve',
   'ticket.reopen',
   'ticket.close',
   'ticket.support_queue',
@@ -61,7 +62,6 @@ const SUPPORT_CODES = [
   'customer.view',
   'contact.view',
   'project.view',
-  'task.view',
   'communication.view',
   'communication.create',
   'followup.view',
@@ -69,9 +69,23 @@ const SUPPORT_CODES = [
   'followup.update',
   'followup.complete',
   'document.view',
-  'document.create',
   'delivery.view',
   'warranty.view',
+  'notification.view',
+];
+
+const STAFF_CODES = [
+  'ticket.view',
+  'ticket.update',
+  'ticket.resolve',
+  'ticket.reopen',
+  'project.view',
+  'task.view',
+  'task.create',
+  'task.update',
+  'delivery.view',
+  'document.view',
+  'notification.view',
 ];
 
 const SALES_CODES = [
@@ -96,6 +110,8 @@ const SALES_CODES = [
   'survey.view',
   'survey.send',
   'report.view',
+  'ma.view',
+  'notification.view',
 ];
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -189,11 +205,12 @@ module.exports = {
     ]);
     const userIds = await mapIdsBy(queryInterface, 'users', 'username', [
       'somchai',
+      'Tom',
       'pranee',
       'wichai',
     ]);
 
-    if (projectIds.size < 2 || userIds.size < 3) {
+    if (projectIds.size < 2 || !userIds.has('somchai') || !userIds.has('pranee') || !userIds.has('wichai')) {
       console.log('demo phase 3: ยังไม่มีข้อมูลตัวอย่างชุดแรก ข้าม — รัน seeder ตัวก่อนหน้าให้ครบก่อน');
       return;
     }
@@ -216,8 +233,54 @@ module.exports = {
     const projectA = projectIds.get('PRJ-DEMO-001');
     const projectB = projectIds.get('PRJ-DEMO-002');
     const somchaiId = userIds.get('somchai');
+    let tomId = userIds.get('Tom');
     const praneeId = userIds.get('pranee');
     const wichaiId = userIds.get('wichai');
+
+    // ฐานเก่าที่ seed ชุดแรกยังไม่มี Tom — สร้างให้ตรง C-1 (ซัพพอร์ตคนละคนจากขาย)
+    if (!tomId) {
+      const bcrypt = require('bcrypt');
+      const passwordHash = await bcrypt.hash(
+        process.env.DEMO_USER_PASSWORD || 'Demo@1234',
+        Number(process.env.BCRYPT_SALT_ROUNDS || 10),
+      );
+      await queryInterface.bulkInsert('users', [
+        {
+          employee_code: 'EMP-104',
+          username: 'Tom',
+          email: 'tom@example.com',
+          password_hash: passwordHash,
+          full_name: 'รัชชานนท์ สว่างศรี',
+          nickname: 'ต้อม',
+          phone: '081-444-4444',
+          position: 'เจ้าหน้าที่ซัพพอร์ต',
+          avatar_url: null,
+          line_user_id: null,
+          account_type: 'USER',
+          status: 'ACTIVE',
+          last_login_at: null,
+          refresh_token_hash: null,
+          ...audit,
+        },
+      ]);
+      tomId = (
+        await mapIdsBy(queryInterface, 'users', 'username', ['Tom'])
+      ).get('Tom');
+    }
+
+    // จัด position ให้ตรง Role — กันชื่อปนจนจำสลับ (ประชุม C-1)
+    await queryInterface.sequelize.query(
+      `UPDATE users SET position = :pos, updated_at = :now, updated_by = :actor WHERE username = :u`,
+      { replacements: { pos: 'เจ้าหน้าที่ซัพพอร์ต', now, actor: actorId, u: 'Tom' } },
+    );
+    await queryInterface.sequelize.query(
+      `UPDATE users SET position = :pos, updated_at = :now, updated_by = :actor WHERE username = :u`,
+      { replacements: { pos: 'เจ้าหน้าที่ฝ่ายขาย', now, actor: actorId, u: 'pranee' } },
+    );
+    await queryInterface.sequelize.query(
+      `UPDATE users SET position = :pos, updated_at = :now, updated_by = :actor WHERE username = :u`,
+      { replacements: { pos: 'พนักงานแก้ใบ', now, actor: actorId, u: 'wichai' } },
+    );
 
     const contactA = await idOf(
       queryInterface,
@@ -230,52 +293,57 @@ module.exports = {
       { c: customerB },
     );
 
-    // ---- บทบาทตามหลักของพี่เลี้ยง ------------------------------------------
-    await queryInterface.bulkInsert('roles', [
-      {
-        name: ROLE_SUPPORT,
-        description: 'เปิดและแก้ใบแจ้งปัญหา ดูโควตา MA ติดตามผลหลังแก้เสร็จ',
-        is_system: false,
-        is_active: true,
-        ...audit,
-      },
-      {
-        name: ROLE_SALES,
-        description: 'ดูแลข้อมูลลูกค้า เปิดโปรเจค บันทึกการติดต่อ และดูรายงาน',
-        is_system: false,
-        is_active: true,
-        ...audit,
-      },
-      {
-        name: ROLE_BOTH,
-        description: 'บทบาทรวมสำหรับคนที่ทำทั้งงานขายและงานซัพพอร์ต',
-        is_system: false,
-        is_active: true,
-        ...audit,
-      },
-    ]);
+    // ---- บทบาทตามสาย C-1 (ชื่อเดียวกับ seed ชุดแรก — อัปเดตสิทธิ์/มอบหมาย ไม่สร้างซ้ำ) ----
+    const roleNames = [ROLE_SUPPORT, ROLE_SALES, ROLE_STAFF];
+    const roleIds = await mapIdsBy(queryInterface, 'roles', 'name', roleNames);
 
-    const roleIds = await mapIdsBy(queryInterface, 'roles', 'name', [
-      ROLE_SUPPORT,
-      ROLE_SALES,
-      ROLE_BOTH,
-    ]);
+    for (const [name, description] of [
+      [ROLE_SUPPORT, 'รับเรื่องลูกค้า เปิดใบ ส่งหัวหน้า และบอกลูกค้า — ไม่มอบหมายและไม่ลงมือแก้'],
+      [ROLE_SALES, 'ดูแลลูกค้า เปิดโปรเจค ติดตาม และรายงาน — ไม่เข้าคิวใบปัญหา'],
+      [ROLE_STAFF, 'รับใบที่แอดมินมอบหมาย เริ่มงาน บันทึกรอบแก้ และทำงานย่อยในโปรเจค'],
+    ]) {
+      if (!roleIds.has(name)) {
+        await queryInterface.bulkInsert('roles', [
+          {
+            name,
+            description,
+            is_system: false,
+            is_active: true,
+            ...audit,
+          },
+        ]);
+      } else {
+        await queryInterface.sequelize.query(
+          'UPDATE roles SET description = :description, is_active = 1, updated_at = :now WHERE id = :id',
+          { replacements: { description, now, id: roleIds.get(name) } },
+        );
+      }
+    }
 
-    const bothCodes = Array.from(new Set([...SUPPORT_CODES, ...SALES_CODES]));
-    const allCodes = Array.from(new Set([...SUPPORT_CODES, ...SALES_CODES, ...bothCodes]));
+    const roleIdsFresh = await mapIdsBy(queryInterface, 'roles', 'name', roleNames);
+    const allCodes = Array.from(new Set([...SUPPORT_CODES, ...SALES_CODES, ...STAFF_CODES]));
     const permissionIds = await mapIdsBy(queryInterface, 'permissions', 'code', allCodes);
+
+    for (const roleName of roleNames) {
+      const roleId = roleIdsFresh.get(roleName);
+      if (roleId) {
+        await queryInterface.sequelize.query('DELETE FROM role_permissions WHERE role_id = :id', {
+          replacements: { id: roleId },
+        });
+      }
+    }
 
     const rolePermissionRows = [];
     for (const [roleName, codes] of [
       [ROLE_SUPPORT, SUPPORT_CODES],
       [ROLE_SALES, SALES_CODES],
-      [ROLE_BOTH, bothCodes],
+      [ROLE_STAFF, STAFF_CODES],
     ]) {
       for (const code of codes) {
         const permissionId = permissionIds.get(code);
         if (permissionId) {
           rolePermissionRows.push({
-            role_id: roleIds.get(roleName),
+            role_id: roleIdsFresh.get(roleName),
             permission_id: permissionId,
             ...junctionAudit,
           });
@@ -285,17 +353,17 @@ module.exports = {
 
     await queryInterface.bulkInsert('role_permissions', rolePermissionRows);
 
-    // บทบาทเดิมของ pranee/wichai ถูกถอดออกทั้งหมดก่อน แล้วมอบใหม่อันเดียว
-    // wichai เคยถือ 2 บทบาทพร้อมกัน (seed ก่อนเปลี่ยนกฎ) ซึ่งขัดข้อตกลง 1 คน 1 บทบาท
-    // บทบาทเก่ายังอยู่ในระบบ แค่ไม่มีใครถือ — ลบทิ้งได้จากหน้าจัดการบทบาทถ้าไม่ต้องการ
+    // Tom = ซัพพอร์ต · pranee = ขาย · wichai = พนักงานแก้ใบ
+    // somchai = ADMIN ไม่ผูก Role
     await queryInterface.sequelize.query(
       'DELETE FROM user_roles WHERE user_id IN (:ids)',
-      { replacements: { ids: [praneeId, wichaiId] } },
+      { replacements: { ids: [tomId, praneeId, wichaiId] } },
     );
 
     await queryInterface.bulkInsert('user_roles', [
-      { user_id: praneeId, role_id: roleIds.get(ROLE_SUPPORT), ...junctionAudit },
-      { user_id: wichaiId, role_id: roleIds.get(ROLE_BOTH), ...junctionAudit },
+      { user_id: tomId, role_id: roleIdsFresh.get(ROLE_SUPPORT), ...junctionAudit },
+      { user_id: praneeId, role_id: roleIdsFresh.get(ROLE_SALES), ...junctionAudit },
+      { user_id: wichaiId, role_id: roleIdsFresh.get(ROLE_STAFF), ...junctionAudit },
     ]);
 
     // ---- การส่งมอบ 2 รอบ + ประกัน (BR-06) ----------------------------------
@@ -478,7 +546,7 @@ module.exports = {
         reported_by_contact_id: contactA,
         // ยังไม่มอบหมาย — โชว์คิว "รับเรื่องแล้วรอหัวหน้าส่งงาน" ตามที่พี่เลี้ยงอธิบาย
         assigned_user_id: null,
-        received_by_user_id: praneeId,
+        received_by_user_id: tomId,
         resolution_count: 0,
         first_response_at: null,
         resolved_at: null,
@@ -502,8 +570,8 @@ module.exports = {
         reported_channel: 'LINE',
         reported_at: daysAgo(5),
         reported_by_contact_id: contactA,
-        assigned_user_id: praneeId,
-        received_by_user_id: praneeId,
+        assigned_user_id: wichaiId,
+        received_by_user_id: tomId,
         resolution_count: 0,
         first_response_at: daysAgo(5),
         resolved_at: null,
@@ -526,8 +594,8 @@ module.exports = {
         reported_channel: 'PHONE',
         reported_at: daysAgo(30),
         reported_by_contact_id: contactA,
-        assigned_user_id: praneeId,
-        received_by_user_id: praneeId,
+        assigned_user_id: wichaiId,
+        received_by_user_id: tomId,
         resolution_count: 2,
         first_response_at: daysAgo(30),
         resolved_at: daysAgo(12),
@@ -551,7 +619,7 @@ module.exports = {
         reported_at: daysAgo(75),
         reported_by_contact_id: contactB,
         assigned_user_id: wichaiId,
-        received_by_user_id: wichaiId,
+        received_by_user_id: tomId,
         resolution_count: 1,
         first_response_at: daysAgo(75),
         resolved_at: daysAgo(70),
@@ -576,7 +644,7 @@ module.exports = {
         reported_by_contact_id: contactB,
         // REOPENED + ยังไม่มอบหมาย = คิว "กลับมาแล้วยังไม่มีใครหยิบ" ที่กฎ Phase 7 พูดถึง
         assigned_user_id: null,
-        received_by_user_id: wichaiId,
+        received_by_user_id: tomId,
         resolution_count: 1,
         first_response_at: daysAgo(45),
         resolved_at: daysAgo(40),
@@ -603,7 +671,7 @@ module.exports = {
         result: 'PARTIAL',
         detail: 'ปรับการล็อกแถวตอนตัดสต็อก ทดสอบแล้วดีขึ้นแต่ยังเจอในกรณีจ่ายออกพร้อมกันเกิน 5 รายการ',
         root_cause: 'ไม่ได้ล็อกแถวก่อนอ่านยอดคงเหลือ ทำให้สองคำสั่งอ่านค่าเดียวกัน',
-        resolved_by_user_id: praneeId,
+        resolved_by_user_id: wichaiId,
         started_at: daysAgo(28),
         resolved_at: daysAgo(27),
         hours_spent: '3.50',
@@ -615,7 +683,7 @@ module.exports = {
         result: 'SUCCESS',
         detail: 'เปลี่ยนไปใช้ทรานแซกชันเดียวตลอดการตัดสต็อก ทดสอบพร้อมกัน 20 รายการแล้วยอดตรง',
         root_cause: 'รอบแรกแก้ไม่ครบ ยังมีอีกเส้นทางที่ไม่ได้อยู่ในทรานแซกชัน',
-        resolved_by_user_id: praneeId,
+        resolved_by_user_id: wichaiId,
         started_at: daysAgo(13),
         resolved_at: daysAgo(12),
         hours_spent: '5.00',
@@ -676,7 +744,7 @@ module.exports = {
         // สถานะยังเป็น PLANNED โดยเจตนา — OVERDUE เป็นค่าที่ระบบ *คำนวณ* ไม่ใช่ค่าที่ตั้ง
         // หน้าจอต้องอ่าน isOverdue ไม่ใช่ status (กฎ M7) แถวนี้จึงเป็นตัวพิสูจน์
         status: 'PLANNED',
-        assigned_user_id: praneeId,
+        assigned_user_id: tomId,
         completed_at: null,
         result_note: null,
         ...audit,
@@ -688,7 +756,7 @@ module.exports = {
         detail: 'ประกันหมดปีหน้า นัดคุยเรื่องต่อสัญญา MA ล่วงหน้า',
         due_date: dateOnly(daysAhead(3)),
         status: 'PLANNED',
-        assigned_user_id: wichaiId,
+        assigned_user_id: praneeId,
         completed_at: null,
         result_note: null,
         ...audit,
@@ -922,12 +990,12 @@ module.exports = {
 
     await queryInterface.sequelize.query(
       'DELETE rp FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name IN (:names)',
-      { replacements: { names: [ROLE_SUPPORT, ROLE_SALES, ROLE_BOTH] } },
+      { replacements: { names: [ROLE_SUPPORT, ROLE_SALES, ROLE_STAFF] } },
     );
     await queryInterface.sequelize.query(
       'DELETE ur FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE r.name IN (:names)',
-      { replacements: { names: [ROLE_SUPPORT, ROLE_SALES, ROLE_BOTH] } },
+      { replacements: { names: [ROLE_SUPPORT, ROLE_SALES, ROLE_STAFF] } },
     );
-    await queryInterface.bulkDelete('roles', { name: [ROLE_SUPPORT, ROLE_SALES, ROLE_BOTH] });
+    await queryInterface.bulkDelete('roles', { name: [ROLE_SUPPORT, ROLE_SALES, ROLE_STAFF] });
   },
 };

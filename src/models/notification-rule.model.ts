@@ -12,6 +12,14 @@ export enum NotificationEventType {
   FOLLOWUP_DUE = 'FOLLOWUP_DUE',
   TICKET_SLA = 'TICKET_SLA',
   CUSTOMER_IDLE = 'CUSTOMER_IDLE',
+  /** C-3 — ซัพพอร์ตส่งเข้าคิวแอดมิน (แจ้งในแอปอย่างเดียว) */
+  TICKET_SENT_TO_ADMIN = 'TICKET_SENT_TO_ADMIN',
+  /** C-3 — พนักงานบันทึกผลแก้แล้ว รอแอดมินตรวจผ่าน */
+  TICKET_AWAITING_REVIEW = 'TICKET_AWAITING_REVIEW',
+  /** C-3 — แอดมินตรวจผ่านแล้ว ส่งกลับซัพพอร์ตบอกลูกค้า */
+  TICKET_RETURNED_TO_SUPPORT = 'TICKET_RETURNED_TO_SUPPORT',
+  /** C-3 — แอดมินมอบหมายใบให้พนักงานแก้ */
+  TICKET_ASSIGNED = 'TICKET_ASSIGNED',
 }
 
 /** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */

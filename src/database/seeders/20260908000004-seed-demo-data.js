@@ -21,8 +21,9 @@ const bcrypt = require('bcrypt');
 
 const DEMO_CUSTOMER_CODES = ['CUS-DEMO-001', 'CUS-DEMO-002', 'CUS-DEMO-003'];
 const DEMO_PROJECT_CODES = ['PRJ-DEMO-001', 'PRJ-DEMO-002', 'PRJ-DEMO-003'];
-const DEMO_USERNAMES = ['somchai', 'pranee', 'wichai'];
-const DEMO_ROLE_NAMES = ['ฝ่ายซัพพอร์ต', 'ฝ่ายขาย'];
+/** บัญชีเดโมตามสาย C-1 — ชื่อ Role กับ position ต้องตรงกัน ห้ามสลับ */
+const DEMO_USERNAMES = ['somchai', 'Tom', 'pranee', 'wichai'];
+const DEMO_ROLE_NAMES = ['ซัพพอร์ตรับเรื่อง', 'ดูแลลูกค้าและงานขาย', 'พนักงานแก้ใบ'];
 
 /** รหัสผ่านของบัญชีตัวอย่าง — ปลอดภัยเพราะ seeder นี้ไม่ทำงานบน production */
 const DEMO_PASSWORD = process.env.DEMO_USER_PASSWORD || 'Demo@1234';
@@ -97,9 +98,12 @@ module.exports = {
     const audit = auditValues(now, actorId);
     const junctionAudit = { created_at: now, created_by: actorId };
 
-    // ---- บัญชีพนักงานตัวอย่าง ---------------------------------------------
-    // มีไว้ให้หน้าจอมีชื่อผู้รับผิดชอบให้เลือก และให้ทดสอบการมอบบทบาทได้จริง
-    // pranee กับ wichai เป็น USER จึงเข้าเมนูได้ตามบทบาทที่ได้รับเท่านั้น (CLAUDE.md 4.1)
+    // ---- บัญชีพนักงานตัวอย่าง (C-1) ---------------------------------------
+    // somchai = ADMIN (หัวหน้าคิวแอดมิน) ไม่ผูก Role
+    // Tom     = ซัพพอร์ตรับเรื่อง
+    // pranee  = ดูแลลูกค้าและงานขาย
+    // wichai  = พนักงานแก้ใบ
+    // USER เข้าเมนูได้ตามบทบาทเท่านั้น (CLAUDE.md 4.1) — position ต้องตรง Role ห้ามสลับ
     const passwordHash = await bcrypt.hash(
       DEMO_PASSWORD,
       Number(process.env.BCRYPT_SALT_ROUNDS || 10),
@@ -124,6 +128,23 @@ module.exports = {
         ...audit,
       },
       {
+        employee_code: 'EMP-104',
+        username: 'Tom',
+        email: 'tom@example.com',
+        password_hash: passwordHash,
+        full_name: 'รัชชานนท์ สว่างศรี',
+        nickname: 'ต้อม',
+        phone: '081-444-4444',
+        position: 'เจ้าหน้าที่ซัพพอร์ต',
+        avatar_url: null,
+        line_user_id: null,
+        account_type: 'USER',
+        status: 'ACTIVE',
+        last_login_at: null,
+        refresh_token_hash: null,
+        ...audit,
+      },
+      {
         employee_code: 'EMP-102',
         username: 'pranee',
         email: 'pranee@example.com',
@@ -131,7 +152,7 @@ module.exports = {
         full_name: 'ปราณี รักงาน',
         nickname: 'นี',
         phone: '081-222-2222',
-        position: 'เจ้าหน้าที่ซัพพอร์ต',
+        position: 'เจ้าหน้าที่ฝ่ายขาย',
         avatar_url: null,
         line_user_id: null,
         account_type: 'USER',
@@ -148,7 +169,7 @@ module.exports = {
         full_name: 'วิชัย ตั้งใจ',
         nickname: 'ชัย',
         phone: '081-333-3333',
-        position: 'เจ้าหน้าที่ฝ่ายขาย',
+        position: 'พนักงานแก้ใบ',
         avatar_url: null,
         line_user_id: null,
         account_type: 'USER',
@@ -161,22 +182,31 @@ module.exports = {
 
     const userIds = await mapIdsBy(queryInterface, 'users', 'username', DEMO_USERNAMES);
     const somchaiId = userIds.get('somchai');
+    const tomId = userIds.get('Tom');
     const praneeId = userIds.get('pranee');
     const wichaiId = userIds.get('wichai');
 
     // ---- บทบาทตัวอย่าง ----------------------------------------------------
     // is_system = false เพื่อให้ลบทิ้งได้ตอนทดสอบหน้าจัดการบทบาท
+    // บทบาทตามสาย C-1: ซัพพอร์ต ≠ พนักงานแก้ใบ ≠ ขาย · หัวหน้าใช้บัญชี ADMIN (somchai)
     await queryInterface.bulkInsert('roles', [
       {
-        name: 'ฝ่ายซัพพอร์ต',
-        description: 'ดูแลใบแจ้งปัญหาและติดตามผลการแก้ไข',
+        name: 'ซัพพอร์ตรับเรื่อง',
+        description: 'รับเรื่องลูกค้า เปิดใบ ส่งหัวหน้า และบอกลูกค้า — ไม่มอบหมายและไม่ลงมือแก้',
         is_system: false,
         is_active: true,
         ...audit,
       },
       {
-        name: 'ฝ่ายขาย',
-        description: 'ดูแลลูกค้าและบันทึกการติดต่อ',
+        name: 'ดูแลลูกค้าและงานขาย',
+        description: 'ดูแลลูกค้า เปิดโปรเจค ติดตาม และรายงาน — ไม่เข้าคิวใบปัญหา',
+        is_system: false,
+        is_active: true,
+        ...audit,
+      },
+      {
+        name: 'พนักงานแก้ใบ',
+        description: 'รับใบที่แอดมินมอบหมาย เริ่มงาน บันทึกรอบแก้ และทำงานย่อยในโปรเจค',
         is_system: false,
         is_active: true,
         ...audit,
@@ -186,22 +216,29 @@ module.exports = {
     const roleIds = await mapIdsBy(queryInterface, 'roles', 'name', DEMO_ROLE_NAMES);
 
     const rolePermissionCodes = {
-      'ฝ่ายซัพพอร์ต': [
-        'customer.view',
-        'contact.view',
-        'communication.view',
-        'communication.create',
-        'project.view',
-        'task.view',
+      ซัพพอร์ตรับเรื่อง: [
         'ticket.view',
         'ticket.create',
         'ticket.update',
-        'ticket.resolve',
         'ticket.reopen',
         'ticket.close',
         'ticket.support_queue',
+        'ma.view',
+        'customer.view',
+        'contact.view',
+        'project.view',
+        'communication.view',
+        'communication.create',
+        'followup.view',
+        'followup.create',
+        'followup.update',
+        'followup.complete',
+        'document.view',
+        'delivery.view',
+        'warranty.view',
+        'notification.view',
       ],
-      'ฝ่ายขาย': [
+      ดูแลลูกค้าและงานขาย: [
         'customer.view',
         'customer.create',
         'customer.update',
@@ -212,7 +249,32 @@ module.exports = {
         'communication.create',
         'communication.update',
         'project.view',
+        'project.create',
+        'project.update',
+        'followup.view',
+        'followup.create',
+        'followup.update',
+        'followup.complete',
+        'document.view',
+        'document.create',
+        'survey.view',
+        'survey.send',
         'report.view',
+        'ma.view',
+        'notification.view',
+      ],
+      พนักงานแก้ใบ: [
+        'ticket.view',
+        'ticket.update',
+        'ticket.resolve',
+        'ticket.reopen',
+        'project.view',
+        'task.view',
+        'task.create',
+        'task.update',
+        'delivery.view',
+        'document.view',
+        'notification.view',
       ],
     };
 
@@ -236,10 +298,10 @@ module.exports = {
     await queryInterface.bulkInsert('role_permissions', rolePermissionRows);
 
     await queryInterface.bulkInsert('user_roles', [
-      { user_id: praneeId, role_id: roleIds.get('ฝ่ายซัพพอร์ต'), ...junctionAudit },
-      { user_id: wichaiId, role_id: roleIds.get('ฝ่ายขาย'), ...junctionAudit },
-      // ถือสองบทบาทพร้อมกัน สิทธิ์ที่ได้คือ union ของทั้งคู่ (CLAUDE.md 4.2)
-      { user_id: wichaiId, role_id: roleIds.get('ฝ่ายซัพพอร์ต'), ...junctionAudit },
+      { user_id: tomId, role_id: roleIds.get('ซัพพอร์ตรับเรื่อง'), ...junctionAudit },
+      { user_id: praneeId, role_id: roleIds.get('ดูแลลูกค้าและงานขาย'), ...junctionAudit },
+      { user_id: wichaiId, role_id: roleIds.get('พนักงานแก้ใบ'), ...junctionAudit },
+      // somchai = ADMIN ไม่ผูก Role — ใช้คิวแอดมินได้จาก account_type
     ]);
 
     // ---- ลูกค้า ------------------------------------------------------------
@@ -261,7 +323,7 @@ module.exports = {
         facebook_url: null,
         status: 'ACTIVE',
         source: 'งานแสดงสินค้า',
-        owner_user_id: wichaiId,
+        owner_user_id: praneeId,
         last_contacted_at: daysAgo(3),
         note: 'ลูกค้าเก่าตั้งแต่ปี 2565 ต่อสัญญาดูแลระบบทุกปี',
         ...audit,
@@ -281,7 +343,7 @@ module.exports = {
         facebook_url: 'https://facebook.com/greenfarm.demo',
         status: 'ACTIVE',
         source: 'ลูกค้าเดิมแนะนำ',
-        owner_user_id: wichaiId,
+        owner_user_id: praneeId,
         last_contacted_at: daysAgo(21),
         note: 'สนใจขยายเซ็นเซอร์เพิ่มอีก 10 จุดในปีหน้า',
         ...audit,
@@ -406,7 +468,7 @@ module.exports = {
         occurred_at: daysAgo(3),
         subject: 'แจ้งปัญหาหน้าจอรายงานสต๊อกโหลดช้า',
         content: 'แจ้งว่ารายงานสรุปสต๊อกรายเดือนใช้เวลาโหลดเกิน 30 วินาที ขอให้ตรวจสอบ',
-        handled_by_user_id: praneeId,
+        handled_by_user_id: tomId,
         ...audit,
       },
       {
@@ -436,7 +498,7 @@ module.exports = {
         occurred_at: daysAgo(21),
         subject: 'สอบถามการต่อสัญญาดูแลระบบ',
         content: 'ถามว่าสัญญาดูแลระบบปีถัดไปราคาเท่าไร ขอให้ส่งใบเสนอราคาไปให้',
-        handled_by_user_id: wichaiId,
+        handled_by_user_id: praneeId,
         ...audit,
       },
       {
@@ -446,7 +508,7 @@ module.exports = {
         occurred_at: daysAgo(45),
         subject: 'ส่งใบเสนอราคาเซ็นเซอร์เพิ่ม 10 จุด',
         content: 'ส่งใบเสนอราคาการติดตั้งเซ็นเซอร์อุณหภูมิเพิ่มเติมในโรงเรือนที่ 3 และ 4',
-        handled_by_user_id: wichaiId,
+        handled_by_user_id: praneeId,
         ...audit,
       },
     ]);
@@ -529,7 +591,7 @@ module.exports = {
         title: 'พัฒนาโมดูลรับสินค้าเข้าคลัง',
         status: 'DOING',
         priority: 'HIGH',
-        assigned_user_id: praneeId,
+        assigned_user_id: wichaiId,
         start_date: dateOnly(-38),
         due_date: dateOnly(5),
         completed_at: null,
@@ -571,7 +633,7 @@ module.exports = {
         title: 'จัดทำคู่มือการใช้งานสำหรับพนักงานคลัง',
         status: 'WAITING',
         priority: 'LOW',
-        assigned_user_id: praneeId,
+        assigned_user_id: wichaiId,
         start_date: dateOnly(-20),
         due_date: dateOnly(-6),
         completed_at: null,
@@ -597,7 +659,7 @@ module.exports = {
         title: 'พัฒนาหน้าจอแสดงผลอุณหภูมิย้อนหลัง',
         status: 'DOING',
         priority: 'HIGH',
-        assigned_user_id: praneeId,
+        assigned_user_id: wichaiId,
         start_date: dateOnly(-18),
         due_date: dateOnly(12),
         completed_at: null,
@@ -636,7 +698,7 @@ module.exports = {
         title: 'ย้ายข้อมูลข่าวสารเดิมเข้าระบบใหม่',
         status: 'DONE',
         priority: 'LOW',
-        assigned_user_id: praneeId,
+        assigned_user_id: wichaiId,
         start_date: dateOnly(-50),
         due_date: dateOnly(-32),
         completed_at: daysAgo(30),
@@ -694,7 +756,7 @@ module.exports = {
         title: 'ออกแบบหน้าจอรับสินค้าเข้าคลัง',
         status: 'DONE',
         priority: 'NORMAL',
-        assigned_user_id: praneeId,
+        assigned_user_id: wichaiId,
         due_date: dateOnly(-25),
         completed_at: daysAgo(24),
         estimated_hours: '32.00',
@@ -707,7 +769,7 @@ module.exports = {
         title: 'เขียน API รับสินค้าเข้าคลัง',
         status: 'DOING',
         priority: 'HIGH',
-        assigned_user_id: praneeId,
+        assigned_user_id: wichaiId,
         due_date: dateOnly(3),
         completed_at: null,
         estimated_hours: '64.00',
@@ -772,7 +834,7 @@ module.exports = {
         title: 'ออกแบบกราฟแสดงผลย้อนหลัง 7 วัน',
         status: 'REVIEW',
         priority: 'NORMAL',
-        assigned_user_id: praneeId,
+        assigned_user_id: wichaiId,
         due_date: dateOnly(2),
         completed_at: null,
         estimated_hours: '24.00',
