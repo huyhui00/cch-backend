@@ -24,6 +24,7 @@ import { TicketsModule } from './modules/tickets/tickets.module';
 import { UsersModule } from './modules/users/users.module';
 import { WarrantiesModule } from './modules/warranties/warranties.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { NavModule } from './modules/nav/nav.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     DocumentsModule,
     AttachmentsModule,
     NotificationsModule,
+    NavModule,
   ],
   controllers: [AppController],
   providers: [

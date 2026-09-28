@@ -28,6 +28,7 @@ import {
 import { CustomersService } from '../customers/customers.service';
 import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
 import {
+  type ProjectOptionDto,
   type ProjectProgressDto,
   type ProjectReportDto,
   type ProjectResponseDto,
@@ -127,6 +128,27 @@ export class ProjectsService {
       count,
       query,
     );
+  }
+
+  /**
+   * ตัวเลือกโครงการสำหรับดรอปดาวน์/ตัวกรอง — ไม่แบ่งหน้า คืนครบทุกสถานะ
+   * (project.view เห็นทุกโครงการอยู่แล้ว ไม่มีการจำกัดรายคน)
+   */
+  async findOptions(): Promise<ProjectOptionDto[]> {
+    const projects = await this.projectModel.findAll({
+      attributes: ['id', 'code', 'name', 'status'],
+      order: [
+        ['name', 'ASC'],
+        ['id', 'ASC'],
+      ],
+    });
+
+    return projects.map((project) => ({
+      id: project.id,
+      code: project.code,
+      name: project.name,
+      status: project.status,
+    }));
   }
 
   /** รายละเอียดโครงการ พร้อมสรุปจำนวน task และเปอร์เซ็นต์ความคืบหน้า */

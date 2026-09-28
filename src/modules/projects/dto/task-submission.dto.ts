@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsPositive,
@@ -48,6 +49,15 @@ export class ReviewTaskDto {
   reviewNote?: string | null;
 }
 
+export const TASK_REVIEW_SORT_FIELDS = [
+  'projectCode',
+  'projectName',
+  'taskTitle',
+  'submittedAt',
+  'reviewedAt',
+] as const;
+export type TaskReviewSortField = (typeof TASK_REVIEW_SORT_FIELDS)[number];
+
 export enum TaskReviewTab {
   PENDING = 'PENDING',
   REVIEWED = 'REVIEWED',
@@ -79,4 +89,16 @@ export class QueryTaskReviewsDto extends PaginationDto {
   @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
   @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
   projectId?: number;
+
+  @ApiPropertyOptional({
+    enum: TASK_REVIEW_SORT_FIELDS,
+    description:
+      'ไม่ส่ง = ลำดับเริ่มต้นของแท็บ · ใช้คู่กับ sortOrder (ASC/DESC) · ' +
+      'projectCode: แถวที่ไม่มีรหัสอยู่ท้ายเสมอ',
+  })
+  @IsOptional()
+  @IsIn(TASK_REVIEW_SORT_FIELDS, {
+    message: `sortBy ต้องเป็น ${TASK_REVIEW_SORT_FIELDS.join(', ')}`,
+  })
+  sortBy?: TaskReviewSortField;
 }

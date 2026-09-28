@@ -24,6 +24,16 @@ export const PENDING_TICKET_STATUSES: readonly TicketStatus[] = [
   TicketStatus.IN_PROGRESS,
 ];
 
+/**
+ * ใบที่ยังค้างอยู่กับผู้แก้ — แท็บ "กำลังทำ" ของหน้าใบของฉัน และ badge ของเมนูนั้น
+ * RESOLVED ขึ้นไปส่งกลับแอดมินแล้ว ไม่ใช่งานที่ผู้แก้ต้องทำต่อ
+ */
+export const ASSIGNEE_OPEN_TICKET_STATUSES: readonly TicketStatus[] = [
+  TicketStatus.ASSIGNED,
+  TicketStatus.IN_PROGRESS,
+  TicketStatus.REOPENED,
+];
+
 /** แท็บคิวซัพพอร์ต */
 export enum SupportQueueTab {
   /** รับเรื่องแล้ว รอส่งหัวหน้า */

@@ -42,6 +42,7 @@ import {
 } from './dto/ticket.dto';
 import {
   AdminQueueTab,
+  ASSIGNEE_OPEN_TICKET_STATUSES,
   type BillingSuggestionDto,
   PENDING_TICKET_STATUSES,
   type ResolutionCreatedDto,
@@ -284,10 +285,7 @@ export class TicketsService {
 
   /** คิวซัพพอร์ต — รอส่งหัวหน้า / แอดมินส่งกลับมา (C-1) */
   async findSupportQueue(query: QuerySupportQueueDto): Promise<PaginatedResult<TicketResponseDto>> {
-    const where: WhereOptions<Ticket> =
-      query.tab === SupportQueueTab.AWAITING_SEND
-        ? { status: TicketStatus.RECEIVED }
-        : { status: TicketStatus.WAITING_SUPPORT };
+    const where: WhereOptions<Ticket> = this.supportQueueWhere(query.tab);
 
     if (query.search) {
       Object.assign(where, await this.searchCondition(query.search, ['title', 'ticketNo']));
@@ -339,6 +337,42 @@ export class TicketsService {
       count,
       query,
     );
+  }
+
+  /**
+   * ตัวเลข badge ของคิว — where ตัวเดียวกับหน้ารายการ ไม่มีคำค้น
+   * include ของรายการเป็น required: false ทั้งหมด count() จึงเท่ากับ total ของหน้ารายการ
+   */
+  async countAdminQueue(): Promise<Record<AdminQueueTab, number>> {
+    const tabs = Object.values(AdminQueueTab);
+    const counts = await Promise.all(
+      tabs.map((tab) => this.ticketModel.count({ where: this.adminQueueWhere(tab) })),
+    );
+    return Object.fromEntries(tabs.map((tab, i) => [tab, counts[i]])) as Record<
+      AdminQueueTab,
+      number
+    >;
+  }
+
+  async countSupportQueue(): Promise<Record<SupportQueueTab, number>> {
+    const tabs = Object.values(SupportQueueTab);
+    const counts = await Promise.all(
+      tabs.map((tab) => this.ticketModel.count({ where: this.supportQueueWhere(tab) })),
+    );
+    return Object.fromEntries(tabs.map((tab, i) => [tab, counts[i]])) as Record<
+      SupportQueueTab,
+      number
+    >;
+  }
+
+  /** ใบที่มอบหมายให้ผู้ใช้นี้และยังค้างอยู่กับเขา — แท็บ "กำลังทำ" ของหน้าใบของฉัน */
+  countOpenAssignedTo(userId: number): Promise<number> {
+    return this.ticketModel.count({
+      where: {
+        assignedUserId: userId,
+        status: { [Op.in]: ASSIGNEE_OPEN_TICKET_STATUSES },
+      },
+    });
   }
 
   /** รายละเอียดปัญหา พร้อมทุกรอบที่ลงมือแก้ + ขั้น stepper + ไฟล์แนบรายรอบ (B-11) */
@@ -936,6 +970,12 @@ export class TicketsService {
   }
 
   // ---- helpers -------------------------------------------------------------
+
+  private supportQueueWhere(tab: SupportQueueTab): WhereOptions<Ticket> {
+    return tab === SupportQueueTab.AWAITING_SEND
+      ? { status: TicketStatus.RECEIVED }
+      : { status: TicketStatus.WAITING_SUPPORT };
+  }
 
   private adminQueueWhere(tab: AdminQueueTab): WhereOptions<Ticket> {
     switch (tab) {

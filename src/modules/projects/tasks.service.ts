@@ -13,6 +13,7 @@ import { getCurrentUserId } from '../../common/context/request-context';
 import {
   PaginationDto,
   type PaginatedResult,
+  type SortOrder,
   toPaginatedResult,
 } from '../../common/dto/pagination.dto';
 import { addDays } from '../../common/utils/date.util';
@@ -49,6 +50,7 @@ import {
   CreateTaskSubmissionDto,
   QueryTaskReviewsDto,
   ReviewTaskDto,
+  type TaskReviewSortField,
   TaskReviewTab,
 } from './dto/task-submission.dto';
 import {
@@ -152,6 +154,36 @@ function subTasksInclude() {
     separate: true,
     order: [['sortOrder', 'ASC']] as Order,
   };
+}
+
+/**
+ * ลำดับของเมนูงานตรวจ — อ้างคอลัมน์ของตารางที่ join ผ่าน alias ของ Sequelize
+ * (task, task->project) ได้เพราะทุก include เป็น belongsTo จึงไม่ถูกห่อเป็น subquery
+ */
+function reviewSortOrder(sortBy: TaskReviewSortField, direction: SortOrder): Order {
+  const tieBreaker: [string, string] = ['id', direction];
+
+  switch (sortBy) {
+    case 'projectCode':
+      return [
+        // ไม่มีรหัสอยู่ท้ายเสมอไม่ว่าเรียงทางไหน
+        [Sequelize.fn('ISNULL', Sequelize.col('task->project.code')), 'ASC'],
+        [Sequelize.col('task->project.code'), direction],
+        tieBreaker,
+      ];
+    case 'projectName':
+      return [[Sequelize.col('task->project.name'), direction], tieBreaker];
+    case 'taskTitle':
+      return [[Sequelize.col('task.title'), direction], tieBreaker];
+    case 'submittedAt':
+      return [['createdAt', direction], tieBreaker];
+    case 'reviewedAt':
+      return [['reviewedAt', direction], tieBreaker];
+    default: {
+      const _exhaustive: never = sortBy;
+      return _exhaustive;
+    }
+  }
 }
 
 @Injectable()
@@ -627,6 +659,8 @@ export class TasksService {
     user: AuthenticatedUser,
   ): Promise<PaginatedResult<TaskReviewItemDto>> {
     const taskWhere: WhereOptions<Task> = {};
+    // ขอบเขตผู้ตรวจกับคำค้นต่างใช้ Op.or — รวมใต้ Op.and ไม่ให้ทับกัน
+    const taskConditions: WhereOptions<Task>[] = [];
     let filterByTask = false;
 
     if (query.projectId !== undefined) {
@@ -635,7 +669,19 @@ export class TasksService {
     }
 
     if (query.search) {
-      Object.assign(taskWhere, { title: { [Op.like]: '%' + query.search + '%' } });
+      const like = '%' + query.search + '%';
+      // รหัสโครงการมีหลายรูปแบบปนกัน (PRJ-2026-002 / PRJ69-0001) ค้นตามค่าที่เก็บจริง
+      const projects = await this.projectModel.findAll({
+        where: { [Op.or]: [{ code: { [Op.like]: like } }, { name: { [Op.like]: like } }] },
+        attributes: ['id'],
+      });
+      const projectIds = projects.map((project) => project.id);
+      taskConditions.push({
+        [Op.or]: [
+          { title: { [Op.like]: like } },
+          ...(projectIds.length > 0 ? [{ projectId: { [Op.in]: projectIds } }] : []),
+        ],
+      });
       filterByTask = true;
     }
 
@@ -659,13 +705,21 @@ export class TasksService {
       filterByTask = true;
       const scope = await this.reviewerScope(user);
       if (scope) {
-        Object.assign(taskWhere, scope);
+        taskConditions.push(scope);
       }
       // รอนานที่สุดขึ้นก่อน
       order = [
         ['createdAt', 'ASC'],
         ['id', 'ASC'],
       ];
+    }
+
+    if (query.sortBy) {
+      order = reviewSortOrder(query.sortBy, query.sortOrder);
+    }
+
+    if (taskConditions.length > 0) {
+      Object.assign(taskWhere, { [Op.and]: taskConditions });
     }
 
     // หา id ของงานก่อนแล้วกรองด้วย IN — findAndCountAll ที่มี limit + include
@@ -694,6 +748,49 @@ export class TasksService {
     });
 
     return toPaginatedResult(rows.map(toTaskReviewItem), count, query);
+  }
+
+  /** badge เมนูงานตรวจ — เรียก findReviews() ตัวเดียวกัน ตัวเลขจึงเท่ากับ total ของแท็บรอตรวจ */
+  async countPendingReviews(user: AuthenticatedUser): Promise<number> {
+    const query = Object.assign(new QueryTaskReviewsDto(), { page: 1, limit: 1 });
+    return (await this.findReviews(query, user)).total;
+  }
+
+  /**
+   * badge เมนูงานโปรเจกต์ — งานของฉัน (DOING / WAITING) ที่รอบส่งล่าสุดถูกตีกลับ
+   * เป็นส่วนหนึ่งของ GET /tasks/me เสมอ เพราะรายการนั้นตัดแค่ REVIEW กับ DONE
+   */
+  async countRejectedMyTasks(userId: number): Promise<number> {
+    const tasks = await this.taskModel.findAll({
+      where: {
+        assignedUserId: userId,
+        status: { [Op.in]: [TaskStatus.DOING, TaskStatus.WAITING] },
+      },
+      attributes: ['id'],
+    });
+
+    if (tasks.length === 0) {
+      return 0;
+    }
+
+    const submissions = await this.submissionModel.findAll({
+      where: { taskId: { [Op.in]: tasks.map((task) => task.id) } },
+      attributes: ['id', 'taskId', 'status'],
+      order: [
+        ['createdAt', 'DESC'],
+        ['id', 'DESC'],
+      ],
+    });
+
+    const latestByTask = new Map<number, TaskSubmissionStatus>();
+    for (const submission of submissions) {
+      if (!latestByTask.has(submission.taskId)) {
+        latestByTask.set(submission.taskId, submission.status);
+      }
+    }
+
+    return [...latestByTask.values()].filter((status) => status === TaskSubmissionStatus.REJECTED)
+      .length;
   }
 
   /**

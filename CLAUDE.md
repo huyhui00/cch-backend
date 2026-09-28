@@ -605,7 +605,7 @@ return true;
 - **Endpoint ที่มีแล้ว** — auth (login/refresh/logout/me),   users (list/create/update/roles/status/
   me-password/reset-password), roles (CRUD + permissions), permissions (list), audit-logs (list), health,
   customers (CRUD + detail), contacts (CRUD), communication-logs (CRUD + detail),
-  projects (list/detail/create/update/report/ma-quota), projects/:id/tasks (CRUD),
+  projects (list/options/detail/create/update/report/ma-quota), projects/:id/tasks (CRUD),
   tasks (company list/summary/due-soon/overdue, status, order, submit/review, reviews,
   submissions file + review-file download),
   projects/:id/deliveries (list/create), deliveries (detail/update/acceptance),
@@ -616,7 +616,7 @@ return true;
   tickets/:id/confirmation-print,
   ma-plans (CRUD), ma-contracts (list/detail/create/update/renew),
   ma-contracts/:id (quota/addons list/addons create/print),
-  users/assignable, roles/assignable,
+  users/assignable, roles/assignable, nav/counts,
   follow-ups (list/detail/create/update/complete/delete),
   surveys (list/detail/create/update/status/delete + summary/score-breakdown/assignments/responses),
   survey-assignments/:id/response,
@@ -627,8 +627,8 @@ return true;
   customers/:id/overview,
   notifications (list/detail/read/read-all/read-by-ref/run/test-line),
   notification-rules (CRUD),
- — รวม ~130 เส้น (นับรวม `/api/health`)
-- **เทสต์คุมกฎธุรกิจ ~526 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
+ — รวม ~135 เส้น (นับรวม `/api/health`)
+- **เทสต์คุมกฎธุรกิจ ~619 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
 - **e2e 110 เคส 11 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`, `tasks`, `deliveries`, `projects`, `documents`, `users-reset-password`) — รันด้วย `npm run test:e2e`
   แยกจาก `npm test` เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่
   `test/global-setup.js` สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
@@ -724,7 +724,19 @@ return true;
     หรือโปรเจคที่ตนเป็นผู้จัดการ (ขอบเขตเดียวกับ `/tasks?status=REVIEW`) · เรียงเก่าไปใหม่
   - `REVIEWED` = ประวัติที่ **ผู้เรียกตรวจเอง** เท่านั้น แม้เป็น ADMIN/SUPER_ADMIN — เป็นเมนู "งานที่ฉันตรวจ"
     ไม่ใช่รายงานทั้งบริษัท · กรอง `result=APPROVED|REJECTED` · เรียงล่าสุดก่อน
-  - กรอง `projectId` / `search` (ชื่องาน) ได้ทั้งสองแท็บ
+  - กรอง `projectId` ได้ทั้งสองแท็บ · `search` ค้นชื่องาน **และรหัส/ชื่อโครงการ** (ค้นตามค่าที่เก็บจริง
+    รหัสเก่า `PRJ-2026-002` กับใหม่ `PRJ69-0001` ปนกัน ห้ามแปลงรูปแบบ)
+  - `sortBy=projectCode|projectName|taskTitle|submittedAt|reviewedAt` คู่กับ `sortOrder` มาตรฐาน
+    ไม่ส่ง `sortBy` = ลำดับเริ่มต้นของแท็บ (ไม่ใช้ค่าเริ่มต้น DESC ของ `sortOrder`) · `projectCode` เอาแถวไม่มีรหัสไว้ท้ายเสมอ
+- **badge เมนู = `GET /api/nav/counts`** (28 ก.ย.) รวมตัวเลขทุกเมนูในคำขอเดียว
+  - **แต่ละช่องต้องเท่ากับ total ของหน้ารายการนั้นเป๊ะ** — ตัวนับอยู่ใน service เจ้าของหน้า ใช้ where ชุดเดียวกัน
+    (`countAdminQueue` / `countSupportQueue` ใช้ `adminQueueWhere` / `supportQueueWhere` · `countPendingReviews`
+    เรียก `findReviews()` ตรง ๆ) ห้ามเขียน where ใหม่ใน NavService — มีเทสต์เทียบ where ของสองทาง
+  - ไม่ติด `@RequirePermission` — ช่องที่ไม่มีสิทธิ์ของหน้านั้นได้ **`null` ไม่ใช่ 0** (ใช้สิทธิ์ตัวเดียวกับ guard ของหน้า)
+  - `ticketsMineOpen` = มอบให้ฉัน + `ASSIGNEE_OPEN_TICKET_STATUSES` (ASSIGNED/IN_PROGRESS/REOPENED)
+    = แท็บ "กำลังทำ" ของหน้าใบของฉัน · `tasksMeRejected` = งานของฉัน DOING/WAITING ที่รอบส่ง**ล่าสุด**ถูกตีกลับ
+- **`GET /api/projects/options`** (`project.view`) ตัวเลือกดรอปดาวน์ ไม่แบ่งหน้า ทุกสถานะ เรียงตามชื่อ
+  คืน `{ id, code, name, status }` เท่านั้น — **ห้ามเติมฟิลด์** ไม่งั้นกลายเป็นรายการโครงการเต็มที่ไม่มี limit
 
 **กฎธุรกิจที่ Phase 6 บังคับไว้**
 - **`warranties.start_date` ไม่เคยรับค่าจาก client** — คำนวณจาก `deliveries.delivered_at`

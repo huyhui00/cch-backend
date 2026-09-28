@@ -105,7 +105,9 @@ export class TasksController {
     description:
       'หนึ่งแถวต่อรายงานการส่งตรวจหนึ่งรอบ พร้อมงาน โครงการ ผู้ส่ง และผู้ตรวจ ' +
       '?tab=PENDING (ค่าเริ่มต้น) = รอตรวจและฉันมีสิทธิ์ตรวจ เรียงรอนานสุดก่อน · ' +
-      '?tab=REVIEWED = ที่ฉันตรวจไปแล้ว เรียงล่าสุดก่อน กรองผลด้วย ?result=APPROVED|REJECTED',
+      '?tab=REVIEWED = ที่ฉันตรวจไปแล้ว เรียงล่าสุดก่อน กรองผลด้วย ?result=APPROVED|REJECTED · ' +
+      '?search= ค้นชื่องาน รหัสโครงการ และชื่อโครงการ · ' +
+      '?sortBy=projectCode|projectName|taskTitle|submittedAt|reviewedAt คู่กับ ?sortOrder=ASC|DESC',
   })
   @ApiResponse({ status: 200, description: 'สำเร็จ', type: [TaskReviewItemDto] })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์ตรวจงาน' })

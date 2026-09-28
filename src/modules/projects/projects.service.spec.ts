@@ -257,6 +257,28 @@ describe('ProjectsService', () => {
   // -------------------------------------------------------------------------
   // B-6 — สรุปตัวเลขรายงานของโปรเจค
   // -------------------------------------------------------------------------
+  describe('findOptions (ดรอปดาวน์)', () => {
+    it('คืนทุกโครงการ ไม่แบ่งหน้า เรียงตามชื่อ มีแค่ id/code/name/status', async () => {
+      projectModel.findAll.mockResolvedValue([
+        { id: 2, code: 'PRJ-2026-002', name: 'ก', status: 'IN_PROGRESS', budget: 1 },
+        { id: 7, code: null, name: 'ข', status: 'CLOSED' },
+      ]);
+
+      await expect(service.findOptions()).resolves.toEqual([
+        { id: 2, code: 'PRJ-2026-002', name: 'ก', status: 'IN_PROGRESS' },
+        { id: 7, code: null, name: 'ข', status: 'CLOSED' },
+      ]);
+
+      const [[options]] = projectModel.findAll.mock.calls as [[Record<string, unknown>]];
+      expect(options.limit).toBeUndefined();
+      expect(options.where).toBeUndefined();
+      expect(options.order).toEqual([
+        ['name', 'ASC'],
+        ['id', 'ASC'],
+      ]);
+    });
+  });
+
   describe('getReport', () => {
     it('คืนความคืบหน้าและนับใบปัญหา ส่งมอบ สัญญา MA ของโปรเจค', async () => {
       taskModel.findAll.mockResolvedValue([

@@ -9,7 +9,7 @@ import { QueryQuotaDto } from '../ma/dto/ma-contract.dto';
 import { ProjectMaQuotaSummaryDto } from '../ma/dto/ma.response';
 import { MaContractsService } from '../ma/ma-contracts.service';
 import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
-import { ProjectReportDto, ProjectResponseDto } from './dto/project.response';
+import { ProjectOptionDto, ProjectReportDto, ProjectResponseDto } from './dto/project.response';
 import { ProjectsService } from './projects.service';
 
 /**
@@ -37,6 +37,20 @@ export class ProjectsController {
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   findAll(@Query() query: QueryProjectsDto): Promise<PaginatedResult<ProjectResponseDto>> {
     return this.projectsService.findAll(query);
+  }
+
+  @Get('options')
+  @RequirePermission('project.view')
+  @ApiOperation({
+    summary: 'ตัวเลือกโครงการสำหรับดรอปดาวน์ / ตัวกรอง',
+    description:
+      'คืนทุกโครงการ (ทุกสถานะ) ไม่แบ่งหน้า เรียงตามชื่อ มีแค่ id / code / name / status ' +
+      '— ใช้แทน GET /projects?limit=100 ที่ตัวเลือกจะหายเมื่อเกิน 100 โครงการ',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [ProjectOptionDto] })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  findOptions(): Promise<ProjectOptionDto[]> {
+    return this.projectsService.findOptions();
   }
 
   @Get(':id/report')

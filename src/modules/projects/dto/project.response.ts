@@ -179,6 +179,21 @@ export class CompanyTaskResponseDto extends TaskResponseDto {
   project: TaskProjectSummaryDto | null;
 }
 
+/** GET /projects/options — ตัวเลือกดรอปดาวน์ ห้ามเติมฟิลด์ให้กลายเป็นรายการโครงการเต็ม */
+export class ProjectOptionDto {
+  @ApiProperty({ example: 1 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'PRJ69-0001' })
+  code: string | null;
+
+  @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
+  name: string;
+
+  @ApiProperty({ enum: ProjectStatus, example: ProjectStatus.IN_PROGRESS })
+  status: ProjectStatus;
+}
+
 export class TaskReviewTaskSummaryDto {
   @ApiProperty({ example: 5 })
   id: number;

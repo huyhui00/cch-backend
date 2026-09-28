@@ -817,6 +817,71 @@ describe('TicketsService', () => {
   });
 
   // -------------------------------------------------------------------------
+  // ตัวนับ badge เมนู (GET /nav/counts) — ต้องใช้ where ชุดเดียวกับหน้ารายการ
+  // -------------------------------------------------------------------------
+  describe('ตัวนับ badge', () => {
+    function listWhere(run: () => Promise<unknown>): Promise<unknown> {
+      let captured: unknown;
+      ticketModel.findAndCountAll.mockImplementation((options: { where: unknown }) => {
+        captured = options.where;
+        return Promise.resolve({ rows: [], count: 0 });
+      });
+      return run().then(() => captured);
+    }
+
+    it('คิวแอดมินทุกแท็บนับด้วย where เดียวกับ GET /tickets/admin-queue', async () => {
+      const countWheres: unknown[] = [];
+      ticketModel.count.mockImplementation((options: { where: unknown }) => {
+        countWheres.push(options.where);
+        return Promise.resolve(countWheres.length);
+      });
+
+      const counts = await service.countAdminQueue();
+
+      const tabs = ['AWAITING_CLAIM', 'CLAIMED', 'AWAITING_REVIEW', 'WITH_SUPPORT'] as const;
+      expect(Object.keys(counts)).toEqual([...tabs]);
+      for (const [i, tab] of tabs.entries()) {
+        const where = await listWhere(() => service.findAdminQueue(queryDto({ tab }) as never));
+        expect(countWheres[i]).toEqual(where);
+      }
+    });
+
+    it('คิวซัพพอร์ตทุกแท็บนับด้วย where เดียวกับ GET /tickets/support-queue', async () => {
+      const countWheres: unknown[] = [];
+      ticketModel.count.mockImplementation((options: { where: unknown }) => {
+        countWheres.push(options.where);
+        return Promise.resolve(0);
+      });
+
+      const counts = await service.countSupportQueue();
+
+      expect(Object.keys(counts)).toEqual(['AWAITING_SEND', 'RETURNED']);
+      expect(countWheres[0]).toEqual(
+        await listWhere(() =>
+          service.findSupportQueue(queryDto({ tab: 'AWAITING_SEND' }) as never),
+        ),
+      );
+      expect(countWheres[1]).toEqual(
+        await listWhere(() => service.findSupportQueue(queryDto({ tab: 'RETURNED' }) as never)),
+      );
+    });
+
+    it('ใบของฉัน = มอบให้ฉันและยังค้างอยู่ (ASSIGNED / IN_PROGRESS / REOPENED)', async () => {
+      ticketModel.count.mockResolvedValue(2);
+
+      await expect(service.countOpenAssignedTo(8)).resolves.toBe(2);
+      expect(ticketModel.count).toHaveBeenCalledWith({
+        where: {
+          assignedUserId: 8,
+          status: {
+            [Op.in]: [TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS, TicketStatus.REOPENED],
+          },
+        },
+      });
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // ค้นหาปัญหาเก่า (ประชุม 11 ก.ย. — B-10)
   // ลูกค้าจำได้แค่บริษัท/โครงการ ถ้าค้นไม่เจอพนักงานจะเปิดใบใหม่ ซึ่งขัด BR-04
   // -------------------------------------------------------------------------

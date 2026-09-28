@@ -482,9 +482,85 @@ describe('TasksService', () => {
       );
 
       expect(taskWhere.status).toBe(TaskStatus.REVIEW);
-      expect(taskWhere[Op.or]).toEqual([{ assignedByUserId: 8 }, { projectId: { [Op.in]: [15] } }]);
+      expect(taskWhere[Op.and]).toEqual([
+        { [Op.or]: [{ assignedByUserId: 8 }, { projectId: { [Op.in]: [15] } }] },
+      ]);
       expect(captured.where?.status).toBe('PENDING');
       expect(captured.where?.taskId).toEqual({ [Op.in]: [3] });
+    });
+
+    it('search ค้นชื่องาน + รหัส/ชื่อโครงการ และไม่ทับขอบเขตผู้ตรวจ', async () => {
+      captureSubmissionQuery();
+      const projectQueries: Record<string | symbol, unknown>[] = [];
+      projectModel.findAll.mockImplementation(
+        (options: { where: Record<string | symbol, unknown> }) => {
+          projectQueries.push(options.where);
+          // ครั้งแรก = ค้นโครงการจากคำค้น · ครั้งที่สอง = โครงการที่ผู้ตรวจเป็นผู้จัดการ
+          return Promise.resolve(projectQueries.length === 1 ? [{ id: 4 }] : [{ id: 15 }]);
+        },
+      );
+      let taskWhere: Record<string | symbol, unknown> = {};
+      taskModel.findAll.mockImplementation(
+        (options: { where: Record<string | symbol, unknown> }) => {
+          taskWhere = options.where;
+          return Promise.resolve([]);
+        },
+      );
+
+      await service.findReviews(
+        { tab: 'PENDING', search: 'PRJ-2026', page: 1, limit: 20, offset: 0 } as never,
+        reviewer,
+      );
+
+      expect(projectQueries[0][Op.or]).toEqual([
+        { code: { [Op.like]: '%PRJ-2026%' } },
+        { name: { [Op.like]: '%PRJ-2026%' } },
+      ]);
+      expect(taskWhere[Op.and]).toEqual([
+        { [Op.or]: [{ title: { [Op.like]: '%PRJ-2026%' } }, { projectId: { [Op.in]: [4] } }] },
+        { [Op.or]: [{ assignedByUserId: 8 }, { projectId: { [Op.in]: [15] } }] },
+      ]);
+    });
+
+    it('sortBy=projectCode เอาแถวที่ไม่มีรหัสไว้ท้ายก่อน แล้วค่อยเรียงตามทิศที่ขอ', async () => {
+      const captured = captureSubmissionQuery();
+
+      await service.findReviews(
+        {
+          tab: 'REVIEWED',
+          sortBy: 'projectCode',
+          sortOrder: 'DESC',
+          page: 1,
+          limit: 20,
+          offset: 0,
+        } as never,
+        admin,
+      );
+
+      const order = captured.order as unknown[][];
+      expect(order[0][1]).toBe('ASC');
+      expect(JSON.stringify(order[0][0])).toContain('ISNULL');
+      expect(order[1][1]).toBe('DESC');
+      expect(order[2]).toEqual(['id', 'DESC']);
+    });
+
+    it('ไม่ส่ง sortBy = ลำดับเริ่มต้นของแท็บเดิม แม้ sortOrder มีค่าเริ่มต้นเป็น DESC', async () => {
+      const captured = captureSubmissionQuery();
+      taskModel.findAll.mockResolvedValue([]);
+
+      await service.findReviews(
+        { tab: 'PENDING', sortOrder: 'DESC', page: 1, limit: 20, offset: 0 } as never,
+        admin,
+      );
+
+      expect(captured.order?.[0]).toEqual(['createdAt', 'ASC']);
+    });
+
+    it('countPendingReviews = total ของแท็บรอตรวจ', async () => {
+      submissionModel.findAndCountAll.mockResolvedValue({ rows: [], count: 7 });
+      taskModel.findAll.mockResolvedValue([]);
+
+      await expect(service.countPendingReviews(admin)).resolves.toBe(7);
     });
 
     it('ไม่มีสิทธิ์ task.review = 403', async () => {
@@ -493,6 +569,36 @@ describe('TasksService', () => {
       await expect(
         service.findReviews({ tab: 'PENDING', page: 1, limit: 20, offset: 0 } as never, reviewer),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('countRejectedMyTasks (badge งานโปรเจกต์)', () => {
+    it('นับเฉพาะงานที่รอบส่งล่าสุดถูกตีกลับ', async () => {
+      taskModel.findAll.mockResolvedValue([{ id: 1 }, { id: 2 }, { id: 3 }]);
+      // เรียงล่าสุดก่อนตาม order ของ query
+      submissionModel.findAll.mockResolvedValue([
+        { taskId: 1, status: 'REJECTED' },
+        { taskId: 2, status: 'APPROVED' },
+        { taskId: 2, status: 'REJECTED' },
+        { taskId: 1, status: 'REJECTED' },
+      ]);
+
+      await expect(service.countRejectedMyTasks(8)).resolves.toBe(1);
+      expect(taskModel.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            assignedUserId: 8,
+            status: { [Op.in]: [TaskStatus.DOING, TaskStatus.WAITING] },
+          },
+        }),
+      );
+    });
+
+    it('ไม่มีงานค้าง = 0 โดยไม่ query รอบส่ง', async () => {
+      taskModel.findAll.mockResolvedValue([]);
+
+      await expect(service.countRejectedMyTasks(8)).resolves.toBe(0);
+      expect(submissionModel.findAll).not.toHaveBeenCalled();
     });
   });
 
