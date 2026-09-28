@@ -55,6 +55,41 @@ export class AttachmentResponseDto {
   updatedAt: Date;
 }
 
+/** ไฟล์แนบแบบย่อ ใช้ฝังในรายละเอียดของเอกสารต้นทาง (ใบส่งมอบ / ประกัน) */
+export class AttachmentSummaryDto {
+  @ApiProperty({ example: 12 })
+  id: number;
+
+  @ApiProperty({ example: 'ใบส่งมอบเซ็นแล้ว.pdf' })
+  fileName: string;
+
+  @ApiProperty({ nullable: true, example: 248311 })
+  fileSize: number | null;
+
+  @ApiProperty({ nullable: true, example: 'application/pdf' })
+  mimeType: string | null;
+
+  @ApiProperty({
+    description: 'path ดาวน์โหลดที่ต้องแนบ Authorization — ไม่ใช่ลิงก์สาธารณะ',
+    example: '/api/attachments/12/download',
+  })
+  downloadUrl: string;
+
+  @ApiProperty()
+  createdAt: Date;
+}
+
+export function toAttachmentSummary(attachment: Attachment): AttachmentSummaryDto {
+  return {
+    id: attachment.id,
+    fileName: attachment.fileName,
+    fileSize: attachment.fileSize === null ? null : Number(attachment.fileSize),
+    mimeType: attachment.mimeType,
+    downloadUrl: `/api/attachments/${attachment.id}/download`,
+    createdAt: attachment.createdAt,
+  };
+}
+
 export function toAttachmentResponse(
   attachment: Attachment,
   uploaders: ReadonlyMap<number, AttachmentUploaderDto> = new Map(),

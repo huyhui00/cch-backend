@@ -36,6 +36,7 @@ import { AttachmentsService } from './attachments.service';
 import {
   QueryAttachmentsDto,
   UpdateAttachmentDto,
+  UPLOADABLE_ATTACHMENT_REF_TYPES,
   UploadAttachmentDto,
 } from './dto/attachment.dto';
 import { AttachmentResponseDto } from './dto/attachment.response';
@@ -45,7 +46,7 @@ const ALLOWED_LIST = [...ALLOWED_EXTENSIONS].join(' ');
 /**
  * ไฟล์แนบทั่วไป (Phase 9 ส่วนที่เหลือ)
  *
- * บันทึกการติดต่อ (BR-02) · สแกนสัญญา MA (BR-12) · ใบส่งมอบ · ใบแจ้งปัญหา / รอบแก้
+ * บันทึกการติดต่อ (BR-02) · สแกนสัญญา MA (BR-12) · ใบส่งมอบ · ใบแจ้งปัญหา / รอบแก้ · ใบประกัน
  * เอกสารโปรเจคยังใช้ /api/projects/:id/documents ตามเดิม
  */
 @ApiTags('attachments')
@@ -118,7 +119,7 @@ export class AttachmentsController {
         },
         refType: {
           type: 'string',
-          enum: ['TICKET', 'TICKET_RESOLUTION', 'COMMUNICATION_LOG', 'DELIVERY', 'MA_CONTRACT'],
+          enum: [...UPLOADABLE_ATTACHMENT_REF_TYPES],
           description: 'ประเภทต้นทาง',
         },
         refId: { type: 'integer', description: 'id ของต้นทาง' },

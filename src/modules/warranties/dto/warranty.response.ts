@@ -1,7 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 import { daysUntil } from '../../../common/utils/date.util';
-import { MaContractStatus, Warranty, WarrantyStatus } from '../../../models';
+import {
+  type Attachment,
+  type Customer,
+  MaContractStatus,
+  Warranty,
+  WarrantyStatus,
+} from '../../../models';
+import {
+  AttachmentSummaryDto,
+  toAttachmentSummary,
+} from '../../attachments/dto/attachment.response';
 
 /**
  * ใบส่งมอบต้นทางแบบย่อ
@@ -149,7 +159,7 @@ export class WarrantyResponseDto {
   @ApiProperty({
     description:
       'ยังอยู่ในระยะประกันจริงหรือไม่ ณ วันนี้ — ให้หน้าจอใช้ค่านี้ ไม่ใช่ status ' +
-      'เพราะยังไม่มีตัวปรับ status เป็น EXPIRED อัตโนมัติจนกว่าจะถึง Phase 11',
+      'เพราะ cron ปรับ status เป็น EXPIRED รายชั่วโมง ระหว่างรอบอาจยังค้างเป็น ACTIVE',
     example: true,
   })
   isCurrentlyActive: boolean;
@@ -168,6 +178,14 @@ export class WarrantyResponseDto {
   })
   scopeNote: string | null;
 
+  @ApiProperty({
+    type: [AttachmentSummaryDto],
+    description:
+      'เอกสารแนบของใบประกัน (ref_type = WARRANTY) เช่นใบรับประกันที่ลูกค้าเซ็นแล้ว — ' +
+      'มีค่าเฉพาะ endpoint รายละเอียด รายการอื่นคืนเป็นอาเรย์ว่าง · อัปโหลดด้วย POST /api/attachments',
+  })
+  attachments: AttachmentSummaryDto[];
+
   @ApiProperty()
   createdAt: Date;
 
@@ -178,9 +196,8 @@ export class WarrantyResponseDto {
 /**
  * ยังอยู่ในระยะประกันจริงหรือไม่ ณ วันที่กำหนด
  *
- * ต้องดูทั้งสถานะที่บันทึกไว้และช่วงวันที่ เพราะยังไม่มี scheduler มาปรับ status
- * เป็น EXPIRED ให้อัตโนมัติ (จะมาตอน Phase 11) ถ้าเชื่อ status อย่างเดียว
- * ประกันที่หมดอายุไปแล้วจะยังขึ้นว่า ACTIVE อยู่ตลอดไป
+ * ต้องดูทั้งสถานะที่บันทึกไว้และช่วงวันที่ เพราะ WarrantyExpiryScheduler ปรับ status
+ * เป็นรอบรายชั่วโมง ถ้าเชื่อ status อย่างเดียว ระหว่างรอบจะตอบผิด
  *
  * VOID คือการยกเลิกด้วยมือ จึงตัดออกทันทีไม่ว่าวันที่จะอยู่ในช่วงหรือไม่
  * ส่วน EXPIRED ที่ถูกบันทึกไว้แล้วยังต้องเทียบวันที่อยู่ดี เผื่อกรณีที่ระยะประกัน
@@ -214,7 +231,11 @@ export function toWarrantySummary(warranty: Warranty, onDate: string): WarrantyS
   };
 }
 
-export function toWarrantyResponse(warranty: Warranty, onDate: string): WarrantyResponseDto {
+export function toWarrantyResponse(
+  warranty: Warranty,
+  onDate: string,
+  attachments: Attachment[] = [],
+): WarrantyResponseDto {
   return {
     id: warranty.id,
     warrantyNo: warranty.warrantyNo,
@@ -253,7 +274,226 @@ export function toWarrantyResponse(warranty: Warranty, onDate: string): Warranty
     isCurrentlyActive: isWarrantyCurrentlyActive(warranty, onDate),
     daysRemaining: daysUntil(warranty.endDate),
     scopeNote: warranty.scopeNote,
+    attachments: attachments.map(toAttachmentSummary),
     createdAt: warranty.createdAt,
     updatedAt: warranty.updatedAt,
+  };
+}
+
+// ---- ข้อมูลสำหรับพิมพ์ใบรับประกัน ------------------------------------------------
+
+export class WarrantyPrintWarrantyDto {
+  @ApiProperty({ example: 4 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'WAR69-0008' })
+  warrantyNo: string | null;
+
+  @ApiProperty({ enum: WarrantyStatus })
+  status: WarrantyStatus;
+
+  @ApiProperty({ example: 12 })
+  durationMonth: number;
+
+  @ApiProperty({ description: 'วันถัดจากวันส่งมอบ', example: '2026-09-24' })
+  startDate: string;
+
+  @ApiProperty({ description: 'วันสุดท้ายที่ยังคุ้มครอง (นับรวม)', example: '2027-09-24' })
+  endDate: string;
+
+  @ApiProperty({ nullable: true, description: 'ขอบเขตที่คุ้มครอง (BR-07)' })
+  scopeNote: string | null;
+
+  @ApiProperty({ description: 'คุ้มครองอยู่ ณ วันที่พิมพ์ไหม — หน้าจอใช้ตัดสินลายน้ำ' })
+  isCurrentlyActive: boolean;
+}
+
+export class WarrantyPrintDeliveryDto {
+  @ApiProperty({ example: 5 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'DLV69-0003' })
+  deliveryNo: string | null;
+
+  @ApiProperty({ example: 'ส่งมอบระบบครบตามขอบเขต' })
+  title: string;
+
+  @ApiProperty({ nullable: true, example: 'v1.2.0' })
+  version: string | null;
+
+  @ApiProperty()
+  deliveredAt: Date;
+
+  @ApiProperty({ nullable: true })
+  acceptedAt: Date | null;
+
+  @ApiProperty({ nullable: true, example: 'คุณสมศรี ใจดี', description: 'ผู้รับมอบฝั่งลูกค้า' })
+  acceptedByContactName: string | null;
+}
+
+export class WarrantyPrintProjectDto {
+  @ApiProperty({ example: 3 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'PRJ69-0003' })
+  code: string | null;
+
+  @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
+  name: string;
+}
+
+export class WarrantyPrintCustomerDto {
+  @ApiProperty({ example: 1 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'CUS69-0001' })
+  code: string | null;
+
+  @ApiProperty({ example: 'บริษัท ตัวอย่าง จำกัด' })
+  name: string;
+
+  @ApiProperty({ nullable: true })
+  taxId: string | null;
+
+  @ApiProperty({ nullable: true })
+  address: string | null;
+
+  @ApiProperty({ nullable: true })
+  province: string | null;
+
+  @ApiProperty({ nullable: true })
+  postalCode: string | null;
+
+  @ApiProperty({ nullable: true })
+  phone: string | null;
+
+  @ApiProperty({ nullable: true })
+  email: string | null;
+}
+
+export class WarrantyPrintContactDto {
+  @ApiProperty({ example: 'คุณสมศรี ใจดี' })
+  name: string;
+
+  @ApiProperty({ nullable: true })
+  position: string | null;
+
+  @ApiProperty({ nullable: true })
+  phone: string | null;
+
+  @ApiProperty({ nullable: true })
+  email: string | null;
+}
+
+export class WarrantyPrintAttachHintDto {
+  @ApiProperty({ example: 'WARRANTY' })
+  refType: 'WARRANTY';
+
+  @ApiProperty({ example: 4 })
+  refId: number;
+
+  @ApiProperty({ example: 'ใบรับประกัน WAR69-0008 ลูกค้าเซ็นแล้ว' })
+  noteSuggestion: string;
+}
+
+/**
+ * ใบรับประกันสำหรับพิมพ์ ("เหมือนซื้อตู้เย็นแล้วได้ใบประกัน" — ประชุมทบทวน 22–23 ก.ย.)
+ *
+ * backend ประกอบข้อมูล หน้าจอจัดหน้ากระดาษเอง (ข้อ 1 ของ CLAUDE.md — ไม่สร้าง HTML/PDF)
+ * สัญญา MA ที่ผูกไว้เป็นการอ้างอิงเท่านั้น (Q14) จึงไม่มีราคาหรือโควตา
+ */
+export class WarrantyPrintDto {
+  @ApiProperty()
+  generatedAt: Date;
+
+  @ApiProperty({ type: WarrantyPrintWarrantyDto })
+  warranty: WarrantyPrintWarrantyDto;
+
+  @ApiProperty({ type: WarrantyPrintDeliveryDto })
+  delivery: WarrantyPrintDeliveryDto;
+
+  @ApiProperty({ type: WarrantyPrintProjectDto })
+  project: WarrantyPrintProjectDto;
+
+  @ApiProperty({ type: WarrantyPrintCustomerDto })
+  customer: WarrantyPrintCustomerDto;
+
+  @ApiProperty({
+    type: WarrantyPrintContactDto,
+    nullable: true,
+    description: 'ผู้ติดต่อหลักของลูกค้า — ไม่มีผู้ติดต่อหลักคืน null ไม่หยิบคนแรกมาแทน',
+  })
+  primaryContact: WarrantyPrintContactDto | null;
+
+  @ApiProperty({ type: WarrantyMaContractSummaryDto, nullable: true })
+  maContract: WarrantyMaContractSummaryDto | null;
+
+  @ApiProperty({
+    type: WarrantyPrintAttachHintDto,
+    description: 'หลังลูกค้าเซ็น สแกนแนบกลับด้วย POST /api/attachments ตามค่านี้',
+  })
+  attachScanHint: WarrantyPrintAttachHintDto;
+}
+
+export function toWarrantyPrint(input: {
+  warranty: Warranty;
+  customer: Customer;
+  onDate: string;
+  generatedAt?: Date;
+}): WarrantyPrintDto {
+  const { warranty, customer, onDate } = input;
+  const delivery = warranty.delivery;
+  const project = warranty.project;
+  const response = toWarrantyResponse(warranty, onDate);
+  const primary = (customer.contacts ?? []).find((contact) => contact.isPrimary) ?? null;
+  const label = warranty.warrantyNo ?? `#${warranty.id}`;
+
+  return {
+    generatedAt: input.generatedAt ?? new Date(),
+    warranty: {
+      id: warranty.id,
+      warrantyNo: warranty.warrantyNo,
+      status: warranty.status,
+      durationMonth: warranty.durationMonth,
+      startDate: warranty.startDate,
+      endDate: warranty.endDate,
+      scopeNote: warranty.scopeNote,
+      isCurrentlyActive: response.isCurrentlyActive,
+    },
+    delivery: {
+      id: delivery.id,
+      deliveryNo: delivery.deliveryNo,
+      title: delivery.title,
+      version: delivery.version,
+      deliveredAt: delivery.deliveredAt,
+      acceptedAt: delivery.acceptedAt,
+      acceptedByContactName: delivery.acceptedByContact ? delivery.acceptedByContact.name : null,
+    },
+    project: { id: project.id, code: project.code, name: project.name },
+    customer: {
+      id: customer.id,
+      code: customer.code,
+      name: customer.name,
+      taxId: customer.taxId,
+      address: customer.address,
+      province: customer.province,
+      postalCode: customer.postalCode,
+      phone: customer.phone,
+      email: customer.email,
+    },
+    primaryContact: primary
+      ? {
+          name: primary.name,
+          position: primary.position,
+          phone: primary.phone,
+          email: primary.email,
+        }
+      : null,
+    maContract: response.maContract,
+    attachScanHint: {
+      refType: 'WARRANTY',
+      refId: warranty.id,
+      noteSuggestion: `ใบรับประกัน ${label} ลูกค้าเซ็นแล้ว`,
+    },
   };
 }

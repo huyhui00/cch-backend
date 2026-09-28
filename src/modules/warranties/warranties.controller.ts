@@ -9,7 +9,7 @@ import {
   QueryWarrantiesDto,
   UpdateWarrantyDto,
 } from './dto/warranty.dto';
-import { WarrantyResponseDto } from './dto/warranty.response';
+import { WarrantyPrintDto, WarrantyResponseDto } from './dto/warranty.response';
 import { WarrantiesService } from './warranties.service';
 
 /**
@@ -61,9 +61,29 @@ export class WarrantiesController {
     return this.warrantiesService.findAllByProject(projectId, query);
   }
 
+  @Get('warranties/:id/print')
+  @RequirePermission('warranty.view')
+  @ApiOperation({
+    summary: 'ข้อมูลสำหรับพิมพ์ใบรับประกัน',
+    description:
+      'คืน JSON ไม่ใช่ไฟล์ — ประกัน ใบส่งมอบ โครงการ ลูกค้า ผู้ติดต่อหลัก และสัญญา MA ที่ผูกไว้ ' +
+      '(อ้างอิงอย่างเดียว ไม่มีราคา/โควตา) หน้าจอจัดหน้ากระดาษเอง · ไม่กั้นตามสถานะ ' +
+      'หลังลูกค้าเซ็นให้สแกนแนบกลับด้วย POST /api/attachments ตาม attachScanHint (BR-12)',
+  })
+  @ApiParam({ name: 'id', description: 'id ของใบประกัน', example: 4 })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: WarrantyPrintDto })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  @ApiResponse({ status: 404, description: 'ไม่พบข้อมูลการรับประกัน' })
+  getPrintData(@Param('id', ParseIntPipe) id: number): Promise<WarrantyPrintDto> {
+    return this.warrantiesService.getPrintData(id);
+  }
+
   @Get('warranties/:id')
   @RequirePermission('warranty.view')
-  @ApiOperation({ summary: 'รายละเอียดการรับประกัน' })
+  @ApiOperation({
+    summary: 'รายละเอียดการรับประกัน',
+    description: 'พ่วง attachments (เอกสารแนบของใบประกัน ref_type = WARRANTY) มาด้วย',
+  })
   @ApiParam({ name: 'id', description: 'id ของใบประกัน', example: 4 })
   @ApiResponse({ status: 200, description: 'สำเร็จ', type: WarrantyResponseDto })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
@@ -77,7 +97,7 @@ export class WarrantiesController {
   @ApiOperation({
     summary: 'ออกประกันจากการส่งมอบ',
     description:
-      'startDate เท่ากับวันส่งมอบเสมอ ส่งมาเองไม่ได้ และ endDate = startDate + durationMonth ' +
+      'startDate = วันถัดจากวันส่งมอบเสมอ ส่งมาเองไม่ได้ และ endDate = startDate + durationMonth ' +
       'โดยหนีบวันสิ้นเดือนให้ (31 ม.ค. + 1 เดือน = 28 ก.พ. ไม่ใช่ 3 มี.ค.) ' +
       'ออกได้หลายใบต่อการส่งมอบหนึ่งครั้งถ้าระยะต่างกัน เช่นฮาร์ดแวร์ 12 เดือน ซอฟต์แวร์ 6 เดือน ' +
       'ระบุขอบเขตที่ครอบคลุมไว้ที่ scopeNote เพื่อใช้ตัดสินตอนเปิด ticket (BR-07) ' +
@@ -110,7 +130,8 @@ export class WarrantiesController {
     description:
       'แก้ durationMonth แล้ว endDate ถูกคำนวณใหม่จากวันส่งมอบเดิมให้เอง ' +
       'startDate แก้ที่นี่ไม่ได้ตาม BR-06 ถ้าวันส่งมอบผิดให้ไปแก้ที่ใบส่งมอบ ' +
-      'ระบบจะขยับประกันตามให้ ส่วน status ใช้สำหรับยกเลิกเป็น VOID เท่านั้น',
+      'ระบบจะขยับประกันตามให้ · status ตั้งได้แค่ ACTIVE / VOID — EXPIRED ระบบตั้งให้เอง ' +
+      'เมื่อเลยวันสิ้นสุด (ส่งมา = 400) ขยายระยะจนยังไม่หมดแล้วกลับเป็น ACTIVE เอง',
   })
   @ApiParam({ name: 'id', description: 'id ของใบประกัน', example: 4 })
   @ApiResponse({ status: 200, description: 'บันทึกการแก้ไขเรียบร้อย', type: WarrantyResponseDto })

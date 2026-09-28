@@ -17,6 +17,7 @@ export const ATTACHMENT_REF_TYPES = [
   'CUSTOMER',
   'MA_CONTRACT',
   'FOLLOW_UP',
+  'WARRANTY',
 ] as const;
 
 export type AttachmentRefType = (typeof ATTACHMENT_REF_TYPES)[number];

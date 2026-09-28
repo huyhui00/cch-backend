@@ -13,6 +13,7 @@ import {
   Ticket,
   TicketResolution,
   User,
+  Warranty,
 } from '../../models';
 import type { StorageService } from '../files/storage.service';
 import type { UploadedFileLike } from '../files/upload.util';
@@ -75,6 +76,7 @@ describe('AttachmentsService', () => {
   let ticketModel: ModelMock;
   let ticketResolutionModel: ModelMock;
   let maContractModel: ModelMock;
+  let warrantyModel: ModelMock;
   let userModel: { findAll: jest.Mock };
   let storage: { put: jest.Mock; get: jest.Mock };
   let service: AttachmentsService;
@@ -91,6 +93,7 @@ describe('AttachmentsService', () => {
     ticketModel = modelMock({ id: 7 });
     ticketResolutionModel = modelMock({ id: 9 });
     maContractModel = modelMock({ id: 4 });
+    warrantyModel = modelMock({ id: 8 });
     userModel = {
       findAll: jest.fn().mockResolvedValue([{ id: 4, fullName: 'สมชาย ใจดี' }]),
     };
@@ -109,6 +112,7 @@ describe('AttachmentsService', () => {
       ticketModel as unknown as typeof Ticket,
       ticketResolutionModel as unknown as typeof TicketResolution,
       maContractModel as unknown as typeof MaContract,
+      warrantyModel as unknown as typeof Warranty,
       userModel as unknown as typeof User,
       storage as unknown as StorageService,
     );
@@ -175,6 +179,25 @@ describe('AttachmentsService', () => {
         }),
         { where: { id: 4 } },
       );
+    });
+
+    it('แนบเอกสารให้ใบประกันได้ และตรวจว่าใบประกันมีอยู่จริง', async () => {
+      await service.upload(pdf('ใบรับประกันเซ็นแล้ว.pdf'), { refType: 'WARRANTY', refId: 8 });
+
+      expect(warrantyModel.findByPk).toHaveBeenCalledWith(8, { attributes: ['id'] });
+      expect(attachmentModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ refType: 'WARRANTY', refId: 8 }),
+      );
+      expect(maContractModel.update).not.toHaveBeenCalled();
+    });
+
+    it('ใบประกันไม่มี → 404 ข้อความของประกัน', async () => {
+      warrantyModel.findByPk.mockResolvedValue(null);
+
+      await expect(service.upload(pdf(), { refType: 'WARRANTY', refId: 99 })).rejects.toThrow(
+        'ไม่พบข้อมูลการรับประกัน',
+      );
+      expect(storage.put).not.toHaveBeenCalled();
     });
   });
 

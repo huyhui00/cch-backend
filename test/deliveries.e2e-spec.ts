@@ -141,10 +141,10 @@ describe('Deliveries → Warranties (e2e)', () => {
     // 3. ครั้งสุดท้ายที่ยอมรับแล้วมีได้ใบเดียวต่อโครงการ
     await accept(phaseId, { acceptanceStatus: 'ACCEPTED', isFinal: true }).expect(409);
 
-    // 4. ออกประกันจากครั้งสุดท้ายได้ วันเริ่ม = วันส่งมอบ v1.0
+    // 4. ออกประกันจากครั้งสุดท้ายได้ วันเริ่ม = วันถัดจากวันส่งมอบ v1.0
     const warranty = await issueWarranty(finalId, 6).expect(201);
     expect((warranty.body as ApiResponse<{ startDate: string }>).data.startDate).toBe(
-      '2026-09-01',
+      '2026-09-02',
     );
 
     // 5. ออกประกันแล้ว ถอยการตรวจรับหรือเอาเครื่องหมายครั้งสุดท้ายออกไม่ได้

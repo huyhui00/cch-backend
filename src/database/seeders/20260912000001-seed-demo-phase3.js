@@ -148,6 +148,11 @@ function addMonths(dateStr, months) {
   return dateOnly(target);
 }
 
+function addDays(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return dateOnly(new Date(y, m - 1, d + days));
+}
+
 function auditValues(now, actorId) {
   return {
     created_at: now,
@@ -487,7 +492,8 @@ module.exports = {
       { replacements: { d: finalDeliveryId } },
     );
     // วันเริ่มประกันต้องเท่ากับวันส่งมอบของใบที่ใช้จริงเสมอ (BR-06) ไม่ใช่วันที่ seeder ตั้งไว้
-    const warrantyStart = dateOnly(new Date(deliveredRows[0].delivered_at));
+    // สูตรเดียวกับ WarrantiesService: เริ่มวันถัดจากส่งมอบ สิ้นสุด = เริ่ม + 12 เดือน − 1 วัน
+    const warrantyStart = addDays(dateOnly(new Date(deliveredRows[0].delivered_at)), 1);
 
     let warrantyId = existingWarrantyId;
 
@@ -505,7 +511,7 @@ module.exports = {
           ma_contract_id: contractId,
           duration_month: 12,
           start_date: warrantyStart,
-          end_date: addMonths(warrantyStart, 12),
+          end_date: addDays(addMonths(warrantyStart, 12), -1),
           status: 'ACTIVE',
           scope_note:
             'ครอบคลุมข้อผิดพลาดของฟังก์ชันตามเอกสารข้อกำหนด v1.0 ' +

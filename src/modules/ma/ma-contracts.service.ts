@@ -313,7 +313,22 @@ export class MaContractsService {
 
     this.assertStatusIsSettable(dto.status);
 
-    const status = deriveContractStatus(dto.status ?? contract.status, endDate, todayAsDateOnly());
+    // ถอย RENEWED กลับเป็นสถานะอื่นได้ = ฉบับเดิมกับฉบับใหม่ ACTIVE ซ้อนกันทั้งคู่
+    // หน้าจอที่แก้ฉบับที่ต่อแล้ว (เช่นแก้หมายเหตุ) ต้องไม่ส่ง status มา
+    if (
+      contract.status === MaContractStatus.RENEWED &&
+      dto.status !== undefined &&
+      dto.status !== contract.status
+    ) {
+      throw new BadRequestException(
+        'สัญญาฉบับนี้ถูกต่อไปแล้ว เปลี่ยนสถานะไม่ได้ — ถ้าต้องการจบสัญญาให้แก้ที่ฉบับใหม่',
+      );
+    }
+
+    const status =
+      contract.status === MaContractStatus.RENEWED
+        ? contract.status
+        : deriveContractStatus(dto.status ?? contract.status, endDate, todayAsDateOnly());
 
     await contract.update({
       ...(dto.planId !== undefined ? { planId: dto.planId } : {}),

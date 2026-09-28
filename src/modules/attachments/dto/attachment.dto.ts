@@ -11,6 +11,7 @@ export const UPLOADABLE_ATTACHMENT_REF_TYPES = [
   'COMMUNICATION_LOG',
   'DELIVERY',
   'MA_CONTRACT',
+  'WARRANTY',
 ] as const satisfies readonly AttachmentRefType[];
 
 export type UploadableAttachmentRefType = (typeof UPLOADABLE_ATTACHMENT_REF_TYPES)[number];

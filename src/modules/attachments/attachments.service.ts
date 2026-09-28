@@ -10,6 +10,7 @@ import {
   Ticket,
   TicketResolution,
   User,
+  Warranty,
   type AttachmentRefType,
 } from '../../models';
 import { StorageService, type StoredFileStream } from '../files/storage.service';
@@ -38,12 +39,13 @@ const SCOPE_PREFIX: Record<UploadableAttachmentRefType, string> = {
   TICKET: 'tickets',
   TICKET_RESOLUTION: 'ticket-resolutions',
   MA_CONTRACT: 'ma-contracts',
+  WARRANTY: 'warranties',
 };
 
 /**
  * ไฟล์แนบ polymorphic (Phase 9 ส่วนที่เหลือ)
  *
- * BR-02 บันทึกการติดต่อ · BR-12 สแกนสัญญา MA · ใบส่งมอบ · ใบแจ้งปัญหา / รอบแก้
+ * BR-02 บันทึกการติดต่อ · BR-12 สแกนสัญญา MA · ใบส่งมอบ · ใบแจ้งปัญหา / รอบแก้ · ใบประกัน
  * ใช้ StorageService ตัวเดียวกับเอกสารโปรเจค — ห้ามต่อ S3 เอง
  *
  * ลบ = soft delete แถวอย่างเดียว ไฟล์ในที่เก็บยังอยู่เป็นหลักฐาน
@@ -59,6 +61,7 @@ export class AttachmentsService {
     @InjectModel(Ticket) private readonly ticketModel: typeof Ticket,
     @InjectModel(TicketResolution) private readonly ticketResolutionModel: typeof TicketResolution,
     @InjectModel(MaContract) private readonly maContractModel: typeof MaContract,
+    @InjectModel(Warranty) private readonly warrantyModel: typeof Warranty,
     @InjectModel(User) private readonly userModel: typeof User,
     private readonly storage: StorageService,
   ) {}
@@ -211,6 +214,9 @@ export class AttachmentsService {
       case 'MA_CONTRACT':
         exists = !!(await this.maContractModel.findByPk(refId, { attributes: ['id'] }));
         break;
+      case 'WARRANTY':
+        exists = !!(await this.warrantyModel.findByPk(refId, { attributes: ['id'] }));
+        break;
       default:
         throw new BadRequestException(
           'ประเภทนี้ยังไม่อนุญาตให้อัปโหลดผ่านเส้นไฟล์แนบ — เอกสารโปรเจคใช้ /api/projects/:id/documents',
@@ -234,6 +240,8 @@ export class AttachmentsService {
         return 'ไม่พบรอบการแก้ไข';
       case 'MA_CONTRACT':
         return 'ไม่พบสัญญาบำรุงรักษา';
+      case 'WARRANTY':
+        return 'ไม่พบข้อมูลการรับประกัน';
       default:
         return 'ไม่พบข้อมูลต้นทางของไฟล์แนบ';
     }

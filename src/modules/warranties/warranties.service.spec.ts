@@ -6,9 +6,10 @@ import { Op } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 import { runWithRequestContext } from '../../common/context/request-context';
-import { todayAsDateOnly, toDateOnly } from '../../common/utils/date.util';
+import { todayAsDateOnly } from '../../common/utils/date.util';
 import {
   AcceptanceStatus,
+  Attachment,
   Delivery,
   MaContract,
   Project,
@@ -20,6 +21,9 @@ import {
   WARRANTY_REQUIRES_ACCEPTANCE_MESSAGE,
   WARRANTY_REQUIRES_FINAL_DELIVERY_MESSAGE,
   WarrantiesService,
+  deriveWarrantyStatus,
+  warrantyEndDateFor,
+  warrantyStartDateFor,
 } from './warranties.service';
 import type { QueryExpiringWarrantiesDto, QueryWarrantiesDto } from './dto/warranty.dto';
 import { isWarrantyCurrentlyActive } from './dto/warranty.response';
@@ -39,6 +43,7 @@ interface ModelMock {
   findAll: jest.Mock;
   findAndCountAll: jest.Mock;
   create: jest.Mock;
+  update: jest.Mock;
 }
 
 function modelMock(): ModelMock {
@@ -48,6 +53,7 @@ function modelMock(): ModelMock {
     findAll: jest.fn(),
     findAndCountAll: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
   };
 }
 
@@ -115,6 +121,7 @@ describe('WarrantiesService', () => {
   let deliveryModel: ModelMock;
   let projectModel: ModelMock;
   let maContractModel: ModelMock;
+  let attachmentModel: ModelMock;
   const sequelize = {
     transaction: jest.fn((callback: (t: unknown) => Promise<unknown>) => callback({ name: 'tx' })),
     query: jest.fn((sql: string) =>
@@ -128,6 +135,8 @@ describe('WarrantiesService', () => {
     deliveryModel = modelMock();
     projectModel = modelMock();
     maContractModel = modelMock();
+    attachmentModel = modelMock();
+    attachmentModel.findAll.mockResolvedValue([]);
 
     warrantyModel.findOne.mockResolvedValue(null);
     warrantyModel.findAll.mockResolvedValue([]);
@@ -144,6 +153,7 @@ describe('WarrantiesService', () => {
       deliveryModel as unknown as typeof Delivery,
       projectModel as unknown as typeof Project,
       maContractModel as unknown as typeof MaContract,
+      attachmentModel as unknown as typeof Attachment,
       sequelize as unknown as Sequelize,
     );
   });
@@ -152,7 +162,7 @@ describe('WarrantiesService', () => {
   // BR-06 — วันเริ่มประกันมาจากวันส่งมอบเท่านั้น
   // -------------------------------------------------------------------------
   describe('create', () => {
-    it('ใช้วันส่งมอบเป็นวันเริ่มประกัน ไม่ได้รับค่าจากผู้ใช้', async () => {
+    it('ประกันเริ่มวันถัดจากวันส่งมอบ ไม่ได้รับค่าจากผู้ใช้', async () => {
       const deliveredAt = new Date(2026, 8, 8, 10, 30);
       deliveryModel.findByPk.mockResolvedValue(deliveryRow(deliveredAt));
 
@@ -170,8 +180,21 @@ describe('WarrantiesService', () => {
 
       await service.create(5, { durationMonth: 12 });
 
-      expect(captured.startDate).toBe(toDateOnly(deliveredAt));
+      expect(captured.startDate).toBe('2026-09-09');
       expect(captured.endDate).toBe('2027-09-08');
+    });
+
+    it('ส่งมอบดึกแค่ไหนก็เริ่มวันถัดไป (นับตามวันเครื่อง ไม่ใช่ +24 ชม.)', () => {
+      expect(warrantyStartDateFor(new Date(2026, 8, 8, 0, 5))).toBe('2026-09-09');
+      expect(warrantyStartDateFor(new Date(2026, 8, 8, 23, 55))).toBe('2026-09-09');
+      expect(warrantyStartDateFor(new Date(2026, 11, 31, 12, 0))).toBe('2027-01-01');
+    });
+
+    it('ประกัน N เดือนคุ้มครองครบ N เดือนพอดี ไม่เกินวัน (เริ่ม + N เดือน − 1 วัน)', () => {
+      // ส่งมอบ 28 ก.ย. 69 → เริ่ม 29 ก.ย. 69 → หมด 28 ก.ย. 70 (365 วัน)
+      expect(warrantyEndDateFor('2026-09-29', 12)).toBe('2027-09-28');
+      expect(warrantyEndDateFor('2026-01-01', 1)).toBe('2026-01-31');
+      expect(warrantyEndDateFor('2026-03-01', 12)).toBe('2027-02-28');
     });
 
     it('คัดลอก projectId มาจากใบส่งมอบ ไม่ใช่รับมาจาก client', async () => {
@@ -190,7 +213,8 @@ describe('WarrantiesService', () => {
     });
 
     it('หนีบวันสิ้นเดือนตอนคำนวณวันหมดประกัน', async () => {
-      deliveryModel.findByPk.mockResolvedValue(deliveryRow(new Date(2026, 0, 31, 9, 0)));
+      // ส่งมอบ 30 ม.ค. → ประกันเริ่ม 31 ม.ค. → +1 เดือน หนีบเป็น 28 ก.พ. − 1 วัน = 27 ก.พ.
+      deliveryModel.findByPk.mockResolvedValue(deliveryRow(new Date(2026, 0, 30, 9, 0)));
 
       let captured: { endDate: string } = { endDate: '' };
       warrantyModel.create.mockImplementation((values: { endDate: string }) => {
@@ -200,7 +224,7 @@ describe('WarrantiesService', () => {
 
       await service.create(5, { durationMonth: 1 });
 
-      expect(captured.endDate).toBe('2026-02-28');
+      expect(captured.endDate).toBe('2026-02-27');
     });
 
     it.each([AcceptanceStatus.PENDING, AcceptanceStatus.REJECTED])(
@@ -406,7 +430,7 @@ describe('WarrantiesService', () => {
       await service.update(4, { durationMonth: 6 });
 
       expect(warranty.update).toHaveBeenCalledWith(
-        expect.objectContaining({ durationMonth: 6, endDate: '2027-03-08' }),
+        expect.objectContaining({ durationMonth: 6, endDate: '2027-03-07' }),
       );
     });
 
@@ -459,13 +483,13 @@ describe('WarrantiesService', () => {
 
       expect(shifted).toBe(1);
       expect(warranty.update).toHaveBeenCalledWith(
-        expect.objectContaining({ startDate: '2026-10-01', endDate: '2027-10-01' }),
+        expect.objectContaining({ startDate: '2026-10-02', endDate: '2027-10-01' }),
         { transaction: undefined },
       );
     });
 
     it('ไม่เขียนอะไรเลยเมื่อวันส่งมอบไม่ได้เปลี่ยนจริง', async () => {
-      const warranty = warrantyRow({ startDate: '2026-09-08' });
+      const warranty = warrantyRow({ startDate: '2026-09-09' });
       warrantyModel.findAll.mockResolvedValue([warranty]);
 
       const delivery = { id: 5, deliveredAt: new Date(2026, 8, 8, 23, 0) } as Delivery;
@@ -672,7 +696,7 @@ describe('WarrantiesService', () => {
     });
 
     it('ใบที่ค้างสถานะ EXPIRED ยังคุ้มครองถ้าวันที่ยังอยู่ในช่วง', () => {
-      // ยังไม่มี scheduler ปรับสถานะ ค่าที่ค้างอยู่จึงเชื่อไม่ได้ ต้องตัดสินด้วยวันที่
+      // cron ปรับสถานะเป็นรอบ ค่าที่บันทึกอาจตามไม่ทัน ต้องตัดสินด้วยวันที่
       expect(
         isWarrantyCurrentlyActive({ ...warranty, status: WarrantyStatus.EXPIRED }, '2026-12-01'),
       ).toBe(true);
@@ -685,5 +709,145 @@ describe('WarrantiesService', () => {
     await expect(service.findAllByProject(999, queryDto())).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // เอกสารแนบ + พิมพ์ใบรับประกัน (ประชุมทบทวน 22–23 ก.ย.)
+  // -------------------------------------------------------------------------
+  describe('findOne — เอกสารแนบ', () => {
+    it('พ่วงไฟล์แนบ ref_type = WARRANTY ของใบนี้ โดยไม่คืน object key', async () => {
+      attachmentModel.findAll.mockResolvedValue([
+        {
+          id: 30,
+          fileName: 'ใบรับประกันเซ็นแล้ว.pdf',
+          fileSize: 1024,
+          mimeType: 'application/pdf',
+          fileUrl: 'warranties/4/2026/09/x.pdf',
+          createdAt: new Date('2026-09-28T00:00:00Z'),
+        },
+      ]);
+
+      const result = await service.findOne(4);
+
+      expect(attachmentModel.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { refType: 'WARRANTY', refId: 4 } }),
+      );
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0].downloadUrl).toBe('/api/attachments/30/download');
+      expect(result.attachments[0]).not.toHaveProperty('fileUrl');
+    });
+  });
+
+  describe('getPrintData', () => {
+    function printableRow(contacts: unknown[]) {
+      return warrantyRow({
+        warrantyNo: 'WAR69-0008',
+        delivery: {
+          id: 5,
+          deliveryNo: 'DLV69-0003',
+          title: 'ส่งมอบระบบ',
+          version: 'v1.0',
+          deliveredAt: new Date('2026-09-07T03:00:00Z'),
+          acceptedAt: new Date('2026-09-07T05:00:00Z'),
+          acceptedByContact: { name: 'คุณสมศรี' },
+        },
+        project: {
+          id: 1,
+          code: 'PRJ69-0001',
+          name: 'ระบบคลัง',
+          customerId: 2,
+          customer: { id: 2, code: 'CUS69-0001', name: 'บริษัท ก', contacts },
+        },
+      } as unknown as Partial<WarrantyRow>);
+    }
+
+    it('ประกอบข้อมูลครบ พร้อมคำแนะนำให้สแกนแนบกลับที่ใบประกัน', async () => {
+      warrantyModel.findByPk.mockResolvedValue(
+        printableRow([
+          { name: 'คนแรก', isPrimary: false },
+          { name: 'ผู้ติดต่อหลัก', isPrimary: true, position: null, phone: null, email: null },
+        ]),
+      );
+
+      const print = await service.getPrintData(4);
+
+      expect(print.warranty.warrantyNo).toBe('WAR69-0008');
+      expect(print.delivery.acceptedByContactName).toBe('คุณสมศรี');
+      expect(print.customer.name).toBe('บริษัท ก');
+      expect(print.primaryContact?.name).toBe('ผู้ติดต่อหลัก');
+      expect(print.attachScanHint).toEqual({
+        refType: 'WARRANTY',
+        refId: 4,
+        noteSuggestion: 'ใบรับประกัน WAR69-0008 ลูกค้าเซ็นแล้ว',
+      });
+    });
+
+    it('ไม่มีผู้ติดต่อหลัก = null ไม่หยิบคนแรกมาแทน', async () => {
+      warrantyModel.findByPk.mockResolvedValue(printableRow([{ name: 'คนแรก', isPrimary: false }]));
+
+      await expect(service.getPrintData(4)).resolves.toMatchObject({ primaryContact: null });
+    });
+
+    it('ไม่พบใบประกัน → 404', async () => {
+      warrantyModel.findByPk.mockResolvedValue(null);
+
+      await expect(service.getPrintData(99)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // EXPIRED ระบบตัดสินจากวันสิ้นสุด — กติกาเดียวกับสัญญา MA
+  // -------------------------------------------------------------------------
+  describe('สถานะหมดอายุ', () => {
+    it('deriveWarrantyStatus: ACTIVE เลยวันสิ้นสุด → EXPIRED, ขยายแล้ว → ACTIVE, VOID ไม่ขยับ', () => {
+      expect(deriveWarrantyStatus(WarrantyStatus.ACTIVE, '2026-09-27', '2026-09-28')).toBe(
+        WarrantyStatus.EXPIRED,
+      );
+      expect(deriveWarrantyStatus(WarrantyStatus.ACTIVE, '2026-09-28', '2026-09-28')).toBe(
+        WarrantyStatus.ACTIVE,
+      );
+      expect(deriveWarrantyStatus(WarrantyStatus.EXPIRED, '2027-01-01', '2026-09-28')).toBe(
+        WarrantyStatus.ACTIVE,
+      );
+      expect(deriveWarrantyStatus(WarrantyStatus.VOID, '2020-01-01', '2026-09-28')).toBe(
+        WarrantyStatus.VOID,
+      );
+    });
+
+    it('ตั้ง EXPIRED เองไม่ได้ → 400', async () => {
+      await expect(service.update(4, { status: WarrantyStatus.EXPIRED })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('ขยายระยะประกันที่หมดแล้วจนยังไม่ถึงวันสิ้นสุด → กลับเป็น ACTIVE เอง', async () => {
+      const row = warrantyRow({
+        startDate: '2020-01-01',
+        endDate: '2020-07-01',
+        durationMonth: 6,
+        status: WarrantyStatus.EXPIRED,
+      });
+      warrantyModel.findByPk.mockResolvedValue(row);
+
+      await service.update(4, { durationMonth: 120 });
+
+      expect(row.update).toHaveBeenCalledWith(
+        expect.objectContaining({ endDate: '2029-12-31', status: WarrantyStatus.ACTIVE }),
+      );
+    });
+
+    it('expireEndedWarranties เปลี่ยนเฉพาะ ACTIVE ที่ endDate < วันนี้', async () => {
+      warrantyModel.update.mockResolvedValue([2]);
+
+      await expect(service.expireEndedWarranties('2026-09-28')).resolves.toBe(2);
+
+      const [values, options] = warrantyModel.update.mock.calls[0] as [
+        { status: WarrantyStatus },
+        { where: { status: WarrantyStatus; endDate: Record<symbol, string> } },
+      ];
+      expect(values).toEqual({ status: WarrantyStatus.EXPIRED });
+      expect(options.where.status).toBe(WarrantyStatus.ACTIVE);
+      expect(options.where.endDate[Op.lt]).toBe('2026-09-28');
+    });
   });
 });

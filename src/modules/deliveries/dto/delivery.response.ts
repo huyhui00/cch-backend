@@ -1,7 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 import { AcceptanceStatus, Attachment, Delivery, Warranty } from '../../../models';
+import {
+  AttachmentSummaryDto,
+  toAttachmentSummary,
+} from '../../attachments/dto/attachment.response';
 import { WarrantySummaryDto, toWarrantySummary } from '../../warranties/dto/warranty.response';
+
+export { AttachmentSummaryDto, toAttachmentSummary };
 
 export class UserSummaryDto {
   @ApiProperty({ example: 3 })
@@ -31,30 +37,6 @@ export class DeliveryProjectSummaryDto {
 
   @ApiProperty({ example: 1 })
   customerId: number;
-}
-
-/** ไฟล์แนบของใบส่งมอบ — ไม่คืน object key ให้ดาวน์โหลดผ่าน downloadUrl */
-export class AttachmentSummaryDto {
-  @ApiProperty({ example: 12 })
-  id: number;
-
-  @ApiProperty({ example: 'ใบส่งมอบเซ็นแล้ว.pdf' })
-  fileName: string;
-
-  @ApiProperty({ nullable: true, example: 248311 })
-  fileSize: number | null;
-
-  @ApiProperty({ nullable: true, example: 'application/pdf' })
-  mimeType: string | null;
-
-  @ApiProperty({
-    description: 'path ดาวน์โหลดที่ต้องแนบ Authorization — ไม่ใช่ลิงก์สาธารณะ',
-    example: '/api/attachments/12/download',
-  })
-  downloadUrl: string;
-
-  @ApiProperty()
-  createdAt: Date;
 }
 
 export class DeliveryResponseDto {
@@ -142,17 +124,6 @@ function toUserSummary(
   user: { id: number; username: string; fullName: string } | null | undefined,
 ): UserSummaryDto | null {
   return user ? { id: user.id, username: user.username, fullName: user.fullName } : null;
-}
-
-export function toAttachmentSummary(attachment: Attachment): AttachmentSummaryDto {
-  return {
-    id: attachment.id,
-    fileName: attachment.fileName,
-    fileSize: attachment.fileSize === null ? null : Number(attachment.fileSize),
-    mimeType: attachment.mimeType,
-    downloadUrl: `/api/attachments/${attachment.id}/download`,
-    createdAt: attachment.createdAt,
-  };
 }
 
 /**

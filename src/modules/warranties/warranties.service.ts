@@ -10,10 +10,13 @@ import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
-import { addMonths, toDateOnly, todayAsDateOnly } from '../../common/utils/date.util';
+import { addDays, addMonths, toDateOnly, todayAsDateOnly } from '../../common/utils/date.util';
 import { nextGeneratedCode } from '../../common/utils/code-sequence.util';
 import {
   AcceptanceStatus,
+  Attachment,
+  type AttachmentRefType,
+  Contact,
   Customer,
   Delivery,
   MaContract,
@@ -28,7 +31,14 @@ import {
   QueryWarrantiesDto,
   UpdateWarrantyDto,
 } from './dto/warranty.dto';
-import { type WarrantyResponseDto, toWarrantyResponse } from './dto/warranty.response';
+import {
+  type WarrantyPrintDto,
+  type WarrantyResponseDto,
+  toWarrantyPrint,
+  toWarrantyResponse,
+} from './dto/warranty.response';
+
+const ATTACHMENT_REF_TYPE: AttachmentRefType = 'WARRANTY';
 
 const SORTABLE_FIELDS = new Set(['id', 'startDate', 'endDate', 'durationMonth', 'createdAt']);
 
@@ -43,6 +53,41 @@ export const WARRANTY_REQUIRES_FINAL_DELIVERY_MESSAGE =
 export const WARRANTY_MA_CONTRACT_PROJECT_MISMATCH_MESSAGE =
   'สัญญา MA ที่เลือกไม่ใช่สัญญาของโครงการเดียวกันกับประกันใบนี้ — ' +
   'ประกันผูกกับโครงการผ่านใบส่งมอบ จึงผูกได้เฉพาะสัญญาของโครงการนั้น';
+
+export const WARRANTY_EXPIRED_NOT_SETTABLE_MESSAGE =
+  'สถานะหมดอายุตั้งเองไม่ได้ — ระบบเปลี่ยนให้เองเมื่อเลยวันสิ้นสุดประกัน ' +
+  'ถ้าต้องการยกเลิกประกันให้เลือกยกเลิก (VOID)';
+
+/** ส่งมอบวันนี้ ประกันเริ่มนับพรุ่งนี้เป็นวันที่ 1 ไม่ว่าจะส่งเวลาไหน */
+export function warrantyStartDateFor(deliveredAt: Date): string {
+  return addDays(toDateOnly(deliveredAt), 1);
+}
+
+/**
+ * วันสุดท้ายที่ยังคุ้มครอง (นับรวม) = เริ่ม + N เดือน − 1 วัน — ครบ N เดือนพอดี สูตรเดียวกับสัญญา MA รายปี
+ * addMonths หนีบวันสิ้นเดือนก่อนลบ: เริ่ม 31 ม.ค. ระยะ 1 เดือน → 27 ก.พ.
+ */
+export function warrantyEndDateFor(startDate: string, durationMonth: number): string {
+  return addDays(addMonths(startDate, durationMonth), -1);
+}
+
+/**
+ * EXPIRED ระบบตัดสินจากวันสิ้นสุด — กติกาเดียวกับสัญญา MA
+ * VOID เป็นการตัดสินของคน ไม่ถูกเปลี่ยนตามวันที่
+ */
+export function deriveWarrantyStatus(
+  status: WarrantyStatus,
+  endDate: string,
+  today: string,
+): WarrantyStatus {
+  if (status === WarrantyStatus.ACTIVE && endDate < today) {
+    return WarrantyStatus.EXPIRED;
+  }
+  if (status === WarrantyStatus.EXPIRED && endDate >= today) {
+    return WarrantyStatus.ACTIVE;
+  }
+  return status;
+}
 
 /** สร้างใหม่ทุกครั้ง — Sequelize แก้ object ของ include ในที่ตอน normalize ห้ามใช้ร่วมกัน */
 function deliveryInclude() {
@@ -117,6 +162,7 @@ export class WarrantiesService {
     @InjectModel(Delivery) private readonly deliveryModel: typeof Delivery,
     @InjectModel(Project) private readonly projectModel: typeof Project,
     @InjectModel(MaContract) private readonly maContractModel: typeof MaContract,
+    @InjectModel(Attachment) private readonly attachmentModel: typeof Attachment,
     @InjectConnection() private readonly sequelize: Sequelize,
   ) {}
 
@@ -142,8 +188,8 @@ export class WarrantiesService {
       throw new ConflictException(WARRANTY_REQUIRES_FINAL_DELIVERY_MESSAGE);
     }
 
-    const startDate = toDateOnly(delivery.deliveredAt);
-    const endDate = addMonths(startDate, dto.durationMonth);
+    const startDate = warrantyStartDateFor(delivery.deliveredAt);
+    const endDate = warrantyEndDateFor(startDate, dto.durationMonth);
 
     await this.assertNotDuplicate(deliveryId, dto.durationMonth);
     await this.assertMaContractMatchesProject(dto.maContractId, delivery.projectId);
@@ -160,7 +206,8 @@ export class WarrantiesService {
           durationMonth: dto.durationMonth,
           startDate,
           endDate,
-          status: WarrantyStatus.ACTIVE,
+          // คีย์ประกันเก่าจากกระดาษที่หมดไปแล้ว บันทึกเป็น EXPIRED ทันที
+          status: deriveWarrantyStatus(WarrantyStatus.ACTIVE, endDate, todayAsDateOnly()),
           scopeNote: dto.scopeNote ?? null,
           createdBy: actorId,
           updatedBy: actorId,
@@ -181,7 +228,69 @@ export class WarrantiesService {
       throw new NotFoundException('ไม่พบข้อมูลการรับประกัน');
     }
 
-    return toWarrantyResponse(warranty, todayAsDateOnly());
+    const attachments = await this.attachmentModel.findAll({
+      where: { refType: ATTACHMENT_REF_TYPE, refId: id },
+      order: [['id', 'ASC']],
+    });
+
+    return toWarrantyResponse(warranty, todayAsDateOnly(), attachments);
+  }
+
+  /**
+   * ข้อมูลใบรับประกันสำหรับพิมพ์ — คืน JSON หน้าจอจัดหน้ากระดาษเอง
+   *
+   * ไม่กั้นตามสถานะ: พิมพ์ใบที่หมดแล้วหรือยกเลิกแล้วเข้าแฟ้มได้ หน้าจอใช้ status ทำลายน้ำเอง
+   * include ประกาศใหม่ในนี้ทั้งหมด ไม่ใช้ร่วมกับ findOne() (Sequelize แก้ object ของ include ในที่)
+   */
+  async getPrintData(id: number): Promise<WarrantyPrintDto> {
+    const warranty = await this.warrantyModel.findByPk(id, {
+      include: [
+        {
+          model: Delivery,
+          required: false,
+          paranoid: false,
+          include: [{ model: Contact, as: 'acceptedByContact', required: false, paranoid: false }],
+        },
+        {
+          model: Project,
+          attributes: ['id', 'code', 'name', 'customerId'],
+          required: false,
+          paranoid: false,
+          include: [
+            {
+              model: Customer,
+              required: false,
+              paranoid: false,
+              // ผู้ติดต่อที่ถูกลบไปแล้วไม่ควรไปโผล่ในเอกสารใหม่ จึงไม่ปิด paranoid ของชั้นนี้
+              include: [{ model: Contact, required: false }],
+            },
+          ],
+        },
+        maContractInclude(),
+      ],
+    });
+
+    if (!warranty) {
+      throw new NotFoundException('ไม่พบข้อมูลการรับประกัน');
+    }
+
+    const customer = warranty.project?.customer;
+    if (!warranty.delivery || !warranty.project || !customer) {
+      throw new NotFoundException(
+        'ข้อมูลใบส่งมอบ โครงการ หรือลูกค้าของประกันนี้ไม่ครบ จึงพิมพ์ใบรับประกันไม่ได้',
+      );
+    }
+
+    return toWarrantyPrint({ warranty, customer, onDate: todayAsDateOnly() });
+  }
+
+  /** ACTIVE ที่เลยวันสิ้นสุด → EXPIRED — เรียกจาก WarrantyExpiryScheduler */
+  async expireEndedWarranties(today: string = todayAsDateOnly()): Promise<number> {
+    const [affected] = await this.warrantyModel.update(
+      { status: WarrantyStatus.EXPIRED },
+      { where: { status: WarrantyStatus.ACTIVE, endDate: { [Op.lt]: today } } },
+    );
+    return affected;
   }
 
   async findAllByProject(
@@ -229,9 +338,8 @@ export class WarrantiesService {
    * ไม่รวมประกันที่หมดอายุไปแล้ว เพราะหน้าจอนี้มีไว้ให้ไล่ต่อสัญญาทัน
    * ของที่สายไปแล้วต้องไปดูที่รายการประกันของโครงการแทน
    *
-   * กรองด้วย status != VOID ไม่ใช่ status == ACTIVE เพราะยังไม่มีตัวปรับสถานะ
-   * เป็น EXPIRED อัตโนมัติ แถวที่ค้างเป็น EXPIRED จากการแก้มือจึงยังต้องนับด้วย
-   * ถ้าวันที่ยังอยู่ในช่วง
+   * กรองด้วย status != VOID ไม่ใช่ status == ACTIVE เพราะ cron ปรับสถานะรายชั่วโมง
+   * ค่าที่บันทึกอาจยังไม่ตรงกับวันที่ ตัดสินจากช่วงวันที่เป็นหลัก
    */
   async findExpiring(
     query: QueryExpiringWarrantiesDto,
@@ -273,7 +381,16 @@ export class WarrantiesService {
     const actorId = getCurrentUserId();
     const warranty = await this.findOrFail(id);
 
+    if (dto.status === WarrantyStatus.EXPIRED) {
+      throw new BadRequestException(WARRANTY_EXPIRED_NOT_SETTABLE_MESSAGE);
+    }
+
     const durationMonth = dto.durationMonth ?? warranty.durationMonth;
+    const endDate =
+      dto.durationMonth !== undefined
+        ? warrantyEndDateFor(warranty.startDate, durationMonth)
+        : warranty.endDate;
+    const status = deriveWarrantyStatus(dto.status ?? warranty.status, endDate, todayAsDateOnly());
 
     // ส่ง null มา = ถอดการผูกออก (ผูกผิดฉบับ) ไม่ส่งมาเลย = คงค่าเดิม
     if (dto.maContractId !== undefined && dto.maContractId !== null) {
@@ -281,10 +398,8 @@ export class WarrantiesService {
     }
 
     await warranty.update({
-      ...(dto.durationMonth !== undefined
-        ? { durationMonth, endDate: addMonths(warranty.startDate, durationMonth) }
-        : {}),
-      ...(dto.status !== undefined ? { status: dto.status } : {}),
+      ...(dto.durationMonth !== undefined ? { durationMonth, endDate } : {}),
+      ...(status !== warranty.status ? { status } : {}),
       ...(dto.scopeNote !== undefined ? { scopeNote: dto.scopeNote ?? null } : {}),
       ...(dto.maContractId !== undefined ? { maContractId: dto.maContractId ?? null } : {}),
       updatedBy: actorId,
@@ -349,13 +464,14 @@ export class WarrantiesService {
    */
   async resyncByDelivery(delivery: Delivery, transaction?: Transaction): Promise<number> {
     const actorId = getCurrentUserId();
-    const startDate = toDateOnly(delivery.deliveredAt);
+    const startDate = warrantyStartDateFor(delivery.deliveredAt);
 
     const warranties = await this.warrantyModel.findAll({
       where: { deliveryId: delivery.id },
       transaction,
     });
 
+    const today = todayAsDateOnly();
     let shifted = 0;
 
     for (const warranty of warranties) {
@@ -363,11 +479,14 @@ export class WarrantiesService {
         continue;
       }
 
+      const endDate = warrantyEndDateFor(startDate, warranty.durationMonth);
+
       // อัปเดตทีละแถวผ่าน instance เพื่อให้ audit hook บันทึก record_id ได้ (BR-09)
       await warranty.update(
         {
           startDate,
-          endDate: addMonths(startDate, warranty.durationMonth),
+          endDate,
+          status: deriveWarrantyStatus(warranty.status, endDate, today),
           updatedBy: actorId,
         },
         { transaction },

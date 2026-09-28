@@ -9,6 +9,7 @@ import {
   Ticket,
   TicketResolution,
   User,
+  Warranty,
 } from '../../models';
 import { FilesModule } from '../files/files.module';
 import { AttachmentsController } from './attachments.controller';
@@ -29,6 +30,7 @@ import { AttachmentsService } from './attachments.service';
       Ticket,
       TicketResolution,
       MaContract,
+      Warranty,
       User,
     ]),
     FilesModule,

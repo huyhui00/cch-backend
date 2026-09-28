@@ -289,6 +289,32 @@ describe('MaContractsService', () => {
       );
     });
 
+    it('ฉบับที่ต่อแล้ว (RENEWED) ถูกเปลี่ยนกลับเป็น ACTIVE ไม่ได้', async () => {
+      // ถ้าถอยได้ ฉบับเดิมกับฉบับใหม่จะ ACTIVE ซ้อนกัน แล้วการหักโควตาเลือกสัญญาผิด
+      contractModel.findByPk.mockResolvedValue(contractRow({ status: MaContractStatus.RENEWED }));
+
+      await expect(service.update(12, { status: MaContractStatus.ACTIVE })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('ฉบับที่ต่อแล้วยังแก้หมายเหตุได้ และสถานะคงเป็น RENEWED แม้เลยวันสิ้นสุด', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      contractModel.findByPk.mockResolvedValue(
+        contractRow({
+          status: MaContractStatus.RENEWED,
+          startDate: '2020-01-01',
+          endDate: '2020-12-31',
+          update,
+        }),
+      );
+
+      await service.update(12, { note: 'แก้หมายเหตุ' });
+
+      const [changes] = update.mock.calls[0] as [Record<string, unknown>];
+      expect(changes).not.toHaveProperty('status');
+    });
+
     it('ตั้งสถานะ EXPIRED เองไม่ได้', async () => {
       await expect(service.update(12, { status: MaContractStatus.EXPIRED })).rejects.toBeInstanceOf(
         BadRequestException,

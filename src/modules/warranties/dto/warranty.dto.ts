@@ -83,10 +83,9 @@ export class UpdateWarrantyDto {
   durationMonth?: number;
 
   @ApiPropertyOptional({
-    enum: WarrantyStatus,
+    enum: [WarrantyStatus.ACTIVE, WarrantyStatus.VOID],
     description:
-      'ใช้สำหรับยกเลิกประกันเป็น VOID เท่านั้น — EXPIRED ไม่ต้องตั้งเอง ' +
-      'ระบบดูจาก endDate เทียบวันที่ปัจจุบันให้อยู่แล้ว',
+      'ตั้งได้แค่ ACTIVE หรือ VOID (ยกเลิก) — EXPIRED ระบบตั้งให้เองเมื่อเลยวันสิ้นสุด ส่งมาจะได้ 400',
   })
   @IsOptional()
   @IsEnum(WarrantyStatus, { message: 'สถานะการรับประกันต้องเป็น ACTIVE, EXPIRED หรือ VOID' })

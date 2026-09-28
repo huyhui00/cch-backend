@@ -1,9 +1,19 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 
-import { Customer, Delivery, MaContract, MaPlan, Project, Warranty } from '../../models';
+import {
+  Attachment,
+  Contact,
+  Customer,
+  Delivery,
+  MaContract,
+  MaPlan,
+  Project,
+  Warranty,
+} from '../../models';
 import { WarrantiesController } from './warranties.controller';
 import { WarrantiesService } from './warranties.service';
+import { WarrantyExpiryScheduler } from './warranty-expiry.scheduler';
 
 /**
  * Phase 6 — การรับประกัน (โมดูล M4, BR-06)
@@ -22,10 +32,19 @@ import { WarrantiesService } from './warranties.service';
  */
 @Module({
   imports: [
-    SequelizeModule.forFeature([Warranty, Delivery, Project, Customer, MaContract, MaPlan]),
+    SequelizeModule.forFeature([
+      Warranty,
+      Delivery,
+      Project,
+      Customer,
+      Contact,
+      MaContract,
+      MaPlan,
+      Attachment,
+    ]),
   ],
   controllers: [WarrantiesController],
-  providers: [WarrantiesService],
+  providers: [WarrantiesService, WarrantyExpiryScheduler],
   exports: [WarrantiesService],
 })
 export class WarrantiesModule {}
