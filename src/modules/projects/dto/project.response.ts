@@ -139,6 +139,15 @@ export class TaskSubmissionResponseDto {
   @ApiProperty({ nullable: true })
   downloadUrl: string | null;
 
+  @ApiProperty({ nullable: true, example: 4 })
+  reviewedByUserId: number | null;
+
+  @ApiProperty({ nullable: true, description: 'ไฟล์ที่ผู้ตรวจแนบตอนส่งกลับแก้' })
+  reviewFileName: string | null;
+
+  @ApiProperty({ nullable: true })
+  reviewDownloadUrl: string | null;
+
   @ApiProperty()
   submittedAt: Date;
 }
@@ -168,6 +177,41 @@ export class TaskProjectSummaryDto {
 export class CompanyTaskResponseDto extends TaskResponseDto {
   @ApiProperty({ type: TaskProjectSummaryDto, nullable: true })
   project: TaskProjectSummaryDto | null;
+}
+
+export class TaskReviewTaskSummaryDto {
+  @ApiProperty({ example: 5 })
+  id: number;
+
+  @ApiProperty({ example: 'หน้ารายการสินค้า' })
+  title: string;
+
+  @ApiProperty({ enum: TaskStatus })
+  status: TaskStatus;
+
+  @ApiProperty({ enum: TaskPriority })
+  priority: TaskPriority;
+
+  @ApiProperty({ nullable: true, example: '2026-10-01' })
+  dueDate: string | null;
+}
+
+/** แถวในเมนู "งานตรวจ" — หนึ่งแถวต่อรายงานการส่งตรวจหนึ่งรอบ */
+export class TaskReviewItemDto {
+  @ApiProperty({ type: TaskSubmissionResponseDto })
+  submission: TaskSubmissionResponseDto;
+
+  @ApiProperty({ type: TaskReviewTaskSummaryDto })
+  task: TaskReviewTaskSummaryDto;
+
+  @ApiProperty({ type: TaskProjectSummaryDto, nullable: true })
+  project: TaskProjectSummaryDto | null;
+
+  @ApiProperty({ type: UserSummaryDto, nullable: true })
+  submittedBy: UserSummaryDto | null;
+
+  @ApiProperty({ type: UserSummaryDto, nullable: true })
+  reviewedBy: UserSummaryDto | null;
 }
 
 export class TaskAssigneeLoadDto {
@@ -408,7 +452,36 @@ export function toTaskSubmissionResponse(submission: TaskSubmission): TaskSubmis
     reviewedAt: submission.reviewedAt,
     fileName: submission.fileName,
     downloadUrl: submission.fileUrl ? `/api/tasks/submissions/${submission.id}/download` : null,
+    reviewedByUserId: submission.reviewedByUserId,
+    reviewFileName: submission.reviewFileName,
+    reviewDownloadUrl: submission.reviewFileUrl
+      ? `/api/tasks/submissions/${submission.id}/review-file/download`
+      : null,
     submittedAt: submission.createdAt,
+  };
+}
+
+export function toTaskReviewItem(submission: TaskSubmission): TaskReviewItemDto {
+  const task = submission.task;
+  return {
+    submission: toTaskSubmissionResponse(submission),
+    task: {
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      priority: task.priority,
+      dueDate: task.dueDate,
+    },
+    project: task.project
+      ? {
+          id: task.project.id,
+          code: task.project.code,
+          name: task.project.name,
+          status: task.project.status,
+        }
+      : null,
+    submittedBy: toUserSummary(submission.submittedBy),
+    reviewedBy: toUserSummary(submission.reviewedBy),
   };
 }
 

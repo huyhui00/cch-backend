@@ -2,14 +2,17 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
+  IsInt,
   IsNotEmpty,
+  IsPositive,
   IsNumberString,
   IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
 
-import { TaskStatus } from '../../../models';
+import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { TaskStatus, TaskSubmissionStatus } from '../../../models';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -43,4 +46,37 @@ export class ReviewTaskDto {
   @MaxLength(10000, { message: 'หมายเหตุยาวเกิน 10000 ตัวอักษร' })
   @Transform(trim)
   reviewNote?: string | null;
+}
+
+export enum TaskReviewTab {
+  PENDING = 'PENDING',
+  REVIEWED = 'REVIEWED',
+}
+
+/** เมนู "งานตรวจ" — แท็บรอตรวจ / ที่ฉันตรวจไปแล้ว */
+export class QueryTaskReviewsDto extends PaginationDto {
+  @ApiPropertyOptional({
+    enum: TaskReviewTab,
+    default: TaskReviewTab.PENDING,
+    description: 'PENDING = รายงานที่รอตรวจและฉันมีสิทธิ์ตรวจ · REVIEWED = รายงานที่ฉันตรวจไปแล้ว',
+  })
+  @IsOptional()
+  @IsEnum(TaskReviewTab, { message: 'tab ต้องเป็น PENDING หรือ REVIEWED' })
+  tab: TaskReviewTab = TaskReviewTab.PENDING;
+
+  @ApiPropertyOptional({
+    enum: [TaskSubmissionStatus.APPROVED, TaskSubmissionStatus.REJECTED],
+    description: 'ใช้กับแท็บ REVIEWED — กรองผลตรวจ (ผ่าน / ส่งกลับแก้)',
+  })
+  @IsOptional()
+  @IsEnum([TaskSubmissionStatus.APPROVED, TaskSubmissionStatus.REJECTED], {
+    message: 'result ต้องเป็น APPROVED หรือ REJECTED',
+  })
+  result?: TaskSubmissionStatus.APPROVED | TaskSubmissionStatus.REJECTED;
+
+  @ApiPropertyOptional({ description: 'กรองเฉพาะโครงการนี้', example: 1 })
+  @IsOptional()
+  @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
+  projectId?: number;
 }

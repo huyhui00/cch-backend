@@ -23,6 +23,10 @@ export interface TaskSubmissionCreationAttributes {
   reviewedByUserId?: number | null;
   reviewedAt?: Date | null;
   reviewNote?: string | null;
+  reviewFileUrl?: string | null;
+  reviewFileName?: string | null;
+  reviewFileSize?: number | null;
+  reviewMimeType?: string | null;
   createdBy?: number | null;
   updatedBy?: number | null;
 }
@@ -71,6 +75,19 @@ export class TaskSubmission extends AuditedModel<TaskSubmission, TaskSubmissionC
 
   @Column({ type: DataType.TEXT, allowNull: true, field: 'review_note' })
   reviewNote: string | null;
+
+  /** ไฟล์ที่ผู้ตรวจแนบตอนส่งกลับแก้ — แยกจากไฟล์รายงานของผู้ส่ง */
+  @Column({ type: DataType.STRING(500), allowNull: true, field: 'review_file_url' })
+  reviewFileUrl: string | null;
+
+  @Column({ type: DataType.STRING(255), allowNull: true, field: 'review_file_name' })
+  reviewFileName: string | null;
+
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'review_file_size' })
+  reviewFileSize: number | null;
+
+  @Column({ type: DataType.STRING(100), allowNull: true, field: 'review_mime_type' })
+  reviewMimeType: string | null;
 
   @BelongsTo(() => Task)
   task: Task;

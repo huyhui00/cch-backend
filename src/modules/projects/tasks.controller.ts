@@ -31,6 +31,7 @@ import {
   CompanyTaskResponseDto,
   TaskBoardSummaryDto,
   TaskResponseDto,
+  TaskReviewItemDto,
 } from './dto/project.response';
 import {
   MAX_UPLOAD_MB,
@@ -47,7 +48,11 @@ import {
   UpdateTaskOrderDto,
   UpdateTaskStatusDto,
 } from './dto/task.dto';
-import { CreateTaskSubmissionDto, ReviewTaskDto } from './dto/task-submission.dto';
+import {
+  CreateTaskSubmissionDto,
+  QueryTaskReviewsDto,
+  ReviewTaskDto,
+} from './dto/task-submission.dto';
 import { TasksService } from './tasks.service';
 
 /**
@@ -74,6 +79,41 @@ export class TasksController {
       disposition: contentDisposition(file.fileName),
       length: file.contentLength ?? undefined,
     });
+  }
+
+  @Get('submissions/:submissionId/review-file/download')
+  @RequirePermission('task.view')
+  @ApiProduces('application/octet-stream')
+  @ApiOperation({ summary: 'ดาวน์โหลดไฟล์ที่ผู้ตรวจแนบตอนส่งกลับแก้' })
+  @ApiParam({ name: 'submissionId', description: 'id ของรายงาน', example: 10 })
+  @ApiResponse({ status: 404, description: 'ไม่พบไฟล์แนบของผู้ตรวจ' })
+  async downloadReviewFile(
+    @Param('submissionId', ParseIntPipe) submissionId: number,
+  ): Promise<StreamableFile> {
+    const file = await this.tasksService.openReviewFile(submissionId);
+    return new StreamableFile(file.stream, {
+      type: file.mimeType ?? 'application/octet-stream',
+      disposition: contentDisposition(file.fileName),
+      length: file.contentLength ?? undefined,
+    });
+  }
+
+  @Get('reviews')
+  @RequirePermission('task.review')
+  @ApiOperation({
+    summary: 'เมนูงานตรวจ — รอตรวจ / ที่ฉันตรวจไปแล้ว',
+    description:
+      'หนึ่งแถวต่อรายงานการส่งตรวจหนึ่งรอบ พร้อมงาน โครงการ ผู้ส่ง และผู้ตรวจ ' +
+      '?tab=PENDING (ค่าเริ่มต้น) = รอตรวจและฉันมีสิทธิ์ตรวจ เรียงรอนานสุดก่อน · ' +
+      '?tab=REVIEWED = ที่ฉันตรวจไปแล้ว เรียงล่าสุดก่อน กรองผลด้วย ?result=APPROVED|REJECTED',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [TaskReviewItemDto] })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์ตรวจงาน' })
+  findReviews(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryTaskReviewsDto,
+  ): Promise<PaginatedResult<TaskReviewItemDto>> {
+    return this.tasksService.findReviews(query, user);
   }
 
   @Post(':id/submissions')
@@ -236,15 +276,38 @@ export class TasksController {
 
   @Patch(':id/review')
   @RequirePermission('task.review')
-  @ApiOperation({ summary: 'ตรวจงานและอนุมัติหรือส่งกลับแก้ไข' })
+  @UseInterceptors(FileInterceptor('file', UPLOAD_INTERCEPTOR_OPTIONS))
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['status'],
+      properties: {
+        status: { type: 'string', enum: ['DONE', 'DOING'] },
+        reviewNote: { type: 'string', description: 'สิ่งที่ต้องแก้ไข' },
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: `ไฟล์ประกอบจากผู้ตรวจ (ไม่บังคับ) ไม่เกิน ${MAX_UPLOAD_MB} MB`,
+        },
+      },
+    },
+  })
+  @ApiOperation({
+    summary: 'ตรวจงานและอนุมัติหรือส่งกลับแก้ไข',
+    description:
+      'ส่ง JSON ได้เหมือนเดิม หรือ multipart เมื่อต้องการแนบไฟล์ประกอบ (เช่นภาพจุดที่ต้องแก้) ' +
+      'ไฟล์ถูกเก็บที่รายงานรอบนั้น ดาวน์โหลดผ่าน submissions[].reviewDownloadUrl',
+  })
   @ApiParam({ name: 'id', description: 'id ของงาน', example: 5 })
   @ApiResponse({ status: 200, description: 'ตรวจงานเรียบร้อย', type: TaskResponseDto })
   async review(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ReviewTaskDto,
+    @UploadedFile() file?: UploadedFileLike,
   ): Promise<{ data: TaskResponseDto; message: string }> {
     return {
-      data: await this.tasksService.review(id, dto),
+      data: await this.tasksService.review(id, dto, file),
       message: 'ตรวจงานเรียบร้อย',
     };
   }

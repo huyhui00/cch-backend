@@ -606,7 +606,8 @@ return true;
   me-password/reset-password), roles (CRUD + permissions), permissions (list), audit-logs (list), health,
   customers (CRUD + detail), contacts (CRUD), communication-logs (CRUD + detail),
   projects (list/detail/create/update/report/ma-quota), projects/:id/tasks (CRUD),
-  tasks (company list/summary/due-soon/overdue, status, order),
+  tasks (company list/summary/due-soon/overdue, status, order, submit/review, reviews,
+  submissions file + review-file download),
   projects/:id/deliveries (list/create), deliveries (detail/update/acceptance),
   deliveries/:id/warranties (create), warranties (expiring/detail/update/print),
   projects/:id/warranties (list),
@@ -713,6 +714,17 @@ return true;
   - **ยังไม่กรองตามสถานะโครงการ** งานของโครงการที่ปิด/ยกเลิกไปแล้วยังถูกนับ (กติกาเดียวกับ
     `/tasks/overdue` เดิม) หน้าจอแยกได้จาก `project.status` — ถ้าผู้บริหารต้องการให้ตัดทิ้ง
     ต้องตัดสินใจก่อน เพราะเป็นกติกาใหม่
+- **ผู้ตรวจแนบไฟล์ตอนตรวจงานได้** (ประชุมทบทวน 22–23 ก.ย. นาที 00:12 — ตีกลับพร้อมไฟล์ชี้จุดแก้)
+  `PATCH /api/tasks/:id/review` รับ multipart (`file` ไม่บังคับ) หรือ JSON แบบเดิม
+  ไฟล์เก็บที่ `task_submissions.review_file_*` ของรอบส่งนั้น (migration `20260928000003`)
+  **ไม่ถูกย้ายเข้าเอกสารโปรเจค** — มีแต่ไฟล์ของผู้ส่งที่ผ่านตรวจ (DONE) เท่านั้นที่เข้า `documents`
+  ดาวน์โหลด `GET /api/tasks/submissions/:id/review-file/download` (`task.view`) response คืนแค่ `reviewDownloadUrl`
+- **เมนู "งานตรวจ" = `GET /api/tasks/reviews?tab=PENDING|REVIEWED`** สิทธิ์ `task.review`
+  - `PENDING` = รอบส่งที่ยัง PENDING ของงานสถานะ REVIEW · USER เห็นเฉพาะงานที่ตนมอบหมาย
+    หรือโปรเจคที่ตนเป็นผู้จัดการ (ขอบเขตเดียวกับ `/tasks?status=REVIEW`) · เรียงเก่าไปใหม่
+  - `REVIEWED` = ประวัติที่ **ผู้เรียกตรวจเอง** เท่านั้น แม้เป็น ADMIN/SUPER_ADMIN — เป็นเมนู "งานที่ฉันตรวจ"
+    ไม่ใช่รายงานทั้งบริษัท · กรอง `result=APPROVED|REJECTED` · เรียงล่าสุดก่อน
+  - กรอง `projectId` / `search` (ชื่องาน) ได้ทั้งสองแท็บ
 
 **กฎธุรกิจที่ Phase 6 บังคับไว้**
 - **`warranties.start_date` ไม่เคยรับค่าจาก client** — คำนวณจาก `deliveries.delivered_at`

@@ -39,11 +39,18 @@ import {
   type TaskAssigneeLoadDto,
   type TaskBoardSummaryDto,
   type TaskResponseDto,
+  type TaskReviewItemDto,
   toCompanyTaskResponse,
   toTaskResponse,
+  toTaskReviewItem,
   todayAsDateOnly,
 } from './dto/project.response';
-import { CreateTaskSubmissionDto, ReviewTaskDto } from './dto/task-submission.dto';
+import {
+  CreateTaskSubmissionDto,
+  QueryTaskReviewsDto,
+  ReviewTaskDto,
+  TaskReviewTab,
+} from './dto/task-submission.dto';
 import {
   CreateTaskDto,
   QueryCompanyTasksDto,
@@ -103,6 +110,26 @@ function submissionsInclude() {
     required: false,
     separate: true,
     order: [['createdAt', 'DESC']] as Order,
+  };
+}
+
+function submittedByInclude() {
+  return {
+    model: User,
+    as: 'submittedBy',
+    attributes: ['id', 'username', 'fullName'],
+    required: false,
+    paranoid: false,
+  };
+}
+
+function reviewedByInclude() {
+  return {
+    model: User,
+    as: 'reviewedBy',
+    attributes: ['id', 'username', 'fullName'],
+    required: false,
+    paranoid: false,
   };
 }
 
@@ -378,7 +405,7 @@ export class TasksService {
   }
 
   /** ผู้มอบหมายหรือผู้มีสิทธิ์ตรวจอนุมัติ/ส่งงานกลับแก้ไข */
-  async review(id: number, dto: ReviewTaskDto): Promise<TaskResponseDto> {
+  async review(id: number, dto: ReviewTaskDto, file?: UploadedFileLike): Promise<TaskResponseDto> {
     const actorId = getCurrentUserId();
     const task = await this.findOrFail(id);
 
@@ -401,6 +428,16 @@ export class TasksService {
       throw new BadRequestException('ไม่พบรายงานที่รอตรวจ');
     }
 
+    // ตรวจไฟล์ก่อนเปลี่ยนสถานะงาน — ไฟล์ผิดประเภทต้องไม่ทำให้งานถูกตรวจไปครึ่งทาง
+    const reviewFileName = file ? assertUploadable(file) : null;
+    const storedReviewFile = file
+      ? await this.storage.put(
+          buildStorageKey(`tasks/${id}/reviews`, reviewFileName as string),
+          file.buffer,
+          file.mimetype,
+        )
+      : null;
+
     await task.update({ ...this.statusPatch(task, dto.status), updatedBy: actorId });
 
     const finalStatus =
@@ -413,6 +450,14 @@ export class TasksService {
       reviewedByUserId: actorId,
       reviewedAt: new Date(),
       reviewNote: dto.reviewNote ?? null,
+      ...(storedReviewFile
+        ? {
+            reviewFileUrl: storedReviewFile.key,
+            reviewFileName,
+            reviewFileSize: file?.size ?? null,
+            reviewMimeType: file?.mimetype ?? null,
+          }
+        : {}),
       updatedBy: actorId,
     });
 
@@ -549,6 +594,131 @@ export class TasksService {
       ...file,
       fileName: submission.fileName ?? `task-submission-${id}`,
       mimeType: submission.mimeType,
+    };
+  }
+
+  /** ไฟล์ที่ผู้ตรวจแนบตอนส่งกลับแก้ */
+  async openReviewFile(
+    id: number,
+  ): Promise<StoredFileStream & { fileName: string; mimeType: string | null }> {
+    const submission = await this.submissionModel.findByPk(id);
+
+    if (!submission || !submission.reviewFileUrl) {
+      throw new NotFoundException('ไม่พบไฟล์แนบของผู้ตรวจ');
+    }
+
+    const file = await this.storage.get(submission.reviewFileUrl);
+    return {
+      ...file,
+      fileName: submission.reviewFileName ?? `task-review-${id}`,
+      mimeType: submission.reviewMimeType,
+    };
+  }
+
+  /**
+   * เมนู "งานตรวจ" (ประชุมทบทวน 22–23 ก.ย. นาที 00:12–00:13) — หนึ่งแถวต่อรายงานหนึ่งรอบ
+   *
+   * PENDING = รายงานที่ยังรอตรวจของงานที่อยู่ในสถานะ REVIEW และฉันมีสิทธิ์ตรวจ
+   * (ขอบเขตเดียวกับ GET /tasks?status=REVIEW) · REVIEWED = รายงานที่ฉันเป็นผู้ตรวจ
+   * — ADMIN ก็เห็นเฉพาะที่ตัวเองตรวจ เพราะแท็บนี้คือ "ประวัติการตรวจของฉัน"
+   */
+  async findReviews(
+    query: QueryTaskReviewsDto,
+    user: AuthenticatedUser,
+  ): Promise<PaginatedResult<TaskReviewItemDto>> {
+    const taskWhere: WhereOptions<Task> = {};
+    let filterByTask = false;
+
+    if (query.projectId !== undefined) {
+      Object.assign(taskWhere, { projectId: query.projectId });
+      filterByTask = true;
+    }
+
+    if (query.search) {
+      Object.assign(taskWhere, { title: { [Op.like]: '%' + query.search + '%' } });
+      filterByTask = true;
+    }
+
+    const where: WhereOptions<TaskSubmission> = {};
+    let order: Order;
+
+    if (query.tab === TaskReviewTab.REVIEWED) {
+      Object.assign(where, {
+        reviewedByUserId: user.id,
+        status: query.result ?? {
+          [Op.in]: [TaskSubmissionStatus.APPROVED, TaskSubmissionStatus.REJECTED],
+        },
+      });
+      order = [
+        ['reviewedAt', 'DESC'],
+        ['id', 'DESC'],
+      ];
+    } else {
+      Object.assign(where, { status: TaskSubmissionStatus.PENDING });
+      Object.assign(taskWhere, { status: TaskStatus.REVIEW });
+      filterByTask = true;
+      const scope = await this.reviewerScope(user);
+      if (scope) {
+        Object.assign(taskWhere, scope);
+      }
+      // รอนานที่สุดขึ้นก่อน
+      order = [
+        ['createdAt', 'ASC'],
+        ['id', 'ASC'],
+      ];
+    }
+
+    // หา id ของงานก่อนแล้วกรองด้วย IN — findAndCountAll ที่มี limit + include
+    // อาจถูกห่อเป็น subquery จนเงื่อนไขของตารางที่ join หายจาก WHERE
+    if (filterByTask) {
+      const tasks = await this.taskModel.findAll({ where: taskWhere, attributes: ['id'] });
+      Object.assign(where, { taskId: { [Op.in]: tasks.map((task) => task.id) } });
+    }
+
+    const { rows, count } = await this.submissionModel.findAndCountAll({
+      where,
+      include: [
+        {
+          model: Task,
+          attributes: ['id', 'title', 'status', 'priority', 'dueDate', 'projectId'],
+          required: true,
+          include: [projectInclude()],
+        },
+        submittedByInclude(),
+        reviewedByInclude(),
+      ],
+      order,
+      limit: query.limit,
+      offset: query.offset,
+      distinct: true,
+    });
+
+    return toPaginatedResult(rows.map(toTaskReviewItem), count, query);
+  }
+
+  /**
+   * ขอบเขตงานที่ USER ตรวจได้ — งานที่ตัวเองมอบหมาย หรืองานในโครงการที่ตัวเองเป็นผู้จัดการ
+   * คืน null = ตรวจได้ทุกงาน (SUPER_ADMIN / ADMIN) · ไม่มีสิทธิ์ task.review = 403
+   */
+  private async reviewerScope(user: AuthenticatedUser): Promise<WhereOptions<Task> | null> {
+    if (!(await this.accessControl.hasPermission(user, 'task.review'))) {
+      throw new ForbiddenException('คุณไม่มีสิทธิ์ตรวจงาน');
+    }
+
+    if (user.accountType !== AccountType.USER) {
+      return null;
+    }
+
+    const managedProjects = await this.projectModel.findAll({
+      where: { managerUserId: user.id },
+      attributes: ['id'],
+    });
+    const projectIds = managedProjects.map((project) => project.id);
+    return {
+      [Op.or]: [
+        { assignedByUserId: user.id },
+        ...(projectIds.length > 0 ? [{ projectId: { [Op.in]: projectIds } }] : []),
+      ],
     };
   }
 
@@ -690,22 +860,10 @@ export class TasksService {
     }
 
     if (query.status === TaskStatus.REVIEW && user) {
-      if (!(await this.accessControl.hasPermission(user, 'task.review'))) {
-        throw new ForbiddenException('คุณไม่มีสิทธิ์ตรวจงาน');
-      }
-
-      if (user.accountType === AccountType.USER) {
-        const managedProjects = await this.projectModel.findAll({
-          where: { managerUserId: user.id },
-          attributes: ['id'],
-        });
-        const projectIds = managedProjects.map((project) => project.id);
-        Object.assign(where, {
-          [Op.or]: [
-            { assignedByUserId: user.id },
-            ...(projectIds.length > 0 ? [{ projectId: { [Op.in]: projectIds } }] : []),
-          ],
-        });
+      const scope = await this.reviewerScope(user);
+      if (scope) {
+        // ห่อด้วย Op.and — ?search= ด้านล่างใช้คีย์ Op.or เหมือนกัน ถ้าวางตรง ๆ จะทับกัน
+        Object.assign(where, { [Op.and]: [scope] });
       }
     }
 

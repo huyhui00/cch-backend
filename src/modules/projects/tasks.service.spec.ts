@@ -359,6 +359,141 @@ describe('TasksService', () => {
         }),
       );
     });
+
+    it('ส่งกลับแก้พร้อมไฟล์ของผู้ตรวจ — ไฟล์เก็บที่รายงานรอบนั้น ไม่ย้ายเข้าเอกสารโปรเจค', async () => {
+      const task = taskRow({ status: TaskStatus.REVIEW, assignedUserId: 7, assignedByUserId: 8 });
+      const submission = { id: 21, status: 'PENDING', fileUrl: null, update: jest.fn() };
+      register(task);
+      submissionModel.findOne.mockResolvedValue(submission);
+      storage.put.mockResolvedValue({ key: 'local:tasks/1/reviews/x.png' });
+
+      await runWithRequestContext(
+        { userId: 8, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () =>
+          service.review(
+            1,
+            { status: TaskStatus.DOING, reviewNote: 'ปุ่มบันทึกไม่ทำงาน' },
+            {
+              originalname: 'จุดที่ต้องแก้.png',
+              buffer: Buffer.from('x'),
+              mimetype: 'image/png',
+              size: 1,
+            },
+          ),
+      );
+
+      expect(storage.put).toHaveBeenCalledWith(
+        expect.stringContaining('tasks/1/reviews/'),
+        expect.anything(),
+        'image/png',
+      );
+      expect(submission.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'REJECTED',
+          reviewNote: 'ปุ่มบันทึกไม่ทำงาน',
+          reviewFileUrl: 'local:tasks/1/reviews/x.png',
+          reviewFileName: 'จุดที่ต้องแก้.png',
+          reviewMimeType: 'image/png',
+        }),
+      );
+      expect(documentModel.create).not.toHaveBeenCalled();
+    });
+
+    it('ไฟล์ของผู้ตรวจผิดประเภท = 400 และงานยังไม่ถูกเปลี่ยนสถานะ', async () => {
+      const task = taskRow({ status: TaskStatus.REVIEW, assignedUserId: 7, assignedByUserId: 8 });
+      register(task);
+
+      await expect(
+        runWithRequestContext(
+          { userId: 8, ipAddress: null, userAgent: null, startedAt: Date.now() },
+          () =>
+            service.review(
+              1,
+              { status: TaskStatus.DOING },
+              {
+                originalname: 'virus.exe',
+                buffer: Buffer.from('x'),
+                mimetype: 'application/octet-stream',
+                size: 1,
+              },
+            ),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(task.update).not.toHaveBeenCalled();
+    });
+
+    it('ดาวน์โหลดไฟล์ผู้ตรวจที่ไม่มี = 404', async () => {
+      submissionModel.findByPk.mockResolvedValue({ id: 21, reviewFileUrl: null });
+
+      await expect(service.openReviewFile(21)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('findReviews (เมนูงานตรวจ)', () => {
+    const admin = { id: 1, accountType: 'ADMIN' } as never;
+    const reviewer = { id: 8, accountType: 'USER' } as never;
+
+    function captureSubmissionQuery() {
+      const captured: { where?: Record<string | symbol, unknown>; order?: unknown[] } = {};
+      submissionModel.findAndCountAll.mockImplementation(
+        (options: { where: Record<string | symbol, unknown>; order: unknown[] }) => {
+          captured.where = options.where;
+          captured.order = options.order;
+          return Promise.resolve({ rows: [], count: 0 });
+        },
+      );
+      return captured;
+    }
+
+    it('แท็บ REVIEWED = รายงานที่ฉันตรวจเท่านั้น แม้เป็น ADMIN และเรียงล่าสุดก่อน', async () => {
+      const captured = captureSubmissionQuery();
+
+      await service.findReviews({ tab: 'REVIEWED', page: 1, limit: 20, offset: 0 } as never, admin);
+
+      expect(captured.where?.reviewedByUserId).toBe(1);
+      expect(captured.order?.[0]).toEqual(['reviewedAt', 'DESC']);
+    });
+
+    it('แท็บ REVIEWED กรองผลตรวจได้', async () => {
+      const captured = captureSubmissionQuery();
+
+      await service.findReviews(
+        { tab: 'REVIEWED', result: 'REJECTED', page: 1, limit: 20, offset: 0 } as never,
+        admin,
+      );
+
+      expect(captured.where?.status).toBe('REJECTED');
+    });
+
+    it('แท็บ PENDING ของ USER จำกัดเฉพาะงานที่ตัวเองมอบหมายหรือเป็นผู้จัดการโครงการ', async () => {
+      const captured = captureSubmissionQuery();
+      projectModel.findAll.mockResolvedValue([{ id: 15 }]);
+      let taskWhere: Record<string | symbol, unknown> = {};
+      taskModel.findAll.mockImplementation(
+        (options: { where: Record<string | symbol, unknown> }) => {
+          taskWhere = options.where;
+          return Promise.resolve([{ id: 3 }]);
+        },
+      );
+
+      await service.findReviews(
+        { tab: 'PENDING', page: 1, limit: 20, offset: 0 } as never,
+        reviewer,
+      );
+
+      expect(taskWhere.status).toBe(TaskStatus.REVIEW);
+      expect(taskWhere[Op.or]).toEqual([{ assignedByUserId: 8 }, { projectId: { [Op.in]: [15] } }]);
+      expect(captured.where?.status).toBe('PENDING');
+      expect(captured.where?.taskId).toEqual({ [Op.in]: [3] });
+    });
+
+    it('ไม่มีสิทธิ์ task.review = 403', async () => {
+      accessControl.hasPermission.mockResolvedValue(false);
+
+      await expect(
+        service.findReviews({ tab: 'PENDING', page: 1, limit: 20, offset: 0 } as never, reviewer),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
   });
 
   // -------------------------------------------------------------------------
