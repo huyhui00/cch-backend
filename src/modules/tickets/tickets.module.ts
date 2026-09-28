@@ -1,7 +1,15 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 
-import { Contact, Customer, Project, Ticket, TicketResolution, User } from '../../models';
+import {
+  Contact,
+  Customer,
+  Project,
+  Ticket,
+  TicketResolution,
+  User,
+  Attachment,
+} from '../../models';
 import { MaModule } from '../ma/ma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { WarrantiesModule } from '../warranties/warranties.module';
@@ -18,7 +26,15 @@ import { TicketsService } from './tickets.service';
  */
 @Module({
   imports: [
-    SequelizeModule.forFeature([Ticket, TicketResolution, Customer, Project, Contact, User]),
+    SequelizeModule.forFeature([
+      Ticket,
+      TicketResolution,
+      Customer,
+      Project,
+      Contact,
+      User,
+      Attachment,
+    ]),
     WarrantiesModule,
     MaModule,
     NotificationsModule,

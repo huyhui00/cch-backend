@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 
 import { getCurrentUserId } from '../../common/context/request-context';
@@ -244,9 +239,7 @@ export class AttachmentsService {
     }
   }
 
-  private async findUploaders(
-    rows: Attachment[],
-  ): Promise<Map<number, AttachmentUploaderDto>> {
+  private async findUploaders(rows: Attachment[]): Promise<Map<number, AttachmentUploaderDto>> {
     const ids = [
       ...new Set(
         rows

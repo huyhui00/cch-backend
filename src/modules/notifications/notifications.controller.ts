@@ -5,11 +5,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import type { PaginatedResult } from '../../common/dto/pagination.dto';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
-import { QueryNotificationsDto, TestLinePushDto } from './dto/notification.dto';
-import {
-  DispatchRunResultDto,
-  NotificationResponseDto,
-} from './dto/notification.response';
+import { MarkReadByRefDto, QueryNotificationsDto, TestLinePushDto } from './dto/notification.dto';
+import { DispatchRunResultDto, NotificationResponseDto } from './dto/notification.response';
 import { NotificationDispatchService } from './notification-dispatch.service';
 import { NotificationsService } from './notifications.service';
 
@@ -26,8 +23,7 @@ export class NotificationsController {
   @RequirePermission('notification.view')
   @ApiOperation({
     summary: 'รายการแจ้งเตือน',
-    description:
-      'ค่าเริ่มต้นคืนเฉพาะของตัวเอง · ส่ง ?all=true ได้เมื่อมี notification.manage',
+    description: 'ค่าเริ่มต้นคืนเฉพาะของตัวเอง · ส่ง ?all=true ได้เมื่อมี notification.manage',
   })
   @ApiResponse({ status: 200, description: 'สำเร็จ' })
   findAll(
@@ -55,8 +51,7 @@ export class NotificationsController {
   @RequirePermission('notification.manage')
   @ApiOperation({
     summary: 'ทดสอบส่งข้อความ LINE',
-    description:
-      'ไม่สร้างแถว notifications — ใช้ตรวจ Channel token กับ lineUserId ของพนักงาน',
+    description: 'ไม่สร้างแถว notifications — ใช้ตรวจ Channel token กับ lineUserId ของพนักงาน',
   })
   async testLine(
     @Body() dto: TestLinePushDto,
@@ -65,6 +60,40 @@ export class NotificationsController {
     return {
       data: await this.notificationsService.testLinePush(dto, user),
       message: 'ส่งข้อความทดสอบไป LINE แล้ว',
+    };
+  }
+
+  @Patch('read-all')
+  @RequirePermission('notification.view')
+  @ApiOperation({
+    summary: 'อ่านการแจ้งเตือนทั้งหมดของตัวเอง',
+    description: 'ปุ่ม「อ่านทั้งหมด」 · แตะเฉพาะของตัวเองเสมอ แม้มี notification.manage',
+  })
+  @ApiResponse({ status: 200, description: 'คืนจำนวนที่ถูกเปลี่ยนเป็นอ่านแล้ว' })
+  async markAllRead(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ data: { updated: number }; message: string }> {
+    return {
+      data: await this.notificationsService.markAllRead(user),
+      message: 'อ่านการแจ้งเตือนทั้งหมดแล้ว',
+    };
+  }
+
+  @Patch('read-by-ref')
+  @RequirePermission('notification.view')
+  @ApiOperation({
+    summary: 'อ่านการแจ้งเตือนทั้งหมดที่ชี้ไปรายการเดียวกัน',
+    description:
+      'เรียกตอนเปิดหน้ารายละเอียด เช่น { refType: "TICKET", refId: 43 } · แตะเฉพาะของตัวเอง · ไม่มีอะไรให้อ่าน = updated 0 ไม่ใช่ error',
+  })
+  @ApiResponse({ status: 200, description: 'คืนจำนวนที่ถูกเปลี่ยนเป็นอ่านแล้ว' })
+  async markReadByRef(
+    @Body() dto: MarkReadByRefDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ data: { updated: number }; message: string }> {
+    return {
+      data: await this.notificationsService.markReadByRef(dto, user),
+      message: 'อ่านการแจ้งเตือนของรายการนี้แล้ว',
     };
   }
 

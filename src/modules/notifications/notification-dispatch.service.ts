@@ -86,7 +86,9 @@ export class NotificationDispatchService {
     return result;
   }
 
-  private async runRule(rule: NotificationRule): Promise<Omit<DispatchRunResultDto, 'rulesProcessed'>> {
+  private async runRule(
+    rule: NotificationRule,
+  ): Promise<Omit<DispatchRunResultDto, 'rulesProcessed'>> {
     const partial = { created: 0, lineSent: 0, lineFailed: 0, skippedDuplicate: 0 };
     const candidates = await this.findCandidates(rule);
     if (candidates.length === 0) {
@@ -109,8 +111,7 @@ export class NotificationDispatchService {
 
       for (const userId of recipientIds) {
         const user =
-          targets.find((u) => u.id === userId) ??
-          (await this.userModel.findByPk(userId));
+          targets.find((u) => u.id === userId) ?? (await this.userModel.findByPk(userId));
         if (!user || user.status !== UserStatus.ACTIVE) {
           continue;
         }
@@ -130,9 +131,7 @@ export class NotificationDispatchService {
         }
 
         const title = candidate.title;
-        const message = [rule.messageTemplate?.trim(), candidate.detail]
-          .filter(Boolean)
-          .join('\n');
+        const message = [rule.messageTemplate?.trim(), candidate.detail].filter(Boolean).join('\n');
 
         const row = await this.notificationModel.create({
           ruleId: rule.id,

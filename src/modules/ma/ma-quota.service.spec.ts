@@ -361,19 +361,19 @@ describe('MaQuotaService', () => {
   // Q4 — โครงการมีสัญญา ACTIVE ซ้อนกันได้ไหม ยังไม่สรุป
   // -------------------------------------------------------------------------
   describe('findActiveContract', () => {
-    it('ค้นเฉพาะสัญญา ACTIVE ที่ครอบคลุมวันที่นั้น', async () => {
+    it('ค้นสัญญา ACTIVE/EXPIRED ที่ครอบคลุมวันที่นั้น (EXPIRED = เคย ACTIVE — หักย้อนหลังต้องเจอ)', async () => {
       let captured: {
         projectId: number;
-        status: MaContractStatus;
+        status: Record<symbol, MaContractStatus[]>;
         startDate: Record<symbol, string>;
         endDate: Record<symbol, string>;
-      } = { projectId: 0, status: MaContractStatus.DRAFT, startDate: {}, endDate: {} };
+      } = { projectId: 0, status: {}, startDate: {}, endDate: {} };
 
       contractModel.findAll.mockImplementation(
         (options: {
           where: {
             projectId: number;
-            status: MaContractStatus;
+            status: Record<symbol, MaContractStatus[]>;
             startDate: Record<symbol, string>;
             endDate: Record<symbol, string>;
           };
@@ -386,7 +386,7 @@ describe('MaQuotaService', () => {
       await build().findActiveContract(1, new Date(2026, 8, 15));
 
       expect(captured.projectId).toBe(1);
-      expect(captured.status).toBe(MaContractStatus.ACTIVE);
+      expect(captured.status[Op.in]).toEqual([MaContractStatus.ACTIVE, MaContractStatus.EXPIRED]);
       expect(captured.startDate[Op.lte]).toBe('2026-09-15');
       expect(captured.endDate[Op.gte]).toBe('2026-09-15');
     });

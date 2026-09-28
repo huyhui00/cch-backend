@@ -404,7 +404,9 @@ export class TasksService {
     await task.update({ ...this.statusPatch(task, dto.status), updatedBy: actorId });
 
     const finalStatus =
-      dto.status === TaskStatus.DONE ? TaskSubmissionStatus.APPROVED : TaskSubmissionStatus.REJECTED;
+      dto.status === TaskStatus.DONE
+        ? TaskSubmissionStatus.APPROVED
+        : TaskSubmissionStatus.REJECTED;
 
     await submission.update({
       status: finalStatus,
@@ -447,11 +449,10 @@ export class TasksService {
       fileName: submission.fileName ?? `งาน-${task.id}-ไฟล์แนบ`,
       fileSize: submission.fileSize ?? null,
       mimeType: submission.mimeType ?? null,
-      note:
-        `ไฟล์ที่ส่งมาจากงาน ${task.title ?? `#${task.id}`} — ${submission.report || 'ส่งรายงานเพื่อขอตรวจ'}`.slice(
-          0,
-          500,
-        ),
+      note: `ไฟล์ที่ส่งมาจากงาน ${task.title ?? `#${task.id}`} — ${submission.report || 'ส่งรายงานเพื่อขอตรวจ'}`.slice(
+        0,
+        500,
+      ),
       createdBy: actorId,
       updatedBy: actorId,
     });

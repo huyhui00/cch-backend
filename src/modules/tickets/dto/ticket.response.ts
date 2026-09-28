@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import {
   ResolutionResult,
@@ -79,6 +79,39 @@ export class TicketContactSummaryDto {
   name: string;
 }
 
+/** ขั้นใน stepper ของหนึ่งรอบแก้ (B-11) */
+export class ResolutionStepDto {
+  @ApiProperty({ example: 'STARTED', description: 'STARTED | RECORDED' })
+  code: 'STARTED' | 'RECORDED';
+
+  @ApiProperty({ example: 'เริ่มลงมือ' })
+  label: string;
+
+  @ApiProperty()
+  at: Date;
+
+  @ApiPropertyOptional({ enum: ResolutionResult, nullable: true })
+  result?: ResolutionResult | null;
+}
+
+/** ไฟล์แนบแบบย่อในรายการรอบ */
+export class ResolutionAttachmentDto {
+  @ApiProperty({ example: 12 })
+  id: number;
+
+  @ApiProperty({ example: 'ใบยืนยันการแก้ไข-เซ็นแล้ว.pdf' })
+  fileName: string;
+
+  @ApiProperty({ example: '/api/attachments/12/download' })
+  downloadUrl: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  note: string | null;
+
+  @ApiProperty()
+  createdAt: Date;
+}
+
 /** รอบการแก้หนึ่งรอบ (BR-03) */
 export class ResolutionResponseDto {
   @ApiProperty({ example: 9 })
@@ -113,6 +146,18 @@ export class ResolutionResponseDto {
 
   @ApiProperty({ nullable: true, example: '3.50' })
   hoursSpent: string | null;
+
+  @ApiProperty({
+    type: [ResolutionStepDto],
+    description: 'ขั้นของรอบนี้สำหรับ stepper บนหน้ารายละเอียด (B-11)',
+  })
+  steps: ResolutionStepDto[];
+
+  @ApiProperty({
+    type: [ResolutionAttachmentDto],
+    description: 'ไฟล์แนบของรอบนี้ (refType=TICKET_RESOLUTION) รวมสแกนใบยืนยัน B-12',
+  })
+  attachments: ResolutionAttachmentDto[];
 
   @ApiProperty()
   createdAt: Date;
@@ -429,7 +474,44 @@ export function isTicketPending(status: TicketStatus): boolean {
   return PENDING_TICKET_STATUSES.includes(status);
 }
 
-export function toResolutionResponse(resolution: TicketResolution): ResolutionResponseDto {
+export function buildResolutionSteps(resolution: TicketResolution): ResolutionStepDto[] {
+  const steps: ResolutionStepDto[] = [];
+  if (resolution.startedAt) {
+    steps.push({
+      code: 'STARTED',
+      label: 'เริ่มลงมือ',
+      at: resolution.startedAt,
+      result: null,
+    });
+  }
+  steps.push({
+    code: 'RECORDED',
+    label: 'บันทึกผลการแก้ไข',
+    at: resolution.resolvedAt,
+    result: resolution.result,
+  });
+  return steps;
+}
+
+export function toResolutionAttachment(row: {
+  id: number;
+  fileName: string;
+  note: string | null;
+  createdAt: Date;
+}): ResolutionAttachmentDto {
+  return {
+    id: row.id,
+    fileName: row.fileName,
+    downloadUrl: `/api/attachments/${row.id}/download`,
+    note: row.note,
+    createdAt: row.createdAt,
+  };
+}
+
+export function toResolutionResponse(
+  resolution: TicketResolution,
+  attachments: ResolutionAttachmentDto[] = [],
+): ResolutionResponseDto {
   return {
     id: resolution.id,
     ticketId: resolution.ticketId,
@@ -442,6 +524,8 @@ export function toResolutionResponse(resolution: TicketResolution): ResolutionRe
     startedAt: resolution.startedAt,
     resolvedAt: resolution.resolvedAt,
     hoursSpent: resolution.hoursSpent,
+    steps: buildResolutionSteps(resolution),
+    attachments,
     createdAt: resolution.createdAt,
   };
 }
@@ -449,6 +533,7 @@ export function toResolutionResponse(resolution: TicketResolution): ResolutionRe
 export function toTicketResponse(
   ticket: Ticket,
   resolutions: TicketResolution[] = [],
+  attachmentsByResolutionId: ReadonlyMap<number, ResolutionAttachmentDto[]> = new Map(),
 ): TicketResponseDto {
   return {
     id: ticket.id,
@@ -483,8 +568,82 @@ export function toTicketResponse(
     closedAt: ticket.closedAt,
     dueAt: ticket.dueAt,
     extraCharge: ticket.extraCharge,
-    resolutions: resolutions.map(toResolutionResponse),
+    resolutions: resolutions.map((item) =>
+      toResolutionResponse(item, attachmentsByResolutionId.get(item.id) ?? []),
+    ),
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
+  };
+}
+
+/**
+ * B-12 — ข้อมูลสำหรับพิมพ์ใบยืนยันการแก้ไขให้ลูกค้าเซ็น
+ * คืน JSON ไม่ใช่ไฟล์ (หลักเดียวกับพิมพ์ร่างสัญญา MA) · FE จัดหน้ากระดาษเอง
+ */
+export class TicketConfirmationPrintDto {
+  @ApiProperty({ example: 'ใบยืนยันการแก้ไขปัญหา' })
+  documentTitle: string;
+
+  @ApiProperty({
+    description: 'พิมพ์รอบที่ระบุ หรือรอบล่าสุดถ้าไม่ส่ง round',
+  })
+  ticket: {
+    id: number;
+    ticketNo: string | null;
+    title: string;
+    description: string | null;
+    status: TicketStatus;
+    priority: TicketPriority;
+    billingType: TicketBillingType;
+    reportedChannel: TicketReportedChannel;
+    reportedAt: Date;
+    resolvedAt: Date | null;
+    closedAt: Date | null;
+  };
+
+  @ApiProperty()
+  customer: {
+    id: number;
+    code: string | null;
+    name: string;
+    taxId: string | null;
+    address: string | null;
+    phone: string | null;
+  };
+
+  @ApiProperty({ nullable: true })
+  project: { id: number; code: string | null; name: string } | null;
+
+  @ApiProperty({ nullable: true })
+  reportedByContact: {
+    id: number;
+    name: string;
+    phone: string | null;
+    email: string | null;
+  } | null;
+
+  @ApiProperty({
+    description: 'รอบที่ใช้พิมพ์ — มักเป็นรอบล่าสุดที่แก้สำเร็จ',
+  })
+  resolution: ResolutionResponseDto;
+
+  @ApiProperty({
+    type: [ResolutionResponseDto],
+    description: 'ทุกรอบของใบนี้ เผื่อหน้าพิมพ์อยากสรุปประวัติสั้น ๆ',
+  })
+  allResolutions: ResolutionResponseDto[];
+
+  @ApiProperty({
+    description: 'ช่องว่างสำหรับลายเซ็น — FE วาดเอง ไม่มี e-sign (BR-12)',
+  })
+  signatureBlocks: { role: string; label: string }[];
+
+  @ApiProperty({
+    description: 'คำแนะนำหลังพิมพ์ — สแกนแนบกลับด้วย POST /api/attachments',
+  })
+  attachScanHint: {
+    refType: 'TICKET_RESOLUTION';
+    refId: number;
+    noteSuggestion: string;
   };
 }

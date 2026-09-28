@@ -35,7 +35,7 @@ describe('LineMessagingService', () => {
       ok: true,
       status: 200,
       text: async () => '{}',
-    }) as unknown as typeof fetch;
+    });
 
     const result = await serviceWithToken('tok-abc').pushText('Uxyz', 'สวัสดี');
 

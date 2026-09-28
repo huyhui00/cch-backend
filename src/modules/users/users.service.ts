@@ -324,11 +324,7 @@ export class UsersService {
    * ไม่มีลิงก์สาธารณะ: คนที่ลืมรหัสเข้าหน้าในระบบไม่ได้ ต้องให้คนที่ล็อกอินอยู่ทำให้
    * รหัสชั่วคราวบอกนอกระบบ (LINE/ปากเปล่า) ตาม BR-02
    */
-  async resetPassword(
-    id: number,
-    dto: ResetPasswordDto,
-    actor: AuthenticatedUser,
-  ): Promise<void> {
+  async resetPassword(id: number, dto: ResetPasswordDto, actor: AuthenticatedUser): Promise<void> {
     if (id === actor.id) {
       throw new BadRequestException(
         'ตั้งรหัสผ่านของตนเองผ่านเส้นนี้ไม่ได้ กรุณาใช้หน้าเปลี่ยนรหัสผ่าน',

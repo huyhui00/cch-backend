@@ -1,6 +1,7 @@
 /// <reference types="jest" />
 
 import { ForbiddenException } from '@nestjs/common';
+import { Op } from 'sequelize';
 
 import { AccessControlService } from '../../common/services/access-control.service';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
@@ -8,10 +9,13 @@ import { AccountType, Notification, NotificationStatus, User } from '../../model
 import { LineMessagingService } from './line-messaging.service';
 import { NotificationsService } from './notifications.service';
 
+type UpdateCall = [Record<string, unknown>, { where: Record<string, unknown> }];
+
 function modelMock() {
   return {
     findByPk: jest.fn(),
     findAndCountAll: jest.fn(),
+    update: jest.fn(),
   };
 }
 
@@ -79,5 +83,32 @@ describe('NotificationsService', () => {
         updatedBy: 5,
       }),
     );
+  });
+
+  it('markAllRead แตะเฉพาะของตัวเองที่ยังไม่อ่าน แม้มี manage', async () => {
+    accessControl.hasPermission.mockResolvedValue(true);
+    notificationModel.update.mockResolvedValue([3]);
+
+    const result = await service.markAllRead(viewer);
+
+    expect(result).toEqual({ updated: 3 });
+    const [values, options] = notificationModel.update.mock.calls[0] as UpdateCall;
+    expect(values.status).toBe(NotificationStatus.READ);
+    expect(values.updatedBy).toBe(5);
+    expect(options.where.targetUserId).toBe(5);
+    expect((options.where.status as Record<symbol, unknown>)[Op.ne]).toBe(NotificationStatus.READ);
+    expect(options.where).not.toHaveProperty('refType');
+  });
+
+  it('markReadByRef กรองด้วย refType + refId ของตัวเอง', async () => {
+    notificationModel.update.mockResolvedValue([0]);
+
+    const result = await service.markReadByRef({ refType: 'TICKET', refId: 43 }, viewer);
+
+    expect(result).toEqual({ updated: 0 });
+    const [, options] = notificationModel.update.mock.calls[0] as UpdateCall;
+    expect(options.where.refType).toBe('TICKET');
+    expect(options.where.refId).toBe(43);
+    expect(options.where.targetUserId).toBe(5);
   });
 });

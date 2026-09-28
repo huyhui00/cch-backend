@@ -96,10 +96,27 @@ export class QueryNotificationRulesDto extends PaginationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
-    value === true || value === 'true' ? true : value === false || value === 'false' ? false : value,
+    value === true || value === 'true'
+      ? true
+      : value === false || value === 'false'
+        ? false
+        : value,
   )
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class MarkReadByRefDto {
+  @ApiProperty({ example: 'TICKET', description: 'ประเภทรายการที่แจ้งเตือนชี้ไป' })
+  @IsString({ message: 'refType ต้องเป็นข้อความ' })
+  @MaxLength(50, { message: 'refType ยาวเกิน 50 ตัวอักษร' })
+  refType: string;
+
+  @ApiProperty({ example: 43, description: 'id ของรายการนั้น' })
+  @Type(() => Number)
+  @IsInt({ message: 'refId ต้องเป็นจำนวนเต็ม' })
+  @Min(1, { message: 'refId ต้องมากกว่า 0' })
+  refId: number;
 }
 
 export class TestLinePushDto {

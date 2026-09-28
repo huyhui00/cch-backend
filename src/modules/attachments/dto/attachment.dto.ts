@@ -1,13 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import {
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsPositive,
-  IsString,
-  MaxLength,
-} from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
 
 import { ATTACHMENT_REF_TYPES, type AttachmentRefType } from '../../../models';
 

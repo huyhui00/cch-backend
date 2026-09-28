@@ -104,13 +104,9 @@ export class CreateMaContractDto {
   @ApiPropertyOptional({
     description:
       'สถานะเริ่มต้น — ค่าปกติคือ DRAFT แล้วค่อยเปลี่ยนเป็น ACTIVE เมื่อเซ็นสัญญาแล้ว ' +
-      'RENEWED ตั้งเองไม่ได้ ระบบตั้งให้ฉบับเดิมตอนต่อสัญญา',
-    enum: [
-      MaContractStatus.DRAFT,
-      MaContractStatus.ACTIVE,
-      MaContractStatus.EXPIRED,
-      MaContractStatus.CANCELLED,
-    ],
+      'RENEWED ตั้งเองไม่ได้ ระบบตั้งให้ฉบับเดิมตอนต่อสัญญา · ' +
+      'EXPIRED ตั้งเองไม่ได้ ระบบตั้งให้เมื่อเลยวันสิ้นสุด (ACTIVE ที่วันสิ้นสุดผ่านไปแล้วถูกบันทึกเป็น EXPIRED ทันที)',
+    enum: [MaContractStatus.DRAFT, MaContractStatus.ACTIVE, MaContractStatus.CANCELLED],
     default: MaContractStatus.DRAFT,
   })
   @IsOptional()
@@ -183,13 +179,10 @@ export class UpdateMaContractDto {
   endDate?: string;
 
   @ApiPropertyOptional({
-    description: 'RENEWED ตั้งเองไม่ได้ ระบบตั้งให้ฉบับเดิมตอนต่อสัญญาผ่าน POST /:id/renew',
-    enum: [
-      MaContractStatus.DRAFT,
-      MaContractStatus.ACTIVE,
-      MaContractStatus.EXPIRED,
-      MaContractStatus.CANCELLED,
-    ],
+    description:
+      'RENEWED ตั้งเองไม่ได้ ระบบตั้งให้ฉบับเดิมตอนต่อสัญญาผ่าน POST /:id/renew · ' +
+      'EXPIRED ตั้งเองไม่ได้ ระบบตัดสินจากวันสิ้นสุด (ขยายวันสิ้นสุดของฉบับ EXPIRED แล้วกลับเป็น ACTIVE เอง)',
+    enum: [MaContractStatus.DRAFT, MaContractStatus.ACTIVE, MaContractStatus.CANCELLED],
   })
   @IsOptional()
   @IsEnum(MaContractStatus, { message: 'สถานะสัญญาไม่ถูกต้อง' })

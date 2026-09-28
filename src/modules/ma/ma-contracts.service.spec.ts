@@ -2,6 +2,7 @@
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
 import { MaAddon, MaContract, MaContractStatus, MaPlan, MaUsage, Project } from '../../models';
@@ -24,6 +25,7 @@ interface ModelMock {
   findAndCountAll: jest.Mock;
   create: jest.Mock;
   count: jest.Mock;
+  update: jest.Mock;
 }
 
 function modelMock(): ModelMock {
@@ -34,6 +36,7 @@ function modelMock(): ModelMock {
     findAndCountAll: jest.fn(),
     create: jest.fn(),
     count: jest.fn(),
+    update: jest.fn(),
   };
 }
 
@@ -215,6 +218,30 @@ describe('MaContractsService', () => {
 
       expect(contractModel.count).not.toHaveBeenCalled();
     });
+
+    it('ตั้ง EXPIRED เองไม่ได้ — ระบบตัดสินจากวันสิ้นสุด', async () => {
+      await expect(
+        service.create({ ...baseDto, status: MaContractStatus.EXPIRED }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(contractModel.create).not.toHaveBeenCalled();
+    });
+
+    it('คีย์สัญญาเก่าเป็น ACTIVE ที่วันสิ้นสุดผ่านไปแล้ว → บันทึกเป็น EXPIRED', async () => {
+      let captured: { status: MaContractStatus } = { status: MaContractStatus.DRAFT };
+      contractModel.create.mockImplementation((values: { status: MaContractStatus }) => {
+        captured = values;
+        return Promise.resolve(contractRow());
+      });
+
+      await service.create({
+        ...baseDto,
+        startDate: '2024-01-01',
+        endDate: '2024-12-31',
+        status: MaContractStatus.ACTIVE,
+      });
+
+      expect(captured.status).toBe(MaContractStatus.EXPIRED);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -262,6 +289,51 @@ describe('MaContractsService', () => {
       );
     });
 
+    it('ตั้งสถานะ EXPIRED เองไม่ได้', async () => {
+      await expect(service.update(12, { status: MaContractStatus.EXPIRED })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('ขยายวันสิ้นสุดของฉบับ EXPIRED → กลับเป็น ACTIVE เอง', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      contractModel.findByPk.mockResolvedValue(
+        contractRow({
+          update,
+          startDate: '2025-01-01',
+          endDate: '2025-12-31',
+          status: MaContractStatus.EXPIRED,
+        }),
+      );
+
+      await service.update(12, { endDate: '2099-12-31' });
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: MaContractStatus.ACTIVE, endDate: '2099-12-31' }),
+      );
+    });
+
+    it('แก้ฉบับ ACTIVE ให้วันสิ้นสุดผ่านไปแล้ว → EXPIRED', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      contractModel.findByPk.mockResolvedValue(contractRow({ update, startDate: '2024-01-01' }));
+
+      await service.update(12, { endDate: '2024-12-31' });
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: MaContractStatus.EXPIRED }),
+      );
+    });
+
+    it('ไม่ส่งสถานะและไม่เปลี่ยนผล = ไม่เขียน status ทับ', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      contractModel.findByPk.mockResolvedValue(contractRow({ update }));
+
+      await service.update(12, { note: 'x' });
+
+      const [values] = update.mock.calls[0] as [Record<string, unknown>];
+      expect(values).not.toHaveProperty('status');
+    });
+
     it('เปลี่ยนเป็น CANCELLED ได้ตามปกติ', async () => {
       const update = jest.fn().mockResolvedValue(undefined);
       contractModel.findByPk.mockResolvedValue(contractRow({ update }));
@@ -275,6 +347,25 @@ describe('MaContractsService', () => {
       contractModel.findByPk.mockResolvedValue(null);
 
       await expect(service.update(99, { note: 'x' })).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('expireEndedContracts', () => {
+    it('เปลี่ยนเฉพาะ ACTIVE ที่วันสิ้นสุดก่อนวันนี้เป็น EXPIRED', async () => {
+      contractModel.update.mockResolvedValue([2]);
+
+      const affected = await service.expireEndedContracts('2026-09-28');
+
+      expect(affected).toBe(2);
+      expect(contractModel.update).toHaveBeenCalledWith(
+        { status: MaContractStatus.EXPIRED },
+        {
+          where: {
+            status: MaContractStatus.ACTIVE,
+            endDate: { [Op.lt]: '2026-09-28' },
+          },
+        },
+      );
     });
   });
 

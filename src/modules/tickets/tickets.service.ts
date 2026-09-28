@@ -23,6 +23,7 @@ import {
   TicketStatus,
   User,
   UserStatus,
+  Attachment,
 } from '../../models';
 import { MaQuotaService } from '../ma/ma-quota.service';
 import { TicketWorkflowNotifyService } from '../notifications/ticket-workflow-notify.service';
@@ -45,7 +46,10 @@ import {
   PENDING_TICKET_STATUSES,
   type ResolutionCreatedDto,
   SupportQueueTab,
+  type TicketConfirmationPrintDto,
   type TicketResponseDto,
+  toResolutionAttachment,
+  toResolutionResponse,
   toTicketResponse,
 } from './dto/ticket.response';
 
@@ -164,6 +168,7 @@ export class TicketsService {
     @InjectModel(Project) private readonly projectModel: typeof Project,
     @InjectModel(Contact) private readonly contactModel: typeof Contact,
     @InjectModel(User) private readonly userModel: typeof User,
+    @InjectModel(Attachment) private readonly attachmentModel: typeof Attachment,
     @InjectConnection() private readonly sequelize: Sequelize,
     private readonly warrantiesService: WarrantiesService,
     private readonly maQuotaService: MaQuotaService,
@@ -278,9 +283,7 @@ export class TicketsService {
   }
 
   /** คิวซัพพอร์ต — รอส่งหัวหน้า / แอดมินส่งกลับมา (C-1) */
-  async findSupportQueue(
-    query: QuerySupportQueueDto,
-  ): Promise<PaginatedResult<TicketResponseDto>> {
+  async findSupportQueue(query: QuerySupportQueueDto): Promise<PaginatedResult<TicketResponseDto>> {
     const where: WhereOptions<Ticket> =
       query.tab === SupportQueueTab.AWAITING_SEND
         ? { status: TicketStatus.RECEIVED }
@@ -338,7 +341,7 @@ export class TicketsService {
     );
   }
 
-  /** รายละเอียดปัญหา พร้อมทุกรอบที่ลงมือแก้ เรียงตาม round (BR-03) */
+  /** รายละเอียดปัญหา พร้อมทุกรอบที่ลงมือแก้ + ขั้น stepper + ไฟล์แนบรายรอบ (B-11) */
   async findOne(id: number): Promise<TicketResponseDto> {
     const ticket = await this.ticketModel.findByPk(id, { include: listIncludes() });
 
@@ -346,7 +349,132 @@ export class TicketsService {
       throw new NotFoundException('ไม่พบรายการปัญหานี้');
     }
 
-    return toTicketResponse(ticket, await this.findResolutions(id));
+    const resolutions = await this.findResolutions(id);
+    const attachmentsByResolutionId = await this.findResolutionAttachmentsMap(
+      resolutions.map((item) => item.id),
+    );
+    return toTicketResponse(ticket, resolutions, attachmentsByResolutionId);
+  }
+
+  /**
+   * B-12 — ข้อมูลพิมพ์ใบยืนยันการแก้ไขให้ลูกค้าเซ็นมือ
+   * คืน JSON ไม่สร้าง PDF · แนบสแกนทีหลังด้วย POST /api/attachments (TICKET_RESOLUTION)
+   */
+  async getConfirmationPrint(id: number, round?: number): Promise<TicketConfirmationPrintDto> {
+    const ticket = await this.ticketModel.findByPk(id, {
+      include: [
+        {
+          model: Customer,
+          required: false,
+          paranoid: false,
+          include: [{ model: Contact, required: false }],
+        },
+        {
+          model: Project,
+          attributes: ['id', 'code', 'name'],
+          required: false,
+          paranoid: false,
+        },
+        {
+          model: Contact,
+          as: 'reportedByContact',
+          attributes: ['id', 'name', 'phone', 'email'],
+          required: false,
+          paranoid: false,
+        },
+      ],
+    });
+
+    if (!ticket) {
+      throw new NotFoundException('ไม่พบรายการปัญหานี้');
+    }
+    if (!ticket.customer) {
+      throw new NotFoundException('ไม่พบข้อมูลลูกค้าของใบนี้ จึงพิมพ์ใบยืนยันไม่ได้');
+    }
+
+    const resolutions = await this.findResolutions(id);
+    if (resolutions.length === 0) {
+      throw new BadRequestException('ยังไม่มีรอบการแก้ไข จึงพิมพ์ใบยืนยันไม่ได้');
+    }
+
+    const selected =
+      round !== undefined
+        ? resolutions.find((item) => item.round === round)
+        : resolutions[resolutions.length - 1];
+
+    if (!selected) {
+      throw new NotFoundException(`ไม่พบรอบที่ ${round} ของใบนี้`);
+    }
+
+    const attachmentsByResolutionId = await this.findResolutionAttachmentsMap(
+      resolutions.map((item) => item.id),
+    );
+    const resolutionDto = toResolutionResponse(
+      selected,
+      attachmentsByResolutionId.get(selected.id) ?? [],
+    );
+    const allResolutionDtos = resolutions.map((item) =>
+      toResolutionResponse(item, attachmentsByResolutionId.get(item.id) ?? []),
+    );
+
+    const primaryContact =
+      ticket.customer.contacts?.find((contact) => contact.isPrimary) ??
+      ticket.customer.contacts?.[0] ??
+      null;
+
+    return {
+      documentTitle: 'ใบยืนยันการแก้ไขปัญหา',
+      ticket: {
+        id: ticket.id,
+        ticketNo: ticket.ticketNo,
+        title: ticket.title,
+        description: ticket.description,
+        status: ticket.status,
+        priority: ticket.priority,
+        billingType: ticket.billingType,
+        reportedChannel: ticket.reportedChannel,
+        reportedAt: ticket.reportedAt,
+        resolvedAt: ticket.resolvedAt,
+        closedAt: ticket.closedAt,
+      },
+      customer: {
+        id: ticket.customer.id,
+        code: ticket.customer.code,
+        name: ticket.customer.name,
+        taxId: ticket.customer.taxId,
+        address: ticket.customer.address,
+        phone: ticket.customer.phone,
+      },
+      project: ticket.project
+        ? { id: ticket.project.id, code: ticket.project.code, name: ticket.project.name }
+        : null,
+      reportedByContact: ticket.reportedByContact
+        ? {
+            id: ticket.reportedByContact.id,
+            name: ticket.reportedByContact.name,
+            phone: ticket.reportedByContact.phone,
+            email: ticket.reportedByContact.email,
+          }
+        : primaryContact
+          ? {
+              id: primaryContact.id,
+              name: primaryContact.name,
+              phone: primaryContact.phone,
+              email: primaryContact.email,
+            }
+          : null,
+      resolution: resolutionDto,
+      allResolutions: allResolutionDtos,
+      signatureBlocks: [
+        { role: 'PROVIDER', label: 'ผู้ให้บริการ / ผู้แก้ไข' },
+        { role: 'CUSTOMER', label: 'ลูกค้า / ผู้รับมอบงาน' },
+      ],
+      attachScanHint: {
+        refType: 'TICKET_RESOLUTION',
+        refId: selected.id,
+        noteSuggestion: `สแกนใบยืนยันรอบที่ ${selected.round} ที่ลูกค้าเซ็นแล้ว`,
+      },
+    };
   }
 
   /**
@@ -499,9 +627,7 @@ export class TicketsService {
 
     if (dto.assignedUserId !== null) {
       if (ticket.status === TicketStatus.RECEIVED) {
-        throw new BadRequestException(
-          'ต้องส่งให้หัวหน้าและให้แอดมินรับเรื่องก่อนมอบหมายพนักงาน',
-        );
+        throw new BadRequestException('ต้องส่งให้หัวหน้าและให้แอดมินรับเรื่องก่อนมอบหมายพนักงาน');
       }
 
       if (ticket.status === TicketStatus.WAITING_ADMIN && !ticket.claimedByAdminUserId) {
@@ -1035,6 +1161,35 @@ export class TicketsService {
       ],
       order: [['round', 'ASC']],
     });
+  }
+
+  /** ไฟล์แนบของรอบแก้ — ใช้ในรายละเอียด (B-11) และใบพิมพ์ (B-12) */
+  private async findResolutionAttachmentsMap(
+    resolutionIds: number[],
+  ): Promise<Map<number, ReturnType<typeof toResolutionAttachment>[]>> {
+    const map = new Map<number, ReturnType<typeof toResolutionAttachment>[]>();
+    if (resolutionIds.length === 0) {
+      return map;
+    }
+
+    const rows = await this.attachmentModel.findAll({
+      where: {
+        refType: 'TICKET_RESOLUTION',
+        refId: { [Op.in]: resolutionIds },
+      },
+      attributes: ['id', 'refId', 'fileName', 'note', 'createdAt'],
+      order: [
+        ['createdAt', 'ASC'],
+        ['id', 'ASC'],
+      ],
+    });
+
+    for (const row of rows) {
+      const list = map.get(row.refId) ?? [];
+      list.push(toResolutionAttachment(row));
+      map.set(row.refId, list);
+    }
+    return map;
   }
 
   /** ต่อหมายเหตุท้ายรายละเอียดเดิม ไม่เขียนทับของเก่า (BR-09 ต้องตามรอยย้อนหลังได้) */

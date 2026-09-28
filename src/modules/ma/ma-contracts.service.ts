@@ -41,6 +41,7 @@ import {
   toMaContractPrint,
   toMaContractResponse,
 } from './dto/ma.response';
+import { deriveContractStatus } from './contract-status.util';
 import { MaQuotaService } from './ma-quota.service';
 
 const SORTABLE_FIELDS = new Set(['id', 'startDate', 'endDate', 'price', 'status', 'createdAt']);
@@ -228,11 +229,16 @@ export class MaContractsService {
     const actorId = getCurrentUserId();
 
     this.assertDateRange(dto.startDate, dto.endDate);
+    this.assertStatusIsSettable(dto.status);
 
     const project = await this.findProjectOrFail(dto.projectId);
     await this.assertPlanIsUsable(dto.planId);
 
-    const status = dto.status ?? MaContractStatus.DRAFT;
+    const status = deriveContractStatus(
+      dto.status ?? MaContractStatus.DRAFT,
+      dto.endDate,
+      todayAsDateOnly(),
+    );
     const warning =
       status === MaContractStatus.ACTIVE
         ? await this.describeOverlap(dto.projectId, dto.startDate, dto.endDate)
@@ -305,11 +311,9 @@ export class MaContractsService {
       await this.assertContractNoIsAvailable(dto.contractNo, id);
     }
 
-    if (dto.status === MaContractStatus.RENEWED) {
-      throw new BadRequestException(
-        'สถานะ RENEWED ตั้งเองไม่ได้ — ระบบตั้งให้ฉบับเดิมอัตโนมัติตอนต่อสัญญา',
-      );
-    }
+    this.assertStatusIsSettable(dto.status);
+
+    const status = deriveContractStatus(dto.status ?? contract.status, endDate, todayAsDateOnly());
 
     await contract.update({
       ...(dto.planId !== undefined ? { planId: dto.planId } : {}),
@@ -317,7 +321,7 @@ export class MaContractsService {
       ...(dto.billingCycle !== undefined ? { billingCycle: dto.billingCycle } : {}),
       ...(dto.startDate !== undefined ? { startDate: dto.startDate } : {}),
       ...(dto.endDate !== undefined ? { endDate: dto.endDate } : {}),
-      ...(dto.status !== undefined ? { status: dto.status } : {}),
+      ...(status !== contract.status ? { status } : {}),
       ...(dto.contractNo !== undefined ? { contractNo: dto.contractNo } : {}),
       ...(dto.signedDate !== undefined ? { signedDate: dto.signedDate } : {}),
       ...(dto.signedFileUrl !== undefined ? { signedFileUrl: dto.signedFileUrl } : {}),
@@ -370,7 +374,8 @@ export class MaContractsService {
           projectId: previous.projectId,
           planId,
           previousContractId: previous.id,
-          contractNo: dto.contractNo ?? (await nextGeneratedCode(this.sequelize, 'MA_CONTRACT', transaction)),
+          contractNo:
+            dto.contractNo ?? (await nextGeneratedCode(this.sequelize, 'MA_CONTRACT', transaction)),
           price: dto.price,
           billingCycle: dto.billingCycle ?? previous.billingCycle,
           startDate: dto.startDate,
@@ -393,6 +398,29 @@ export class MaContractsService {
     });
 
     return this.findOne(created.id);
+  }
+
+  /** เรียกจาก cron — ไม่มี request จึงได้ audit `user_id = null` ซึ่งถูกต้อง */
+  async expireEndedContracts(today = todayAsDateOnly()): Promise<number> {
+    const [affected] = await this.contractModel.update(
+      { status: MaContractStatus.EXPIRED },
+      { where: { status: MaContractStatus.ACTIVE, endDate: { [Op.lt]: today } } },
+    );
+    return affected;
+  }
+
+  private assertStatusIsSettable(status: MaContractStatus | undefined): void {
+    if (status === MaContractStatus.RENEWED) {
+      throw new BadRequestException(
+        'สถานะ RENEWED ตั้งเองไม่ได้ — ระบบตั้งให้ฉบับเดิมอัตโนมัติตอนต่อสัญญา',
+      );
+    }
+    if (status === MaContractStatus.EXPIRED) {
+      throw new BadRequestException(
+        'สถานะหมดอายุตั้งเองไม่ได้ — ระบบเปลี่ยนให้เองเมื่อเลยวันสิ้นสุดสัญญา ' +
+          'ถ้าต้องการจบสัญญาก่อนกำหนดให้เลือกยกเลิก',
+      );
+    }
   }
 
   // ---- ของเสริม ------------------------------------------------------------
@@ -463,10 +491,7 @@ export class MaContractsService {
    * หน้ารายการสัญญาเป็นภาพรวมอย่างเดียว ไม่ยัดรายการใช้ทุกโปรเจคเข้าไป
    * รูปโควตาต่อฉบับใช้ `buildQuotaStatus()` ตัวเดียวกับ GET /ma-contracts/:id/quota
    */
-  async listQuotaForProject(
-    projectId: number,
-    onDate?: Date,
-  ): Promise<ProjectMaQuotaSummaryDto> {
+  async listQuotaForProject(projectId: number, onDate?: Date): Promise<ProjectMaQuotaSummaryDto> {
     await this.findProjectOrFail(projectId);
 
     const contracts = await this.contractModel.findAll({

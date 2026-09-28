@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 
 import { Customer, MaAddon, MaContract, MaPlan, MaPlanItem, MaUsage, Project } from '../../models';
+import { MaContractExpiryScheduler } from './ma-contract-expiry.scheduler';
 import { MaContractsController } from './ma-contracts.controller';
 import { MaContractsService } from './ma-contracts.service';
 import { MaPlansController } from './ma-plans.controller';
@@ -28,7 +29,7 @@ import { MaQuotaService } from './ma-quota.service';
     ]),
   ],
   controllers: [MaPlansController, MaContractsController],
-  providers: [MaQuotaService, MaPlansService, MaContractsService],
+  providers: [MaQuotaService, MaPlansService, MaContractsService, MaContractExpiryScheduler],
   exports: [MaQuotaService, MaContractsService],
 })
 export class MaModule {}

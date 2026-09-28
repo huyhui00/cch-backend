@@ -18,11 +18,8 @@ import {
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { Notification, NotificationStatus, User, UserStatus } from '../../models';
 import { LineMessagingService } from './line-messaging.service';
-import { QueryNotificationsDto, TestLinePushDto } from './dto/notification.dto';
-import {
-  NotificationResponseDto,
-  toNotificationResponse,
-} from './dto/notification.response';
+import { MarkReadByRefDto, QueryNotificationsDto, TestLinePushDto } from './dto/notification.dto';
+import { NotificationResponseDto, toNotificationResponse } from './dto/notification.response';
 
 @Injectable()
 export class NotificationsService {
@@ -85,6 +82,41 @@ export class NotificationsService {
     });
 
     return toNotificationResponse(row);
+  }
+
+  /**
+   * แตะเฉพาะของตัวเองเสมอ แม้มี notification.manage — การอ่านแทนคนอื่นจะทำให้เจ้าของไม่เห็นแจ้งเตือน
+   */
+  async markAllRead(viewer: AuthenticatedUser): Promise<{ updated: number }> {
+    return this.markOwnUnreadAsRead(viewer, {});
+  }
+
+  async markReadByRef(
+    dto: MarkReadByRefDto,
+    viewer: AuthenticatedUser,
+  ): Promise<{ updated: number }> {
+    return this.markOwnUnreadAsRead(viewer, { refType: dto.refType, refId: dto.refId });
+  }
+
+  private async markOwnUnreadAsRead(
+    viewer: AuthenticatedUser,
+    extraWhere: Record<string, unknown>,
+  ): Promise<{ updated: number }> {
+    const [updated] = await this.notificationModel.update(
+      {
+        status: NotificationStatus.READ,
+        readAt: new Date(),
+        updatedBy: viewer.id,
+      },
+      {
+        where: {
+          ...extraWhere,
+          targetUserId: viewer.id,
+          status: { [Op.ne]: NotificationStatus.READ },
+        },
+      },
+    );
+    return { updated };
   }
 
   /**

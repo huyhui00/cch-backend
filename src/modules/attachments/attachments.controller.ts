@@ -118,13 +118,7 @@ export class AttachmentsController {
         },
         refType: {
           type: 'string',
-          enum: [
-            'TICKET',
-            'TICKET_RESOLUTION',
-            'COMMUNICATION_LOG',
-            'DELIVERY',
-            'MA_CONTRACT',
-          ],
+          enum: ['TICKET', 'TICKET_RESOLUTION', 'COMMUNICATION_LOG', 'DELIVERY', 'MA_CONTRACT'],
           description: 'ประเภทต้นทาง',
         },
         refId: { type: 'integer', description: 'id ของต้นทาง' },
@@ -144,7 +138,10 @@ export class AttachmentsController {
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   @ApiResponse({ status: 404, description: 'ไม่พบต้นทางของไฟล์แนบ' })
   @ApiResponse({ status: 413, description: `ไฟล์ใหญ่เกิน ${MAX_UPLOAD_MB} MB` })
-  @ApiResponse({ status: 503, description: 'ยังไม่ได้ตั้งค่าที่เก็บไฟล์ หรือที่เก็บไฟล์ไม่ตอบสนอง' })
+  @ApiResponse({
+    status: 503,
+    description: 'ยังไม่ได้ตั้งค่าที่เก็บไฟล์ หรือที่เก็บไฟล์ไม่ตอบสนอง',
+  })
   async upload(
     @UploadedFile() file: UploadedFileLike | undefined,
     @Body() dto: UploadAttachmentDto,

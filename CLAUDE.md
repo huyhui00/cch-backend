@@ -503,8 +503,8 @@ return true;
 | B-8 | หมวดหมู่ปัญหาตอนเปิดใบ | BE+FE | ⏸️ **พัก 23 ก.ย.** — เปิดใบแบบเดิมไม่มีหมวดไปก่อน (Q11 ยังเปิด · คู่กับ B-17) |
 | B-9 | ตอนเปิดใบให้เห็นโควตา MA ที่ใช้ไป ถ้าเกินให้พนักงานตัดสินว่าคิดเงินหรือไม่ | BE+FE | ✅ BE+FE เสร็จ — FE ยึด `GET /api/tickets/billing-suggestion` เป็นหลัก (suggested เป็นค่าเริ่มต้น คนเปลี่ยนได้ · แถบสรุปประกัน/โควตา/ป้ายอ้างอิงเมื่ออยู่ในประกัน) |
 | B-10 | **แสดงรหัสทุกที่** และค้นปัญหาเก่าได้เมื่อข้อมูลเยอะ (ค้นด้วยรหัส / ลูกค้า / โปรเจค) | BE+FE | ✅ BE ออกรหัสอัตโนมัติรูปแบบสั้นแล้ว (`TK69-0006`) · ค้น `?search=` ของใบแจ้งปัญหาค้นชื่อ/รหัสลูกค้าและโครงการด้วย · FE แสดงรหัสที่ API คืน |
-| B-11 | หน้ารายละเอียดปัญหา: รายการรอบ คลิกแต่ละรอบเห็น stepper + ประวัติพร้อมวันที่ | BE+FE | ⬜ ต้องออกแบบ — วันที่รายรอบไม่ได้ถูกเก็บแยก (`closed_at` ถูกล้างตอน reopen) มีแต่ใน audit log |
-| B-12 | พิมพ์ใบยืนยันการแก้ไขให้ลูกค้าเซ็น แล้วสแกนแนบกลับ | BE+FE | ⬜ |
+| B-11 | หน้ารายละเอียดปัญหา: รายการรอบ คลิกแต่ละรอบเห็น stepper + ประวัติพร้อมวันที่ | BE+FE | ✅ BE เสร็จ 24 ก.ย. — `GET /api/tickets/:id` คืน `resolutions[].steps` + `attachments` · FE จัด UI stepper | 
+| B-12 | พิมพ์ใบยืนยันการแก้ไขให้ลูกค้าเซ็น แล้วสแกนแนบกลับ | BE+FE | ✅ BE เสร็จ 24 ก.ย. — `GET /api/tickets/:id/confirmation-print?round=` คืน JSON · สแกนแนบ `POST /api/attachments` (`TICKET_RESOLUTION`) ตาม `attachScanHint` · FE จัดหน้าพิมพ์ (BR-12 ไม่มี e-sign) |
 | B-13 | ประกันผูกกับ MA ให้รู้ว่าประกันนี้รวมแผนไหน | BE+FE | ✅ BE เสร็จ 12 ก.ย. — `warranties.ma_contract_id` (migration `20260912000001`) ไม่บังคับกรอก อ้างอิงอย่างเดียว ไม่แตะการคิดเงิน (ดูกฎ Phase 6) |
 | B-14 | **งานติดตามผูกกับโปรเจค** ไม่ใช่ลูกค้าอย่างเดียว | BE+FE | ✅ BE เสร็จ 11 ก.ย. — `follow_ups.project_id` (migration `20260911000002`) ดูกฎ M7 |
 | B-15 | การส่งแบบประเมินผูกกับโปรเจค | BE+FE | ✅ BE เสร็จแล้ว (`projectId`) · **ไม่ผูกใบแจ้งปัญหา** (Q18) — FE ใช้ `projectId` ได้เลย |
@@ -612,6 +612,7 @@ return true;
   projects/:id/warranties (list),
   tickets (list/pending/support-queue/admin-queue/detail/create/update/assign/send-to-admin/claim/start/return-to-support/customer-notified/reopen/close),
   tickets/:id/resolutions (create),
+  tickets/:id/confirmation-print,
   ma-plans (CRUD), ma-contracts (list/detail/create/update/renew),
   ma-contracts/:id (quota/addons list/addons create/print),
   users/assignable, roles/assignable,
@@ -623,7 +624,7 @@ return true;
   projects/:id/documents (list/upload), documents (detail/update/delete/download),
   attachments (list/detail/upload/update/delete/download),
   customers/:id/overview,
-  notifications (list/detail/read/run/test-line),
+  notifications (list/detail/read/read-all/read-by-ref/run/test-line),
   notification-rules (CRUD),
  — รวม ~130 เส้น (นับรวม `/api/health`)
 - **เทสต์คุมกฎธุรกิจ ~526 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
@@ -893,6 +894,22 @@ return true;
 - **แก้ `start_date` หรือ `plan_id` ไม่ได้เมื่อสัญญาหักโควตาไปแล้ว** ทั้งสองค่าเป็นตัวกำหนดว่า
   แถวใน `ma_usages` ตกรอบไหนและรอบนั้นมีโควตาเท่าไหร่ แก้ทีหลังเท่ากับเขียนประวัติใหม่
   ให้เปลี่ยนสถานะเป็น CANCELLED แล้วทำฉบับใหม่แทน
+- **สถานะ EXPIRED ตั้งเองไม่ได้ — ระบบตัดสินจากวันสิ้นสุด** (ประชุมทบทวน 22–23 ก.ย. นาที 39:35:
+ "มันไม่มีการหมดอายุหรอก มันจะหมดอายุก็ต่อเมื่อมันหมดวันที่เรากำหนด") คนเลือกได้แค่ DRAFT / ACTIVE / CANCELLED
+ - ส่ง `EXPIRED` มาตอนสร้าง/แก้ = 400
+ - สร้าง/แก้แล้วผลเป็น ACTIVE แต่ `end_date` < วันนี้ → บันทึกเป็น EXPIRED ทันที (คีย์สัญญาเก่าย้อนหลัง)
+ แก้ `end_date` ของฉบับ EXPIRED ให้ยังไม่ถึง → กลับเป็น ACTIVE เอง (`deriveContractStatus()`)
+ - cron รายชั่วโมง (`MaContractExpiryScheduler` — ปิดด้วย `SCHEDULER_ENABLED=false` เหมือน M11) + รันตอนเปิดเซิร์ฟเวอร์
+ เปลี่ยน ACTIVE ที่เลยวันสิ้นสุดเป็น EXPIRED · แผน MA ไม่มีวันหมดอายุ (พี่เลี้ยงนาทีเดียวกัน) — มีแต่สัญญา
+ - **EXPIRED = "เคย ACTIVE แล้วเลยวันสิ้นสุด"** ทุกที่ที่หาสัญญาที่คุ้มครอง *ณ วันที่หนึ่ง* (หักโควตาย้อนหลัง,
+ เสนอ billing_type) จึงนับ `status IN (ACTIVE, EXPIRED)` + ช่วงวัน ไม่งั้นรอบที่บันทึกย้อนหลังจะหาสัญญาไม่เจอ
+ `coverageState` ของ EXPIRED = `ENDED`
+- **ความยาวสัญญา = ปีต่อปี ไม่มีช่อง "ระยะสัญญา"** (ประชุมทบทวน นาที 40:50–42:50: "ระบบสัญญา 12 เดือน
+ ตัดออกไปเลย เพราะรายปีก็ 12 เดือน" · "ต้องแอดปีต่อปี ... หมดสัญญาโทรคอนเฟิร์มลูกค้าว่าจะต่อไหม" ·
+ "วันสิ้นสุดไม่ต้องกำหนด ให้นับ") — FE ให้เลือกแค่รอบวางบิล, วันเริ่ม default วันนี้,
+ วันสิ้นสุด = วันเริ่ม + 12 เดือน − 1 วัน แสดงเป็นข้อความ · "รายเดือน" = รอบวางบิลเท่านั้น (ตีความ — ยังไม่ได้ยืนยันกับพี่เลี้ยง)
+ - **backend ไม่บังคับ 12 เดือนโดยเจตนา** ยังรับ `startDate`/`endDate` อิสระ เพราะสัญญาเก่าจากกระดาษยาวไม่เท่ากัน
+ และสัญญาที่มีอยู่แล้ว (เช่น 6 เดือน) ต้องแก้ไขได้โดยไม่ถูกปฏิเสธ
 - **สถานะ RENEWED ตั้งเองไม่ได้** ระบบตั้งให้ฉบับเดิมตอน `POST /:id/renew` เท่านั้น
   ฉบับใหม่ชี้กลับด้วย `previous_contract_id` และ **เริ่มที่ DRAFT เสมอ** เพราะยังไม่ได้เซ็น (BR-12)
   ทั้งสองแถวเขียนในทรานแซกชันเดียว ไม่งั้นจะได้ ACTIVE ซ้อนกันเมื่อขั้นที่สองพัง
@@ -900,10 +917,9 @@ return true;
   ส่วน **แผนลบได้เฉพาะที่ยังไม่มีสัญญาอ้างอยู่** แผนที่ถูกใช้แล้วให้ปิดด้วย `is_active = false`
   ซึ่งซ่อนจากตัวเลือกตอนทำสัญญาใหม่ แต่สัญญาเดิมยังอ่านเนื้อหาได้
 - **หน้าจอต้องอ่าน `coverageState` / `isCurrentlyActive` ไม่ใช่ `status` อย่างเดียว**
-  เหมือนกับประกันใน Phase 6 — ยังไม่มี scheduler ปรับเป็น EXPIRED จนกว่าจะถึง Phase 11
-  แถวที่หมดอายุจึงค้างเป็น ACTIVE · `coverageState` มี 4 ค่า:
-  `INACTIVE` (ร่าง/ยกเลิก/ต่อแล้ว) · `NOT_STARTED` (ACTIVE แต่ยังไม่ถึงวันเริ่ม) ·
-  `IN_FORCE` (= `isCurrentlyActive`) · `ENDED` (ACTIVE แต่เลยวันสิ้นสุด)
+ cron ปรับเป็น EXPIRED รายชั่วโมง ระหว่างรอบยังอาจค้างเป็น ACTIVE ได้ · `coverageState` มี 4 ค่า:
+ `INACTIVE` (ร่าง/ยกเลิก/ต่อแล้ว) · `NOT_STARTED` (ACTIVE แต่ยังไม่ถึงวันเริ่ม) ·
+ `IN_FORCE` (= `isCurrentlyActive`) · `ENDED` (EXPIRED หรือ ACTIVE ที่เลยวันสิ้นสุด)
   **ห้าม** เอา `daysUntilExpiry` บวกแล้วติดป้าย「หมดอายุแล้ว」เพราะสัญญายังไม่เริ่มก็มีค่าบวกได้
 - **ราคาเป็น `string` ตลอดสาย ไม่ใช่ `number`** `DECIMAL(15,2)` ละเอียดกว่า `number`
   ของ JavaScript ถ้ารับเป็น number ค่าจะถูกปัดตั้งแต่ยังไม่ถึงฐานข้อมูล และ Sequelize
@@ -1216,6 +1232,11 @@ return true;
   - `return-to-support` → `TICKET_RETURNED_TO_SUPPORT` ให้ `receivedByUserId`
   - ล้มเหลวตอนแจ้ง **ห้าม** ทำให้ action ของใบพัง (กลืน error + log)
   - cron / `notification_rules` ของวันหมดอายุ **ไม่เกี่ยวกับ** event ชุดนี้ — อย่าไปผูก LINE เข้ามา
+- **แจ้งเตือนเป็นประวัติเหตุการณ์ ไม่ใช่สถานะปัจจุบันของงาน** — คิวว่างแล้วแต่แจ้งเตือนยังไม่อ่านได้ ถูกต้องแล้ว
+ เป็น READ ได้สามทาง: `PATCH /:id/read` (กดทีละอัน) · `PATCH /read-by-ref { refType, refId }`
+ (FE เรียกตอนเปิดหน้ารายละเอียด เช่นเปิดใบปัญหาเองโดยไม่ได้กดจากกระดิ่ง) · `PATCH /read-all` (ปุ่มอ่านทั้งหมด)
+ - สองเส้นหลัง **แตะเฉพาะของตัวเองเสมอ แม้มี `notification.manage`** — อ่านแทนคนอื่นจะทำให้เจ้าของไม่เห็นแจ้งเตือน
+ - ไม่มีอะไรให้อ่าน = `{ updated: 0 }` ไม่ใช่ 404 · ระบบไม่ตั้ง READ ให้เองตอน `GET /tickets/:id`
 
 **กับดักทางเทคนิคที่เจอและต้องระวังตลอดไป**
 - **ห้ามใช้ include object ตัวเดียวกันซ้ำ** ทั้งที่ระดับบนและซ้อนใต้ include อื่น

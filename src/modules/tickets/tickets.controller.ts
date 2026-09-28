@@ -16,7 +16,11 @@ import {
   QueryTicketsDto,
   ReopenTicketDto,
 } from './dto/ticket.dto';
-import { ResolutionCreatedDto, TicketResponseDto } from './dto/ticket.response';
+import {
+  ResolutionCreatedDto,
+  TicketConfirmationPrintDto,
+  TicketResponseDto,
+} from './dto/ticket.response';
 import { TicketsService } from './tickets.service';
 
 /**
@@ -109,7 +113,9 @@ export class TicketsController {
   @RequirePermission('ticket.view')
   @ApiOperation({
     summary: 'รายละเอียดปัญหา พร้อมทุกรอบที่ลงมือแก้',
-    description: 'คืน resolutions ทั้งหมดเรียงตาม round จากน้อยไปมาก (BR-03)',
+    description:
+      'คืน resolutions ทั้งหมดเรียงตาม round จากน้อยไปมาก (BR-03) · ' +
+      'แต่ละรอบมี steps สำหรับ stepper และ attachments ของรอบนั้น (B-11)',
   })
   @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
   @ApiResponse({ status: 200, description: 'สำเร็จ', type: TicketResponseDto })
@@ -117,6 +123,30 @@ export class TicketsController {
   @ApiResponse({ status: 404, description: 'ไม่พบรายการปัญหานี้' })
   findOne(@Param('id', ParseIntPipe) id: number): Promise<TicketResponseDto> {
     return this.ticketsService.findOne(id);
+  }
+
+  @Get(':id/confirmation-print')
+  @RequirePermission('ticket.view')
+  @ApiOperation({
+    summary: 'พิมพ์ใบยืนยันการแก้ไขให้ลูกค้าเซ็น (B-12)',
+    description:
+      'คืน JSON สำหรับจัดหน้าพิมพ์ ไม่สร้าง PDF · เลือกรอบด้วย ?round= ไม่งั้นใช้รอบล่าสุด · ' +
+      'หลังลูกค้าเซ็นแล้วสแกนแนบด้วย POST /api/attachments refType=TICKET_RESOLUTION ' +
+      '(ดู attachScanHint ในผลลัพธ์) · ไม่มี e-signature (BR-12)',
+  })
+  @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: TicketConfirmationPrintDto })
+  @ApiResponse({ status: 400, description: 'ยังไม่มีรอบการแก้ไข' })
+  @ApiResponse({ status: 404, description: 'ไม่พบใบหรือรอบที่ระบุ' })
+  getConfirmationPrint(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('round') round?: string,
+  ): Promise<TicketConfirmationPrintDto> {
+    const parsed = round !== undefined && round !== '' ? Number(round) : undefined;
+    return this.ticketsService.getConfirmationPrint(
+      id,
+      parsed !== undefined && !Number.isNaN(parsed) ? parsed : undefined,
+    );
   }
 
   @Post()
@@ -251,7 +281,11 @@ export class TicketsController {
       'คนละสิทธิ์กับ PATCH /:id/close (ticket.close) ที่ปิดใบจากหน้ารายละเอียด',
   })
   @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
-  @ApiResponse({ status: 200, description: 'บอกลูกค้าแล้ว ปิดใบเรียบร้อย', type: TicketResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'บอกลูกค้าแล้ว ปิดใบเรียบร้อย',
+    type: TicketResponseDto,
+  })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   @ApiResponse({ status: 409, description: 'ยังไม่ใช่สถานะรอซัพพอร์ตบอกลูกค้า' })
   async customerNotified(

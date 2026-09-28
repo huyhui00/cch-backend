@@ -150,6 +150,7 @@ describe('TicketsService', () => {
     recordUsageForTicket: jest.Mock;
   };
   let accessControl: { hasPermission: jest.Mock };
+  let attachmentModel: ModelMock;
   let service: TicketsService;
 
   beforeEach(() => {
@@ -159,6 +160,7 @@ describe('TicketsService', () => {
     projectModel = modelMock();
     contactModel = modelMock();
     userModel = modelMock();
+    attachmentModel = modelMock();
     sequelize = {
       transaction: jest.fn((callback: (t: unknown) => Promise<unknown>) => callback(TRANSACTION)),
       query: jest.fn((sql: string) =>
@@ -186,6 +188,7 @@ describe('TicketsService', () => {
     projectModel.findByPk.mockResolvedValue({ id: 1, customerId: 1 });
     contactModel.findByPk.mockResolvedValue({ id: 2, customerId: 1 });
     userModel.findByPk.mockResolvedValue({ id: 4, status: UserStatus.ACTIVE });
+    attachmentModel.findAll.mockResolvedValue([]);
 
     service = new TicketsService(
       ticketModel as unknown as typeof Ticket,
@@ -194,6 +197,7 @@ describe('TicketsService', () => {
       projectModel as unknown as typeof Project,
       contactModel as unknown as typeof Contact,
       userModel as unknown as typeof User,
+      attachmentModel as unknown as never,
       sequelize as unknown as Sequelize,
       warrantiesService as unknown as WarrantiesService,
       maQuotaService as unknown as MaQuotaService,
@@ -1028,9 +1032,8 @@ describe('TicketsService', () => {
         claimedByAdminUserId: 2,
       });
       ticketModel.findByPk.mockResolvedValue(ticket);
-      const notify = (
-        service as unknown as { ticketWorkflowNotify: { notifyAssigned: jest.Mock } }
-      ).ticketWorkflowNotify.notifyAssigned;
+      const notify = (service as unknown as { ticketWorkflowNotify: { notifyAssigned: jest.Mock } })
+        .ticketWorkflowNotify.notifyAssigned;
 
       await service.assign(7, { assignedUserId: null });
 
@@ -1242,5 +1245,73 @@ describe('TicketsService', () => {
     ticketModel.findByPk.mockResolvedValue(null);
 
     await expect(service.findOne(999)).rejects.toThrow('ไม่พบรายการปัญหานี้');
+  });
+
+  describe('B-11 / B-12 detail + confirmation print', () => {
+    it('รายละเอียดรอบมี steps สำหรับ stepper', async () => {
+      resolutionModel.findAll.mockResolvedValue([
+        resolutionRow(1),
+        {
+          ...resolutionRow(2),
+          startedAt: new Date('2026-09-09T06:00:00Z'),
+        },
+      ]);
+
+      const detail = await service.findOne(7);
+
+      expect(detail.resolutions).toHaveLength(2);
+      expect(detail.resolutions[0].steps.map((s) => s.code)).toEqual(['RECORDED']);
+      expect(detail.resolutions[1].steps.map((s) => s.code)).toEqual(['STARTED', 'RECORDED']);
+      expect(detail.resolutions[0].attachments).toEqual([]);
+    });
+
+    it('พิมพ์ใบยืนยันใช้รอบล่าสุดเป็นค่าเริ่มต้น', async () => {
+      ticketModel.findByPk.mockResolvedValue({
+        ...ticketRow({ status: TicketStatus.RESOLVED }),
+        customer: {
+          id: 1,
+          code: 'CUS69-0001',
+          name: 'ลูกค้าทดสอบ',
+          taxId: null,
+          address: null,
+          phone: null,
+          contacts: [],
+        },
+        project: { id: 1, code: 'PRJ69-0001', name: 'โปรเจคทดสอบ' },
+        reportedByContact: null,
+      });
+      resolutionModel.findAll.mockResolvedValue([resolutionRow(1), resolutionRow(2)]);
+
+      const print = await service.getConfirmationPrint(7);
+
+      expect(print.documentTitle).toBe('ใบยืนยันการแก้ไขปัญหา');
+      expect(print.resolution.round).toBe(2);
+      expect(print.attachScanHint).toEqual({
+        refType: 'TICKET_RESOLUTION',
+        refId: 102,
+        noteSuggestion: 'สแกนใบยืนยันรอบที่ 2 ที่ลูกค้าเซ็นแล้ว',
+      });
+      expect(print.signatureBlocks).toHaveLength(2);
+    });
+
+    it('พิมพ์ใบยืนยันไม่ได้เมื่อยังไม่มีรอบแก้', async () => {
+      ticketModel.findByPk.mockResolvedValue({
+        ...ticketRow(),
+        customer: {
+          id: 1,
+          name: 'ลูกค้า',
+          code: null,
+          taxId: null,
+          address: null,
+          phone: null,
+          contacts: [],
+        },
+        project: null,
+        reportedByContact: null,
+      });
+      resolutionModel.findAll.mockResolvedValue([]);
+
+      await expect(service.getConfirmationPrint(7)).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 });

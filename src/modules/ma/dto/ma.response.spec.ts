@@ -41,38 +41,38 @@ function contract(overrides: Record<string, unknown> = {}) {
 
 describe('resolveContractCoverageState', () => {
   it('ACTIVE ก่อนวันเริ่ม → NOT_STARTED (ห้ามตีเป็นหมดอายุ)', () => {
-    expect(
-      resolveContractCoverageState(contract(), '2026-09-17'),
-    ).toBe(MaContractCoverageState.NOT_STARTED);
+    expect(resolveContractCoverageState(contract(), '2026-09-17')).toBe(
+      MaContractCoverageState.NOT_STARTED,
+    );
     expect(isContractCurrentlyActive(contract(), '2026-09-17')).toBe(false);
   });
 
   it('ACTIVE อยู่ในช่วง → IN_FORCE', () => {
-    expect(
-      resolveContractCoverageState(contract(), '2026-10-15'),
-    ).toBe(MaContractCoverageState.IN_FORCE);
+    expect(resolveContractCoverageState(contract(), '2026-10-15')).toBe(
+      MaContractCoverageState.IN_FORCE,
+    );
     expect(isContractCurrentlyActive(contract(), '2026-10-15')).toBe(true);
   });
 
   it('ACTIVE เลยวันสิ้นสุด → ENDED', () => {
-    expect(
-      resolveContractCoverageState(contract(), '2027-10-02'),
-    ).toBe(MaContractCoverageState.ENDED);
+    expect(resolveContractCoverageState(contract(), '2027-10-02')).toBe(
+      MaContractCoverageState.ENDED,
+    );
     expect(isContractCurrentlyActive(contract(), '2027-10-02')).toBe(false);
+  });
+
+  it('EXPIRED (ระบบตั้งเมื่อเลยวันสิ้นสุด) → ENDED', () => {
+    expect(
+      resolveContractCoverageState(contract({ status: MaContractStatus.EXPIRED }), '2027-10-02'),
+    ).toBe(MaContractCoverageState.ENDED);
   });
 
   it('DRAFT / CANCELLED → INACTIVE', () => {
     expect(
-      resolveContractCoverageState(
-        contract({ status: MaContractStatus.DRAFT }),
-        '2026-10-15',
-      ),
+      resolveContractCoverageState(contract({ status: MaContractStatus.DRAFT }), '2026-10-15'),
     ).toBe(MaContractCoverageState.INACTIVE);
     expect(
-      resolveContractCoverageState(
-        contract({ status: MaContractStatus.CANCELLED }),
-        '2026-10-15',
-      ),
+      resolveContractCoverageState(contract({ status: MaContractStatus.CANCELLED }), '2026-10-15'),
     ).toBe(MaContractCoverageState.INACTIVE);
   });
 });

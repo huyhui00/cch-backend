@@ -10,7 +10,15 @@ import {
 import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
-import { Document, Task, TaskPriority, TaskStatus, TaskSubmission, User, UserStatus } from '../../models';
+import {
+  Document,
+  Task,
+  TaskPriority,
+  TaskStatus,
+  TaskSubmission,
+  User,
+  UserStatus,
+} from '../../models';
 import { TasksService } from './tasks.service';
 import type { ProjectsService } from './projects.service';
 import { addDays } from '../../common/utils/date.util';

@@ -558,10 +558,8 @@ export function toMaAddonResponse(addon: MaAddon): MaAddonResponseDto {
 /**
  * สัญญายังคุ้มครองอยู่จริงหรือไม่
  *
- * เหตุผลเดียวกับ `isCurrentlyActive` ของประกันใน Phase 6 — ยังไม่มี scheduler
- * มาปรับ `status` เป็น EXPIRED ให้ แถวที่หมดอายุแล้วจึงค้างเป็น ACTIVE อยู่ในฐาน
+ * cron ปรับ ACTIVE ที่เลยวันสิ้นสุดเป็น EXPIRED รายชั่วโมง ระหว่างรอบแถวจึงยังค้างเป็น ACTIVE ได้
  * ทุกที่ที่ตัดสินว่า "คุ้มครองอยู่ไหม" จึงต้องเทียบช่วงวันที่ซ้ำเสมอ
- * ตรงกับเงื่อนไขที่ `MaQuotaService.findActiveContract()` ใช้ query จริง
  */
 export function isContractCurrentlyActive(
   contract: MaContract,
@@ -574,6 +572,10 @@ export function resolveContractCoverageState(
   contract: Pick<MaContract, 'status' | 'startDate' | 'endDate'>,
   today = todayAsDateOnly(),
 ): MaContractCoverageState {
+  if (contract.status === MaContractStatus.EXPIRED) {
+    return MaContractCoverageState.ENDED;
+  }
+
   if (contract.status !== MaContractStatus.ACTIVE) {
     return MaContractCoverageState.INACTIVE;
   }

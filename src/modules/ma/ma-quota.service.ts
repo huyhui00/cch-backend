@@ -8,13 +8,13 @@ import { addDays, addMonths, toDateOnly } from '../../common/utils/date.util';
 import {
   MaAddon,
   MaContract,
-  MaContractStatus,
   MaPlan,
   MaPlanItem,
   MaUsage,
   Ticket,
   TicketBillingType,
 } from '../../models';
+import { COVERING_CONTRACT_STATUSES } from './contract-status.util';
 
 /**
  * โหมดการนับรอบโควตา
@@ -119,7 +119,7 @@ export class MaQuotaService {
     const contracts = await this.contractModel.findAll({
       where: {
         projectId,
-        status: MaContractStatus.ACTIVE,
+        status: { [Op.in]: COVERING_CONTRACT_STATUSES },
         startDate: { [Op.lte]: date },
         endDate: { [Op.gte]: date },
       },

@@ -131,9 +131,7 @@ describe('TicketWorkflowNotifyService', () => {
   });
 
   it('findTicketAssignUserIds รวม USER ที่ถือ ticket.assign', async () => {
-    userModel.findAll
-      .mockResolvedValueOnce([{ id: 2 }])
-      .mockResolvedValueOnce([{ id: 9 }]);
+    userModel.findAll.mockResolvedValueOnce([{ id: 2 }]).mockResolvedValueOnce([{ id: 9 }]);
     permissionModel.findOne.mockResolvedValue({ id: 77 });
     rolePermissionModel.findAll.mockResolvedValue([{ roleId: 3 }]);
     roleModel.findAll.mockResolvedValue([{ id: 3 }]);

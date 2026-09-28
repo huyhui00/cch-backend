@@ -5,7 +5,15 @@ import { Readable } from 'node:stream';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import { runWithRequestContext } from '../../common/context/request-context';
-import { Attachment, CommunicationLog, Delivery, MaContract, Ticket, TicketResolution, User } from '../../models';
+import {
+  Attachment,
+  CommunicationLog,
+  Delivery,
+  MaContract,
+  Ticket,
+  TicketResolution,
+  User,
+} from '../../models';
 import type { StorageService } from '../files/storage.service';
 import type { UploadedFileLike } from '../files/upload.util';
 import { AttachmentsService } from './attachments.service';
