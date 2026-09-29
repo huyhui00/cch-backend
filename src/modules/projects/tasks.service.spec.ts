@@ -166,6 +166,19 @@ describe('TasksService', () => {
       );
       expect(result).toMatchObject({ total: 1, page: 1, limit: 20 });
     });
+
+    it('badge tasksMeOpen นับด้วย where ชุดเดียวกับรายการ', async () => {
+      taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+      taskModel.count.mockResolvedValue(3);
+
+      await service.findMyTasks(42, { page: 1, limit: 20, offset: 0 } as never);
+      const count = await service.countMyOpenTasks(42);
+
+      const [listOptions] = taskModel.findAndCountAll.mock.calls[0] as [{ where: unknown }];
+      const [countOptions] = taskModel.count.mock.calls[0] as [{ where: unknown }];
+      expect(countOptions.where).toEqual(listOptions.where);
+      expect(count).toBe(3);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -353,11 +366,12 @@ describe('TasksService', () => {
           fileName: 'abc.pdf',
           fileSize: 2048,
           mimeType: 'application/pdf',
-          note: expect.stringContaining('ติดตั้งระบบ CRM'),
           createdBy: 8,
           updatedBy: 8,
         }),
       );
+      const [created] = documentModel.create.mock.calls[0] as [{ note: string }];
+      expect(created.note).toContain('ติดตั้งระบบ CRM');
     });
 
     it('ส่งกลับแก้พร้อมไฟล์ของผู้ตรวจ — ไฟล์เก็บที่รายงานรอบนั้น ไม่ย้ายเข้าเอกสารโปรเจค', async () => {
@@ -1110,6 +1124,67 @@ describe('TasksService', () => {
       await expect(
         service.create(1, { ...dto, startDate: '2026-12-31', dueDate: '2026-01-01' }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('สร้างเป็น REVIEW ไม่ได้ เพราะจะไม่มีรายการส่งตรวจให้ใครตรวจ', async () => {
+      await expect(service.create(1, { ...dto, status: TaskStatus.REVIEW })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(taskModel.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('update — สถานะใช้กติกาเดียวกับ PATCH /status', () => {
+    it('ตั้ง REVIEW ผ่านการแก้งานไม่ได้', async () => {
+      const task = taskRow({ id: 1, status: TaskStatus.DOING, assignedUserId: 7 });
+      register(task);
+
+      await expect(
+        runWithRequestContext(
+          { userId: 7, ipAddress: null, userAgent: null, startedAt: Date.now() },
+          () => service.update(1, 1, { status: TaskStatus.REVIEW }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(task.update).not.toHaveBeenCalled();
+    });
+
+    it('ข้ามการตรวจงานไปเป็น DONE ผ่านการแก้งานไม่ได้', async () => {
+      const task = taskRow({ id: 1, status: TaskStatus.TODO, assignedUserId: 7 });
+      register(task);
+
+      await expect(
+        runWithRequestContext(
+          { userId: 8, ipAddress: null, userAgent: null, startedAt: Date.now() },
+          () => service.update(1, 1, { status: TaskStatus.DONE }),
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(task.update).not.toHaveBeenCalled();
+    });
+
+    it('ฟอร์มส่งสถานะเดิมกลับมาพร้อมการแก้ชื่อ — ไม่ถูกปฏิเสธ', async () => {
+      const task = taskRow({ id: 1, status: TaskStatus.REVIEW, assignedUserId: 7 });
+      register(task);
+
+      await runWithRequestContext(
+        { userId: 7, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () => service.update(1, 1, { title: 'แก้ชื่อ', status: TaskStatus.REVIEW }),
+      );
+
+      expect(task.update).toHaveBeenCalledWith(expect.objectContaining({ title: 'แก้ชื่อ' }));
+    });
+
+    it('เปลี่ยนสถานะทั่วไป (TODO → DOING) ยังทำได้', async () => {
+      const task = taskRow({ id: 1, status: TaskStatus.TODO, assignedUserId: 7 });
+      register(task);
+
+      await runWithRequestContext(
+        { userId: 7, ipAddress: null, userAgent: null, startedAt: Date.now() },
+        () => service.update(1, 1, { status: TaskStatus.DOING }),
+      );
+
+      expect(task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: TaskStatus.DOING }),
+      );
     });
   });
 });

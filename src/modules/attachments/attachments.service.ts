@@ -196,7 +196,7 @@ export class AttachmentsService {
       throw new BadRequestException('refType ไม่ถูกต้อง');
     }
 
-    let exists = false;
+    let exists: boolean;
 
     switch (refType as AttachmentRefType) {
       case 'COMMUNICATION_LOG':

@@ -658,6 +658,39 @@ describe('WarrantiesService', () => {
     });
   });
 
+  describe('findAll — รายการทั้งบริษัท', () => {
+    it('ค้นเลขที่ประกัน หรือโครงการที่ชื่อ/รหัส/ชื่อลูกค้าตรง และกรองลูกค้าผ่าน join โครงการ', async () => {
+      projectModel.findAll.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+
+      await service.findAll(queryDto({ search: 'WAR69', customerId: 7, projectId: 1 }));
+
+      const [options] = warrantyModel.findAndCountAll.mock.calls[0] as [
+        {
+          where: Record<string | symbol, unknown>;
+          include: { model: unknown; required?: boolean; where?: unknown }[];
+        },
+      ];
+      expect(options.where.projectId).toBe(1);
+      expect(options.where[Op.or]).toEqual([
+        { warrantyNo: { [Op.like]: '%WAR69%' } },
+        { projectId: { [Op.in]: [1, 2] } },
+      ]);
+      const projectJoin = options.include.find((include) => include.model === Project);
+      expect(projectJoin).toMatchObject({ required: true, where: { customerId: 7 } });
+    });
+
+    it('ไม่มีคำค้นและตัวกรอง = ทุกใบ เรียงตาม endDate เป็นค่าเริ่มต้น', async () => {
+      await service.findAll(queryDto());
+
+      const [options] = warrantyModel.findAndCountAll.mock.calls[0] as [
+        { where: object; order: unknown[][] },
+      ];
+      expect(options.where).toEqual({});
+      expect(options.order[0]).toEqual(['endDate', 'DESC']);
+      expect(projectModel.findAll).not.toHaveBeenCalled();
+    });
+  });
+
   // -------------------------------------------------------------------------
   // ขอบเขตวันของกฎ "ยังอยู่ในประกันไหม"
   //
@@ -848,6 +881,7 @@ describe('WarrantiesService', () => {
       expect(values).toEqual({ status: WarrantyStatus.EXPIRED });
       expect(options.where.status).toBe(WarrantyStatus.ACTIVE);
       expect(options.where.endDate[Op.lt]).toBe('2026-09-28');
+      expect(options).toMatchObject({ individualHooks: true });
     });
   });
 });

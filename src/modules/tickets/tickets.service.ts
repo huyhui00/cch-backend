@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/sequelize';
-import { Op, type Transaction, type WhereOptions } from 'sequelize';
+import { Op, type OrderItem, type Transaction, type WhereOptions } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
@@ -14,6 +14,8 @@ import { AccessControlService } from '../../common/services/access-control.servi
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
 import { nextGeneratedCode } from '../../common/utils/code-sequence.util';
 import {
+  AuditAction,
+  AuditLog,
   Contact,
   Customer,
   Project,
@@ -30,6 +32,11 @@ import { TicketWorkflowNotifyService } from '../notifications/ticket-workflow-no
 import { WarrantiesService } from '../warranties/warranties.service';
 import { CreateResolutionDto } from './dto/resolution.dto';
 import {
+  buildTicketHistory,
+  collectHistoryUserIds,
+  type TicketHistoryEventDto,
+} from './dto/ticket-history';
+import {
   AssignTicketDto,
   CloseTicketDto,
   CreateTicketDto,
@@ -38,7 +45,9 @@ import {
   QuerySupportQueueDto,
   UpdateTicketDto,
   QueryTicketsDto,
+  RejectReviewDto,
   ReopenTicketDto,
+  ReturnToSupportDto,
 } from './dto/ticket.dto';
 import {
   AdminQueueTab,
@@ -82,6 +91,13 @@ const SORTABLE_FIELDS = new Set([
   'dueAt',
   'resolvedAt',
   'createdAt',
+]);
+
+/** เรียงด้วยชื่อที่ join มาจาก include ของรายการ (belongsTo ทั้งหมด จึงไม่แตก subquery) */
+const JOINED_SORTS = new Map<string, (dir: string) => OrderItem>([
+  ['customerName', (dir) => ['customer', 'name', dir]],
+  ['projectName', (dir) => ['project', 'name', dir]],
+  ['assigneeName', (dir) => ['assignedUser', 'fullName', dir]],
 ]);
 
 /** สร้างใหม่ทุกครั้ง — Sequelize แก้ object ของ include ในที่ตอน normalize ห้ามใช้ร่วมกัน */
@@ -175,6 +191,7 @@ export class TicketsService {
     private readonly maQuotaService: MaQuotaService,
     private readonly accessControl: AccessControlService,
     private readonly ticketWorkflowNotify: TicketWorkflowNotifyService,
+    @InjectModel(AuditLog) private readonly auditLogModel: typeof AuditLog,
   ) {}
 
   async findAll(query: QueryTicketsDto): Promise<PaginatedResult<TicketResponseDto>> {
@@ -211,18 +228,16 @@ export class TicketsService {
       );
     }
 
-    const sortBy = SORTABLE_FIELDS.has(query.sortBy ?? '')
-      ? (query.sortBy as string)
-      : 'reportedAt';
+    const sortKey = query.sortBy ?? '';
+    const primaryOrder: OrderItem =
+      JOINED_SORTS.get(sortKey)?.(query.sortOrder) ??
+      (SORTABLE_FIELDS.has(sortKey) ? [sortKey, query.sortOrder] : ['reportedAt', query.sortOrder]);
 
     const { rows, count } = await this.ticketModel.findAndCountAll({
       where,
       include: listIncludes(),
       distinct: true,
-      order: [
-        [sortBy, query.sortOrder],
-        ['id', query.sortOrder],
-      ],
+      order: [primaryOrder, ['id', query.sortOrder]],
       limit: query.limit,
       offset: query.offset,
     });
@@ -383,11 +398,41 @@ export class TicketsService {
       throw new NotFoundException('ไม่พบรายการปัญหานี้');
     }
 
-    const resolutions = await this.findResolutions(id);
+    const [resolutions, history] = await Promise.all([
+      this.findResolutions(id),
+      this.findHistory(id),
+    ]);
     const attachmentsByResolutionId = await this.findResolutionAttachmentsMap(
       resolutions.map((item) => item.id),
     );
-    return toTicketResponse(ticket, resolutions, attachmentsByResolutionId);
+    return toTicketResponse(ticket, resolutions, attachmentsByResolutionId, history);
+  }
+
+  /** ลำดับเหตุการณ์ของสายงาน — อ่านจาก audit_logs ของใบนี้ (index table_name, record_id, created_at) */
+  private async findHistory(ticketId: number): Promise<TicketHistoryEventDto[]> {
+    const rows = await this.auditLogModel.findAll({
+      where: {
+        tableName: 'tickets',
+        recordId: ticketId,
+        action: { [Op.in]: [AuditAction.CREATE, AuditAction.UPDATE] },
+      },
+      attributes: ['action', 'userId', 'oldValue', 'newValue', 'createdAt'],
+      order: [
+        ['createdAt', 'ASC'],
+        ['id', 'ASC'],
+      ],
+    });
+
+    const userIds = collectHistoryUserIds(rows);
+    const users = userIds.length
+      ? await this.userModel.findAll({
+          where: { id: { [Op.in]: userIds } },
+          attributes: ['id', 'fullName'],
+          paranoid: false,
+        })
+      : [];
+
+    return buildTicketHistory(rows, new Map(users.map((user) => [user.id, user.fullName])));
   }
 
   /**
@@ -737,7 +782,7 @@ export class TicketsService {
    * แอดมินตรวจผ่าน → ส่งกลับซัพพอร์ตให้บอกลูกค้า (C-1)
    * จาก RESOLVED → WAITING_SUPPORT
    */
-  async returnToSupport(id: number): Promise<TicketResponseDto> {
+  async returnToSupport(id: number, dto: ReturnToSupportDto = {}): Promise<TicketResponseDto> {
     const actorId = getCurrentUserId();
     const ticket = await this.findOrFail(id);
 
@@ -747,11 +792,44 @@ export class TicketsService {
 
     await ticket.update({
       status: TicketStatus.WAITING_SUPPORT,
+      description: this.appendNote(ticket.description, dto.note, 'ตรวจผ่าน'),
       updatedBy: actorId,
     });
 
     const result = await this.findOne(id);
     await this.ticketWorkflowNotify.notifyReturnedToSupport(result, actorId);
+    return result;
+  }
+
+  /**
+   * แอดมินตรวจไม่ผ่าน → ตีกลับให้ผู้แก้คนเดิมทำต่อ (C-1 ขั้น 4)
+   * จาก RESOLVED → IN_PROGRESS · ผู้แก้และแอดมินผู้รับคิวคงเดิม
+   *
+   * ไม่ใช้ reopen แทน เพราะ reopen คือปัญหาเดิมที่ลูกค้าแจ้งกลับมา และล้างแอดมินผู้รับคิว
+   * งานที่ส่งใหม่เป็นรอบถัดไปของใบเดิม (BR-03) โควตา MA ไม่ถูกหักซ้ำ (หักครั้งเดียวต่อใบ)
+   */
+  async rejectReview(id: number, dto: RejectReviewDto): Promise<TicketResponseDto> {
+    const actorId = getCurrentUserId();
+    const ticket = await this.findOrFail(id);
+
+    if (ticket.status !== TicketStatus.RESOLVED) {
+      throw new ConflictException('ตีกลับได้เฉพาะใบที่แก้ไขแล้วและรอแอดมินตรวจ');
+    }
+
+    if (!ticket.assignedUserId) {
+      throw new ConflictException(
+        'ใบนี้ไม่มีผู้รับผิดชอบให้ตีกลับ — ให้มอบหมายผู้แก้ก่อน หรือตรวจผ่านแล้วส่งซัพพอร์ต',
+      );
+    }
+
+    await ticket.update({
+      status: TicketStatus.IN_PROGRESS,
+      description: this.appendNote(ticket.description, dto.reason, 'ตรวจไม่ผ่าน'),
+      updatedBy: actorId,
+    });
+
+    const result = await this.findOne(id);
+    await this.ticketWorkflowNotify.notifyReviewRejected(result, actorId, dto.reason);
     return result;
   }
 

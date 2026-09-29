@@ -16,12 +16,13 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
 
-import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { MAX_LIMIT, PaginationDto } from '../../../common/dto/pagination.dto';
 import { ProjectPriority, ProjectStatus } from '../../../models';
 import { CreateCustomerDto } from '../../customers/dto/create-customer.dto';
 
@@ -153,6 +154,32 @@ export class UpdateProjectDto extends PartialType(
   @ApiPropertyOptional({ readOnly: true, description: 'เปลี่ยนไม่ได้ ส่งมาจะถูกปฏิเสธ' })
   @IsOptional()
   declare customerId?: number;
+}
+
+/** ไม่ส่งอะไรมา = คืนครบทุกโครงการเหมือนเดิม · ดรอปดาวน์แบบพิมพ์ค้นส่ง search + limit */
+export class QueryProjectOptionsDto {
+  @ApiPropertyOptional({
+    description: 'ค้นจากชื่อหรือรหัสโครงการ',
+    maxLength: 100,
+    example: 'คลัง',
+  })
+  @IsOptional()
+  @IsString({ message: 'search ต้องเป็นข้อความ' })
+  @MaxLength(100, { message: 'search ยาวเกินกำหนด' })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  search?: string;
+
+  @ApiPropertyOptional({
+    description: `จำนวนสูงสุดที่คืน (ไม่เกิน ${MAX_LIMIT}) · ไม่ส่ง = ทั้งหมด`,
+    minimum: 1,
+    maximum: MAX_LIMIT,
+    example: 20,
+  })
+  @IsOptional()
+  @IsInt({ message: 'limit ต้องเป็นจำนวนเต็ม' })
+  @Min(1, { message: 'limit ต้องมีค่าตั้งแต่ 1 ขึ้นไป' })
+  @Max(MAX_LIMIT, { message: `limit ต้องไม่เกิน ${MAX_LIMIT}` })
+  limit?: number;
 }
 
 export class QueryProjectsDto extends PaginationDto {

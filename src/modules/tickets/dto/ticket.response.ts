@@ -9,6 +9,7 @@ import {
   TicketResolution,
   TicketStatus,
 } from '../../../models';
+import { TicketHistoryEventDto } from './ticket-history';
 
 /**
  * สถานะที่ถือว่า "ยังไม่จบ" — หน้าจอรอรับการแก้ไข (CLAUDE.md 9.1)
@@ -449,6 +450,15 @@ export class TicketResponseDto {
   })
   resolutions: ResolutionResponseDto[];
 
+  @ApiProperty({
+    type: [TicketHistoryEventDto],
+    description:
+      'ลำดับเหตุการณ์ของสายงาน (ส่งแอดมิน · รับคิว · มอบหมาย · เริ่ม · ส่งตรวจ · ตีกลับ · ตรวจผ่าน · แจ้งลูกค้า · เปิดใหม่) ' +
+      'เรียงเก่าไปใหม่ อ่านจากประวัติการใช้งาน · มีค่าเฉพาะ endpoint รายละเอียด ' +
+      '(ใบที่สร้างจากข้อมูลตัวอย่างอาจไม่มีเหตุการณ์ CREATED)',
+  })
+  history: TicketHistoryEventDto[];
+
   @ApiProperty()
   createdAt: Date;
 
@@ -544,6 +554,7 @@ export function toTicketResponse(
   ticket: Ticket,
   resolutions: TicketResolution[] = [],
   attachmentsByResolutionId: ReadonlyMap<number, ResolutionAttachmentDto[]> = new Map(),
+  history: TicketHistoryEventDto[] = [],
 ): TicketResponseDto {
   return {
     id: ticket.id,
@@ -581,6 +592,7 @@ export function toTicketResponse(
     resolutions: resolutions.map((item) =>
       toResolutionResponse(item, attachmentsByResolutionId.get(item.id) ?? []),
     ),
+    history,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
   };

@@ -8,7 +8,12 @@ import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { QueryQuotaDto } from '../ma/dto/ma-contract.dto';
 import { ProjectMaQuotaSummaryDto } from '../ma/dto/ma.response';
 import { MaContractsService } from '../ma/ma-contracts.service';
-import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
+import {
+  CreateProjectDto,
+  QueryProjectOptionsDto,
+  QueryProjectsDto,
+  UpdateProjectDto,
+} from './dto/project.dto';
 import { ProjectOptionDto, ProjectReportDto, ProjectResponseDto } from './dto/project.response';
 import { ProjectsService } from './projects.service';
 
@@ -31,7 +36,10 @@ export class ProjectsController {
   @RequirePermission('project.view')
   @ApiOperation({
     summary: 'รายการโครงการ',
-    description: 'กรองตามสถานะ ลูกค้า ความสำคัญ หรือผู้จัดการโครงการได้',
+    description:
+      'กรองตามสถานะ ลูกค้า ความสำคัญ หรือผู้จัดการโครงการได้ · `sortBy` = code / name / status / ' +
+      'priority / startDate / targetEndDate / contractValue / createdAt / updatedAt / ' +
+      'customerName / managerName / progress',
   })
   @ApiResponse({ status: 200, description: 'สำเร็จ', type: [ProjectResponseDto] })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
@@ -45,12 +53,14 @@ export class ProjectsController {
     summary: 'ตัวเลือกโครงการสำหรับดรอปดาวน์ / ตัวกรอง',
     description:
       'คืนทุกโครงการ (ทุกสถานะ) ไม่แบ่งหน้า เรียงตามชื่อ มีแค่ id / code / name / status ' +
-      '— ใช้แทน GET /projects?limit=100 ที่ตัวเลือกจะหายเมื่อเกิน 100 โครงการ',
+      '— ใช้แทน GET /projects?limit=100 ที่ตัวเลือกจะหายเมื่อเกิน 100 โครงการ · ' +
+      'ดรอปดาวน์แบบพิมพ์ค้นส่ง `search` + `limit` (เช่น 20) เพื่อไม่ต้องโหลดทุกโครงการเมื่อข้อมูลเยอะ',
   })
   @ApiResponse({ status: 200, description: 'สำเร็จ', type: [ProjectOptionDto] })
+  @ApiResponse({ status: 400, description: 'search / limit ไม่ถูกต้อง' })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
-  findOptions(): Promise<ProjectOptionDto[]> {
-    return this.projectsService.findOptions();
+  findOptions(@Query() query: QueryProjectOptionsDto): Promise<ProjectOptionDto[]> {
+    return this.projectsService.findOptions(query);
   }
 
   @Get(':id/report')

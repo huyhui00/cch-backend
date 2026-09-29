@@ -123,6 +123,11 @@ export class FollowUpsService {
       }
     }
 
+    if (query.dueByToday) {
+      Object.assign(where, { status: { [Op.in]: OPEN_FOLLOW_UP_STATUSES } });
+      dueBounds[Op.lte] = todayAsDateOnly();
+    }
+
     if (Object.getOwnPropertySymbols(dueBounds).length > 0) {
       Object.assign(where, { dueDate: dueBounds });
     }
@@ -143,6 +148,17 @@ export class FollowUpsService {
     });
 
     return toPaginatedResult(rows.map(toFollowUpResponse), count, query);
+  }
+
+  /** badge followUpsMineDue = total ของ GET /follow-ups?assignedUserId=<me>&dueByToday=true */
+  async countMineDue(userId: number): Promise<number> {
+    const query = Object.assign(new QueryFollowUpsDto(), {
+      page: 1,
+      limit: 1,
+      assignedUserId: userId,
+      dueByToday: true,
+    });
+    return (await this.findAll(query)).total;
   }
 
   async findOne(id: number): Promise<FollowUpResponseDto> {

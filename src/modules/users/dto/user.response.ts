@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 
 import { AccountType, User, UserStatus } from '../../../models';
 import { RoleSummaryDto, toRoleSummary } from '../../roles/dto/role.response';
+import { avatarUrlFor } from '../avatar.util';
 
 /**
  * รูปแบบข้อมูลผู้ใช้ที่ส่งออกทุกที่
@@ -33,7 +34,10 @@ export class UserResponseDto {
   @ApiProperty({ nullable: true, example: 'Support Engineer' })
   position: string | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({
+    nullable: true,
+    description: 'รูปที่อัปโหลดผ่านระบบ = /api/users/:id/avatar ต้องดึงพร้อม Authorization header',
+  })
   avatarUrl: string | null;
 
   @ApiProperty({ nullable: true, description: 'ใช้ส่งแจ้งเตือนภายในเท่านั้น (BR-11)' })
@@ -71,7 +75,7 @@ export function toUserResponse(user: User): UserResponseDto {
     nickname: user.nickname,
     phone: user.phone,
     position: user.position,
-    avatarUrl: user.avatarUrl,
+    avatarUrl: avatarUrlFor(user),
     lineUserId: user.lineUserId,
     accountType: user.accountType,
     status: user.status,

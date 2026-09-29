@@ -59,6 +59,49 @@ export class DocumentResponseDto {
   updatedAt: Date;
 }
 
+export class DocumentProjectSummaryDto {
+  @ApiProperty({ example: 3 })
+  id: number;
+
+  @ApiProperty({ nullable: true, example: 'PRJ69-0001' })
+  code: string | null;
+
+  @ApiProperty({ example: 'ระบบจัดการคลังสินค้า' })
+  name: string;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'ชื่อลูกค้าเจ้าของโครงการ',
+    example: 'บริษัท เอ จำกัด',
+  })
+  customerName: string | null;
+}
+
+/** GET /documents — รายการรวมทั้งบริษัท พ่วงโครงการ (แยกคลาสเพื่อไม่เปลี่ยนสัญญาของเส้นรายโครงการ) */
+export class CompanyDocumentResponseDto extends DocumentResponseDto {
+  @ApiProperty({ type: DocumentProjectSummaryDto, nullable: true })
+  project: DocumentProjectSummaryDto | null;
+}
+
+export function toCompanyDocumentResponse(
+  document: Document,
+  uploaders: ReadonlyMap<number, DocumentUploaderDto>,
+): CompanyDocumentResponseDto {
+  const project = document.project;
+
+  return {
+    ...toDocumentResponse(document, uploaders),
+    project: project
+      ? {
+          id: project.id,
+          code: project.code,
+          name: project.name,
+          customerName: project.customer?.name ?? null,
+        }
+      : null,
+  };
+}
+
 export function toDocumentResponse(
   document: Document,
   uploaders: ReadonlyMap<number, DocumentUploaderDto>,

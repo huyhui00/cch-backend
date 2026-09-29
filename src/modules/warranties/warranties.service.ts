@@ -27,6 +27,7 @@ import {
 } from '../../models';
 import {
   CreateWarrantyDto,
+  QueryCompanyWarrantiesDto,
   QueryExpiringWarrantiesDto,
   QueryWarrantiesDto,
   UpdateWarrantyDto,
@@ -284,11 +285,17 @@ export class WarrantiesService {
     return toWarrantyPrint({ warranty, customer, onDate: todayAsDateOnly() });
   }
 
-  /** ACTIVE ที่เลยวันสิ้นสุด → EXPIRED — เรียกจาก WarrantyExpiryScheduler */
+  /**
+   * ACTIVE ที่เลยวันสิ้นสุด → EXPIRED — เรียกจาก WarrantyExpiryScheduler
+   * individualHooks เหตุผลเดียวกับ MaContractsService.expireEndedContracts()
+   */
   async expireEndedWarranties(today: string = todayAsDateOnly()): Promise<number> {
     const [affected] = await this.warrantyModel.update(
       { status: WarrantyStatus.EXPIRED },
-      { where: { status: WarrantyStatus.ACTIVE, endDate: { [Op.lt]: today } } },
+      {
+        where: { status: WarrantyStatus.ACTIVE, endDate: { [Op.lt]: today } },
+        individualHooks: true,
+      },
     );
     return affected;
   }
@@ -333,6 +340,75 @@ export class WarrantiesService {
   }
 
   /**
+   * รายการประกันทั้งบริษัท (ไม่ผูกโครงการใน URL) — ตัวกรองชุดเดียวกับรายการของโครงการ
+   * บวก search / projectId / customerId · หน้าจอยังต้องอ่าน isCurrentlyActive ไม่ใช่ status
+   */
+  async findAll(query: QueryCompanyWarrantiesDto): Promise<PaginatedResult<WarrantyResponseDto>> {
+    const where: WhereOptions<Warranty> = {};
+
+    if (query.status) {
+      Object.assign(where, { status: query.status });
+    }
+
+    if (query.deliveryId !== undefined) {
+      Object.assign(where, { deliveryId: query.deliveryId });
+    }
+
+    if (query.projectId !== undefined) {
+      Object.assign(where, { projectId: query.projectId });
+    }
+
+    if (query.search) {
+      Object.assign(where, await this.searchCondition(query.search));
+    }
+
+    const sortBy = SORTABLE_FIELDS.has(query.sortBy ?? '') ? (query.sortBy as string) : 'endDate';
+
+    const { rows, count } = await this.warrantyModel.findAndCountAll({
+      where,
+      include: [deliveryInclude(), projectInclude(query.customerId), maContractInclude()],
+      distinct: true,
+      order: [
+        [sortBy, query.sortOrder],
+        ['id', query.sortOrder],
+      ],
+      limit: query.limit,
+      offset: query.offset,
+    });
+
+    const onDate = todayAsDateOnly();
+
+    return toPaginatedResult(
+      rows.map((warranty) => toWarrantyResponse(warranty, onDate)),
+      count,
+      query,
+    );
+  }
+
+  /**
+   * หา id โครงการที่ชื่อ/รหัสหรือชื่อลูกค้าตรงก่อน แล้วค่อยกรองด้วย IN — ไม่ใช้ `$project.name$`
+   * ใน query หลักเพราะ findAndCountAll ที่มี limit + include อาจถูกห่อเป็น subquery (กฎ Phase 7)
+   */
+  private async searchCondition(search: string): Promise<WhereOptions<Warranty>> {
+    const like = { [Op.like]: '%' + search + '%' };
+
+    const projects = await this.projectModel.findAll({
+      attributes: ['id'],
+      where: { [Op.or]: [{ name: like }, { code: like }, { '$customer.name$': like }] },
+      include: [{ model: Customer, attributes: [], required: false, paranoid: false }],
+      paranoid: false,
+    });
+
+    const conditions: WhereOptions<Warranty>[] = [{ warrantyNo: like }];
+
+    if (projects.length > 0) {
+      conditions.push({ projectId: { [Op.in]: projects.map((project) => project.id) } });
+    }
+
+    return { [Op.or]: conditions };
+  }
+
+  /**
    * หน้าจอ "ประกันใกล้หมด" — ตัวป้อนให้ notification rule แบบ WARRANTY_EXPIRING (Phase 11)
    *
    * ไม่รวมประกันที่หมดอายุไปแล้ว เพราะหน้าจอนี้มีไว้ให้ไล่ต่อสัญญาทัน
@@ -368,6 +444,12 @@ export class WarrantiesService {
       count,
       query,
     );
+  }
+
+  /** badge warrantiesExpiringSoon = total ของ GET /warranties/expiring?days=<days> */
+  async countExpiring(days: number): Promise<number> {
+    const query = Object.assign(new QueryExpiringWarrantiesDto(), { page: 1, limit: 1, days });
+    return (await this.findExpiring(query)).total;
   }
 
   /**

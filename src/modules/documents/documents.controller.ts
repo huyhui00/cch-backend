@@ -6,6 +6,7 @@ import {
   Param,
   ParseIntPipe,
   Patch,
+  Query,
   StreamableFile,
 } from '@nestjs/common';
 import {
@@ -18,16 +19,35 @@ import {
 } from '@nestjs/swagger';
 
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { type PaginatedResult } from '../../common/dto/pagination.dto';
 import { contentDisposition } from '../files/upload.util';
 import { DocumentsService } from './documents.service';
-import { UpdateDocumentDto } from './dto/document.dto';
-import { DocumentResponseDto } from './dto/document.response';
+import { QueryCompanyDocumentsDto, UpdateDocumentDto } from './dto/document.dto';
+import { CompanyDocumentResponseDto, DocumentResponseDto } from './dto/document.response';
 
 @ApiTags('documents')
 @ApiBearerAuth('access-token')
 @Controller('documents')
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
+
+  @Get()
+  @RequirePermission('document.view')
+  @ApiOperation({
+    summary: 'รายการเอกสารทั้งบริษัท',
+    description:
+      'แบ่งหน้า เรียงล่าสุดก่อน · กรอง projectId / customerId · `search` ค้นชื่อเอกสาร ชื่อไฟล์ ' +
+      'และชื่อ/รหัสโครงการ · `sortBy` = title / fileName / fileSize / createdAt / updatedAt · ' +
+      'แต่ละแถวพ่วง project (id, code, name, customerName)',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [CompanyDocumentResponseDto] })
+  @ApiResponse({ status: 400, description: 'ข้อมูลไม่ถูกต้อง' })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  findAll(
+    @Query() query: QueryCompanyDocumentsDto,
+  ): Promise<PaginatedResult<CompanyDocumentResponseDto>> {
+    return this.documentsService.findAll(query);
+  }
 
   @Get(':id')
   @RequirePermission('document.view')

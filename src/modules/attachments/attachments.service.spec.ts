@@ -213,8 +213,8 @@ describe('AttachmentsService', () => {
 
   describe('remove', () => {
     it('soft delete แถว ไม่เรียก storage ลบไฟล์', async () => {
-      const row = attachmentRow();
-      attachmentModel.findByPk.mockResolvedValue(row);
+      const destroy = jest.fn().mockResolvedValue(undefined);
+      attachmentModel.findByPk.mockResolvedValue(attachmentRow({ destroy }));
 
       await runWithRequestContext(
         { userId: 4, ipAddress: null, userAgent: null, startedAt: Date.now() },
@@ -223,7 +223,7 @@ describe('AttachmentsService', () => {
         },
       );
 
-      expect(row.destroy).toHaveBeenCalled();
+      expect(destroy).toHaveBeenCalled();
       expect(storage.get).not.toHaveBeenCalled();
     });
   });

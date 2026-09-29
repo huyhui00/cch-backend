@@ -26,7 +26,13 @@ export class AuthProfileDto {
   @ApiProperty({ nullable: true, example: 'ผู้ดูแลระบบสูงสุด' })
   position: string | null;
 
-  @ApiProperty({ nullable: true, example: null })
+  @ApiProperty({
+    nullable: true,
+    example: '/api/users/1/avatar?v=3f2a9c1e',
+    description:
+      'path ของ API — ดึงเป็น blob พร้อม Authorization header ใช้ <img src> ตรง ๆ ไม่ได้ ' +
+      '· ?v= เปลี่ยนทุกครั้งที่อัปโหลดรูปใหม่',
+  })
   avatarUrl: string | null;
 
   @ApiProperty({ enum: AccountType, example: AccountType.SUPER_ADMIN })

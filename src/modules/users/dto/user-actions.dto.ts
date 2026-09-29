@@ -1,4 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayUnique,
@@ -6,6 +7,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsPositive,
   IsString,
   MaxLength,
@@ -68,6 +70,30 @@ export class ChangePasswordDto {
   @MinLength(MIN_PASSWORD_LENGTH, { message: 'รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัวอักษร' })
   @MaxLength(MAX_PASSWORD_LENGTH, { message: 'รหัสผ่านใหม่ต้องยาวไม่เกิน 72 ตัวอักษร' })
   newPassword: string;
+}
+
+export const MAX_NICKNAME_LENGTH = 50;
+
+/**
+ * ผู้ใช้แก้โปรไฟล์ของตัวเอง — แก้ได้แค่ชื่อเล่น
+ * ฟิลด์อื่น (role / status / username / accountType) ถูก forbidNonWhitelisted ปฏิเสธเป็น 400
+ */
+export class UpdateOwnProfileDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: MAX_NICKNAME_LENGTH,
+    description: 'ส่ง null หรือ "" เพื่อลบชื่อเล่น',
+    example: 'ต้อม',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || null : value,
+  )
+  @IsString({ message: 'ชื่อเล่นต้องเป็นข้อความ' })
+  @MaxLength(MAX_NICKNAME_LENGTH, {
+    message: `ชื่อเล่นยาวได้ไม่เกิน ${MAX_NICKNAME_LENGTH} ตัวอักษร`,
+  })
+  nickname?: string | null;
 }
 
 /**

@@ -8,6 +8,7 @@ import type { AccessControlService } from '../../common/services/access-control.
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { verifyPassword } from '../../common/utils/crypto.util';
 import { AccountType, Role, User, UserRole } from '../../models';
+import type { StorageService } from '../files/storage.service';
 import { UsersService } from './users.service';
 
 interface ModelMock {
@@ -68,6 +69,7 @@ describe('UsersService.resetPassword', () => {
       { transaction: jest.fn() } as unknown as Sequelize,
       config as unknown as ConfigService,
       { hasPermission: jest.fn() } as unknown as AccessControlService,
+      {} as unknown as StorageService,
     );
   });
 
@@ -78,11 +80,9 @@ describe('UsersService.resetPassword', () => {
     await service.resetPassword(5, { newPassword: 'TempPassw0rd!' }, actor());
 
     expect(row.update).toHaveBeenCalledTimes(1);
-    const payload = row.update.mock.calls[0][0] as {
-      passwordHash: string;
-      refreshTokenHash: null;
-      updatedBy: number;
-    };
+    const [payload] = row.update.mock.calls[0] as [
+      { passwordHash: string; refreshTokenHash: null; updatedBy: number },
+    ];
     expect(payload.refreshTokenHash).toBeNull();
     expect(payload.updatedBy).toBe(1);
     expect(payload.passwordHash).not.toBe('TempPassw0rd!');
@@ -114,5 +114,118 @@ describe('UsersService.resetPassword', () => {
     await expect(
       service.resetPassword(999, { newPassword: 'TempPassw0rd!' }, actor()),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('UsersService โปรไฟล์ของตัวเอง', () => {
+  let userModel: ModelMock;
+  let storage: { put: jest.Mock; get: jest.Mock; delete: jest.Mock };
+  let service: UsersService;
+
+  const png = (size = 10) => ({
+    originalname: 'me.png',
+    mimetype: 'image/png',
+    size,
+    buffer: Buffer.alloc(size),
+  });
+
+  beforeEach(() => {
+    userModel = modelMock();
+    storage = {
+      put: jest
+        .fn()
+        .mockResolvedValue({ key: 'local:users/5/avatar/2026/09/new.png', driver: 'local' }),
+      get: jest.fn(),
+      delete: jest.fn().mockResolvedValue(undefined),
+    };
+
+    service = new UsersService(
+      userModel as unknown as typeof User,
+      modelMock() as unknown as typeof Role,
+      modelMock() as unknown as typeof UserRole,
+      { transaction: jest.fn() } as unknown as Sequelize,
+      { get: jest.fn() } as unknown as ConfigService,
+      { hasPermission: jest.fn() } as unknown as AccessControlService,
+      storage as unknown as StorageService,
+    );
+  });
+
+  it('แก้ชื่อเล่นของตัวเองและบันทึกผู้แก้', async () => {
+    const row = userRow();
+    userModel.findByPk.mockResolvedValue(row);
+
+    await service.updateOwnProfile(5, { nickname: 'ปราณี' });
+
+    expect(row.update).toHaveBeenCalledWith({ nickname: 'ปราณี', updatedBy: 5 });
+  });
+
+  it('ส่ง null = ลบชื่อเล่น · ไม่ส่งเลย = ไม่แตะแถว', async () => {
+    const row = userRow();
+    userModel.findByPk.mockResolvedValue(row);
+
+    await service.updateOwnProfile(5, { nickname: null });
+    await service.updateOwnProfile(5, {});
+
+    expect(row.update).toHaveBeenCalledTimes(1);
+    expect(row.update).toHaveBeenCalledWith({ nickname: null, updatedBy: 5 });
+  });
+
+  it('อัปโหลดรูปใหม่แล้วลบรูปเดิมของตัวเอง', async () => {
+    const row = userRow({ avatarUrl: 'local:users/5/avatar/2026/08/old.png' });
+    userModel.findByPk.mockResolvedValue(row);
+
+    await service.setOwnAvatar(5, png());
+
+    const [key, , contentType] = storage.put.mock.calls[0] as [string, Buffer, string];
+    expect(key).toMatch(/^users\/5\/avatar\/.+\.png$/);
+    expect(contentType).toBe('image/png');
+    expect(row.update).toHaveBeenCalledWith({
+      avatarUrl: 'local:users/5/avatar/2026/09/new.png',
+      updatedBy: 5,
+    });
+    expect(storage.delete).toHaveBeenCalledWith('local:users/5/avatar/2026/08/old.png');
+  });
+
+  it('ไม่ลบไฟล์ที่ไม่ใช่รูปโปรไฟล์ของตัวเอง (ค่าเก่าที่เป็นลิงก์ภายนอก)', async () => {
+    const row = userRow({ avatarUrl: 'https://example.com/me.png' });
+    userModel.findByPk.mockResolvedValue(row);
+
+    await service.setOwnAvatar(5, png());
+
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('ลบไฟล์เก่าไม่สำเร็จไม่ทำให้การอัปโหลดพัง', async () => {
+    userModel.findByPk.mockResolvedValue(
+      userRow({ avatarUrl: 'local:users/5/avatar/2026/08/old.png' }),
+    );
+    storage.delete.mockRejectedValue(new Error('disk busy'));
+
+    await expect(service.setOwnAvatar(5, png())).resolves.toBeUndefined();
+  });
+
+  it('ปฏิเสธไฟล์ที่ไม่ใช่ JPG/PNG/WEBP ก่อนขึ้นที่เก็บ', async () => {
+    await expect(
+      service.setOwnAvatar(5, { ...png(), originalname: 'me.gif', mimetype: 'image/gif' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.setOwnAvatar(5, undefined)).rejects.toBeInstanceOf(BadRequestException);
+    expect(storage.put).not.toHaveBeenCalled();
+  });
+
+  it('ลบรูปโปรไฟล์ = ล้างค่าและลบไฟล์', async () => {
+    const row = userRow({ avatarUrl: 'local:users/5/avatar/2026/08/old.png' });
+    userModel.findByPk.mockResolvedValue(row);
+
+    await service.removeOwnAvatar(5);
+
+    expect(row.update).toHaveBeenCalledWith({ avatarUrl: null, updatedBy: 5 });
+    expect(storage.delete).toHaveBeenCalledWith('local:users/5/avatar/2026/08/old.png');
+  });
+
+  it('ดาวน์โหลดได้เฉพาะ key ในโฟลเดอร์รูปโปรไฟล์ของคนนั้น', async () => {
+    userModel.findByPk.mockResolvedValue(userRow({ avatarUrl: 'local:projects/1/2026/09/x.pdf' }));
+
+    await expect(service.openAvatar(5)).rejects.toBeInstanceOf(NotFoundException);
+    expect(storage.get).not.toHaveBeenCalled();
   });
 });

@@ -1,14 +1,45 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op, type WhereOptions } from 'sequelize';
+import { literal, Op, type Order, type WhereOptions } from 'sequelize';
 
-import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
+import {
+  type PaginatedResult,
+  SortOrder,
+  toPaginatedResult,
+} from '../../common/dto/pagination.dto';
+import {
+  type CursorPaginatedResult,
+  decodeCursor,
+  encodeCursor,
+  olderThan,
+  toCursorResult,
+} from '../../common/utils/cursor.util';
 import { AuditLog, User } from '../../models';
+import { loadAuditRefLabels } from './audit-ref-loader';
 import { type AuditLogResponseDto, toAuditLogResponse } from './dto/audit-log.response';
 import { QueryAuditLogsDto } from './dto/query-audit-logs.dto';
 
 /** ฟิลด์ที่ยอมให้เรียงลำดับได้ — กันค่าแปลกปลอมจาก query string sortBy หลุดเข้า ORDER BY */
 const SORTABLE_FIELDS = new Set(['id', 'createdAt', 'action', 'tableName']);
+
+const NEWEST_FIRST: Order = [
+  ['createdAt', 'DESC'],
+  ['id', 'DESC'],
+];
+
+export type AuditLogPage =
+  | (PaginatedResult<AuditLogResponseDto> & { nextCursor: string | null; hasMore: boolean })
+  | CursorPaginatedResult<AuditLogResponseDto>;
+
+/**
+ * แถว users UPDATE ที่เปลี่ยนแค่เวลาเข้าสู่ระบบกับ token = ล็อกอิน / ต่ออายุ / ออกจากระบบ
+ * COALESCE กันแถวที่ new_value เป็น NULL หลุดหายไปด้วย (NOT NULL = NULL)
+ */
+const SESSION_EVENT_EXCLUSION = literal(
+  "NOT (`AuditLog`.`table_name` = 'users' AND `AuditLog`.`action` = 'UPDATE' AND " +
+    "COALESCE(JSON_LENGTH(JSON_REMOVE(`AuditLog`.`new_value`, '$.lastLoginAt', '$.refreshTokenHash', " +
+    "'$.updatedAt', '$.updatedBy')), 1) = 0)",
+);
 
 /**
  * audit_logs เป็น append-only — service นี้จึงมีแต่การอ่าน
@@ -18,7 +49,7 @@ const SORTABLE_FIELDS = new Set(['id', 'createdAt', 'action', 'tableName']);
 export class AuditLogsService {
   constructor(@InjectModel(AuditLog) private readonly auditLogModel: typeof AuditLog) {}
 
-  async findAll(query: QueryAuditLogsDto): Promise<PaginatedResult<AuditLogResponseDto>> {
+  async findAll(query: QueryAuditLogsDto): Promise<AuditLogPage> {
     const where: WhereOptions<AuditLog> = {};
 
     if (query.userId !== undefined) {
@@ -43,6 +74,20 @@ export class AuditLogsService {
       Object.assign(where, { createdAt });
     }
 
+    if (query.excludeTableNames?.length) {
+      Object.assign(where, {
+        tableName: query.tableName ?? { [Op.notIn]: query.excludeTableNames },
+      });
+    }
+
+    if (query.hideSessionEvents) {
+      Object.assign(where, { [Op.and]: [SESSION_EVENT_EXCLUSION] });
+    }
+
+    if (query.hideSystemEvents && query.userId === undefined) {
+      Object.assign(where, { userId: { [Op.ne]: null } });
+    }
+
     if (query.search) {
       Object.assign(where, {
         [Op.or]: [
@@ -53,25 +98,63 @@ export class AuditLogsService {
     }
 
     const sortBy = SORTABLE_FIELDS.has(query.sortBy ?? '') ? (query.sortBy as string) : 'createdAt';
+    const newestFirst =
+      (sortBy === 'createdAt' || sortBy === 'id') && query.sortOrder === SortOrder.DESC;
+
+    const include = [
+      {
+        model: User,
+        attributes: ['id', 'username', 'fullName'],
+        required: false,
+        // ต้องเห็นชื่อผู้กระทำแม้บัญชีนั้นถูก soft delete ไปแล้ว
+        // ซึ่งคือเหตุผลที่ CLAUDE.md 4.3 ห้ามลบ user ทิ้งตั้งแต่แรก
+        paranoid: false,
+      },
+    ];
+
+    if (query.cursor !== undefined) {
+      if (!newestFirst) {
+        throw new BadRequestException('cursor ใช้ได้เฉพาะการเรียงจากใหม่ไปเก่า');
+      }
+
+      const rows = await this.auditLogModel.findAll({
+        where: { [Op.and]: [where, olderThan(decodeCursor(query.cursor))] },
+        include,
+        order: NEWEST_FIRST,
+        limit: query.limit + 1,
+      });
+      const refs = await loadAuditRefLabels(rows.slice(0, query.limit));
+
+      return toCursorResult(rows, query.limit, (row) => toAuditLogResponse(row, refs));
+    }
 
     const { rows, count } = await this.auditLogModel.findAndCountAll({
       where,
-      include: [
-        {
-          model: User,
-          attributes: ['id', 'username', 'fullName'],
-          required: false,
-          // ต้องเห็นชื่อผู้กระทำแม้บัญชีนั้นถูก soft delete ไปแล้ว
-          // ซึ่งคือเหตุผลที่ CLAUDE.md 4.3 ห้ามลบ user ทิ้งตั้งแต่แรก
-          paranoid: false,
-        },
-      ],
-      order: [[sortBy, query.sortOrder]],
+      include,
+      // id เป็นตัวตัดสินรอง — created_at ละเอียดแค่วินาที แถวที่เวลาเท่ากันจะสลับที่กันข้ามหน้าได้
+      order: newestFirst
+        ? NEWEST_FIRST
+        : [
+            [sortBy, query.sortOrder],
+            ['id', query.sortOrder],
+          ],
       limit: query.limit,
       offset: query.offset,
     });
 
-    return toPaginatedResult(rows.map(toAuditLogResponse), count, query);
+    const refs = await loadAuditRefLabels(rows);
+    const hasMore = query.offset + rows.length < count;
+    const last = rows[rows.length - 1];
+
+    return {
+      ...toPaginatedResult(
+        rows.map((row) => toAuditLogResponse(row, refs)),
+        count,
+        query,
+      ),
+      nextCursor: newestFirst && hasMore && last ? encodeCursor(last) : null,
+      hasMore,
+    };
   }
 
   /**

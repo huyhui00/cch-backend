@@ -15,7 +15,7 @@ describe('LineMessagingService', () => {
 
   function serviceWithToken(token: string): LineMessagingService {
     const config = {
-      get: jest.fn((_key: string, fallback = '') => token || fallback),
+      get: jest.fn((_key: string, fallback: string = ''): string => token || fallback),
     } as unknown as ConfigService;
     return new LineMessagingService(config);
   }
@@ -34,20 +34,18 @@ describe('LineMessagingService', () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      text: async () => '{}',
+      text: () => Promise.resolve('{}'),
     });
 
     const result = await serviceWithToken('tok-abc').pushText('Uxyz', 'สวัสดี');
 
     expect(result.ok).toBe(true);
-    expect(global.fetch).toHaveBeenCalledWith(
-      'https://api.line.me/v2/bot/message/push',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          Authorization: 'Bearer tok-abc',
-        }),
-      }),
-    );
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [
+      string,
+      { method: string; headers: Record<string, string> },
+    ];
+    expect(url).toBe('https://api.line.me/v2/bot/message/push');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer tok-abc');
   });
 });

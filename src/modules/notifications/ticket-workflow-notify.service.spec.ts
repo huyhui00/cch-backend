@@ -122,10 +122,38 @@ describe('TicketWorkflowNotifyService', () => {
     expect(notificationModel.create).not.toHaveBeenCalled();
   });
 
-  it('ไม่สร้างซ้ำถ้ามี event เดียวกันในวันเดียวกันแล้ว', async () => {
+  it('ไม่สร้างซ้ำถ้ายังมีแจ้งเตือนเดิมของใบนี้ที่ยังไม่อ่าน', async () => {
     notificationModel.findOne.mockResolvedValue({ id: 99 });
 
     await service.notifySentToAdmin(ticket, null);
+
+    expect(notificationModel.create).not.toHaveBeenCalled();
+  });
+
+  it('กันซ้ำด้วย "ยังไม่อ่าน" ไม่ใช่วันเดียวกัน — ตีกลับแล้วส่งตรวจใหม่ในวันเดียวต้องแจ้งอีกรอบ', async () => {
+    await service.notifyAwaitingReview(ticket, 4);
+
+    const [[query]] = notificationModel.findOne.mock.calls as [
+      [{ where: Record<string, unknown> }],
+    ];
+    expect(query.where).not.toHaveProperty('createdAt');
+    expect(query.where.status).toEqual({ [Op.ne]: NotificationStatus.READ });
+  });
+
+  it('notifyReviewRejected ส่งให้ผู้แก้พร้อมเหตุผล', async () => {
+    await service.notifyReviewRejected({ ...ticket, assignedUserId: 9 }, 2, 'หน้ารายงานยังค้าง');
+
+    const [[created]] = notificationModel.create.mock.calls as [[Record<string, unknown>]];
+    expect(created).toMatchObject({
+      targetUserId: 9,
+      eventType: NotificationEventType.TICKET_REVIEW_REJECTED,
+      refId: 42,
+    });
+    expect(created.message).toContain('หน้ารายงานยังค้าง');
+  });
+
+  it('notifyReviewRejected ไม่สร้างเมื่อใบไม่มีผู้แก้', async () => {
+    await service.notifyReviewRejected({ ...ticket, assignedUserId: null }, 2, 'x');
 
     expect(notificationModel.create).not.toHaveBeenCalled();
   });
@@ -143,10 +171,10 @@ describe('TicketWorkflowNotifyService', () => {
     expect(permissionModel.findOne).toHaveBeenCalledWith(
       expect.objectContaining({ where: { code: 'ticket.assign' } }),
     );
-    expect(roleModel.findAll).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ isActive: true, id: { [Op.in]: [3] } }),
-      }),
-    );
+    const [roleQuery] = roleModel.findAll.mock.calls[0] as [
+      { where: { isActive: boolean; id: { [Op.in]: number[] } } },
+    ];
+    expect(roleQuery.where.isActive).toBe(true);
+    expect(roleQuery.where.id[Op.in]).toEqual([3]);
   });
 });

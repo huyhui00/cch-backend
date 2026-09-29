@@ -3,12 +3,11 @@ import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@ne
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
-import type { PaginatedResult } from '../../common/dto/pagination.dto';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { MarkReadByRefDto, QueryNotificationsDto, TestLinePushDto } from './dto/notification.dto';
 import { DispatchRunResultDto, NotificationResponseDto } from './dto/notification.response';
 import { NotificationDispatchService } from './notification-dispatch.service';
-import { NotificationsService } from './notifications.service';
+import { type NotificationPage, NotificationsService } from './notifications.service';
 
 @ApiTags('notifications')
 @ApiBearerAuth('access-token')
@@ -23,13 +22,16 @@ export class NotificationsController {
   @RequirePermission('notification.view')
   @ApiOperation({
     summary: 'รายการแจ้งเตือน',
-    description: 'ค่าเริ่มต้นคืนเฉพาะของตัวเอง · ส่ง ?all=true ได้เมื่อมี notification.manage',
+    description:
+      'ค่าเริ่มต้นคืนเฉพาะของตัวเอง · ส่ง ?all=true ได้เมื่อมี notification.manage · ' +
+      'เลื่อนแล้วโหลดต่อ: หน้าแรกขอแบบปกติ แล้วส่ง `cursor=<nextCursor>` ไปเรื่อย ๆ จน `hasMore=false`',
   })
   @ApiResponse({ status: 200, description: 'สำเร็จ' })
+  @ApiResponse({ status: 400, description: 'cursor ไม่ถูกต้อง' })
   findAll(
     @Query() query: QueryNotificationsDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<PaginatedResult<NotificationResponseDto>> {
+  ): Promise<NotificationPage> {
     return this.notificationsService.findAll(query, user);
   }
 

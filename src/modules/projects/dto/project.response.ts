@@ -390,7 +390,8 @@ export class ProjectResponseDto {
   @ApiProperty({
     type: ProjectProgressDto,
     nullable: true,
-    description: 'มีค่าเฉพาะ endpoint รายละเอียดโครงการ',
+    description:
+      'มีค่าทั้งรายการโครงการและรายละเอียด (สูตรเดียวกัน) — หน้ารายการไม่ต้องยิงรายละเอียดทีละโครงการ',
   })
   progress: ProjectProgressDto | null;
 

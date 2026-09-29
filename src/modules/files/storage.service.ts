@@ -1,9 +1,14 @@
 import { createReadStream } from 'node:fs';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
 
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import {
   Injectable,
   InternalServerErrorException,
@@ -140,6 +145,19 @@ export class StorageService {
         'ดาวน์โหลดไฟล์ไม่สำเร็จ — ที่เก็บไฟล์ไม่ตอบสนอง ลองใหม่อีกครั้ง',
       );
     }
+  }
+
+  /**
+   * ลบไฟล์ — ใช้กับของที่แทนที่ได้อย่างรูปโปรไฟล์เท่านั้น เอกสาร/หลักฐานไม่ลบไฟล์ (กฎ Phase 9)
+   * ไม่พบไฟล์ = ถือว่าลบแล้ว
+   */
+  async delete(storedKey: string): Promise<void> {
+    if (storedKey.startsWith(LOCAL_KEY_PREFIX)) {
+      await rm(this.localPath(storedKey.slice(LOCAL_KEY_PREFIX.length)), { force: true });
+      return;
+    }
+
+    await this.s3().send(new DeleteObjectCommand({ Bucket: this.bucket(), Key: storedKey }));
   }
 
   // ---- helpers -------------------------------------------------------------

@@ -59,10 +59,44 @@ export class NavCountsDto {
 
   @ApiProperty({
     nullable: true,
+    example: 3,
+    description:
+      'total ของ GET /tasks/me — งานของฉันที่ยังต้องลงมือ (TODO / DOING / WAITING) ' +
+      '= badge เมนู "งานโปรเจกต์" · null ถ้าไม่มี task.view',
+  })
+  tasksMeOpen: number | null;
+
+  @ApiProperty({
+    nullable: true,
     example: 1,
     description:
       'งานของฉัน (DOING / WAITING) ที่รอบส่งล่าสุดถูกตีกลับ — อยู่ใน GET /tasks/me เสมอ · ' +
       'null ถ้าไม่มี task.view',
   })
   tasksMeRejected: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 2,
+    description:
+      'total ของ GET /follow-ups?assignedUserId=<ฉัน>&dueByToday=true — งานติดตามของฉันที่เลยกำหนด' +
+      'หรือครบกำหนดวันนี้และยังไม่เสร็จ · null ถ้าไม่มี followup.view',
+  })
+  followUpsMineDue: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 1,
+    description:
+      'total ของ GET /warranties/expiring?days=30 — ประกันที่จะหมดภายใน 30 วัน · null ถ้าไม่มี warranty.view',
+  })
+  warrantiesExpiringSoon: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 1,
+    description:
+      'total ของ GET /ma-contracts?expiringInDays=30 — สัญญา MA ที่จะหมดภายใน 30 วัน · null ถ้าไม่มี ma.view',
+  })
+  maContractsExpiringSoon: number | null;
 }

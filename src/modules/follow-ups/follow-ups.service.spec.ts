@@ -159,6 +159,29 @@ describe('FollowUpsService', () => {
       expect(isFollowUpOverdue(row, today)).toBe(true);
     });
 
+    it('dueByToday = งานที่ยังเปิดและครบกำหนดภายในวันนี้ (รวมที่เลยกำหนด)', async () => {
+      let captured: Record<string | symbol, unknown> = {};
+      followUpModel.findAndCountAll.mockImplementation((options: { where: object }) => {
+        captured = options.where as Record<string | symbol, unknown>;
+        return Promise.resolve({ rows: [], count: 0 });
+      });
+
+      await service.findAll({
+        page: 1,
+        limit: 20,
+        sortOrder: 'ASC' as never,
+        offset: 0,
+        assignedUserId: 4,
+        dueByToday: true,
+      });
+
+      const status = captured.status as { [Op.in]: FollowUpStatus[] };
+      const dueDate = captured.dueDate as { [Op.lte]: string };
+      expect(status[Op.in]).toEqual([FollowUpStatus.PLANNED, FollowUpStatus.OVERDUE]);
+      expect(dueDate[Op.lte]).toBe(todayAsDateOnly());
+      expect(captured.assignedUserId).toBe(4);
+    });
+
     it('งานที่ปิดไปแล้วไม่นับว่าเลยกำหนด แม้วันครบกำหนดจะผ่านมานานแล้ว', () => {
       const row = followUpRow({ dueDate: '2020-01-01', status: FollowUpStatus.DONE });
 

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/sequelize';
-import { Op, type WhereOptions } from 'sequelize';
+import { col, fn, literal, Op, type OrderItem, type WhereOptions } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
@@ -26,7 +26,12 @@ import {
   UserStatus,
 } from '../../models';
 import { CustomersService } from '../customers/customers.service';
-import { CreateProjectDto, QueryProjectsDto, UpdateProjectDto } from './dto/project.dto';
+import {
+  CreateProjectDto,
+  QueryProjectOptionsDto,
+  QueryProjectsDto,
+  UpdateProjectDto,
+} from './dto/project.dto';
 import {
   type ProjectOptionDto,
   type ProjectProgressDto,
@@ -49,6 +54,32 @@ const SORTABLE_FIELDS = new Set([
   'createdAt',
   'updatedAt',
 ]);
+
+/**
+ * คอลัมน์ที่ไม่ได้อยู่ในตาราง projects — ชื่อ join มาจาก include ของรายการ (belongsTo ไม่แตก subquery)
+ * `progress` เป็นอัตราส่วนงาน DONE ต่องานทั้งหมด สูตรเดียวกับ calculateProgressMany (ไม่มีงาน = 0)
+ */
+const JOINED_SORTS = new Map<string, (dir: string) => OrderItem>([
+  ['customerName', (dir) => ['customer', 'name', dir]],
+  ['managerName', (dir) => ['manager', 'fullName', dir]],
+  [
+    'progress',
+    (dir) => [
+      literal(
+        "(SELECT COALESCE(SUM(t.status = 'DONE') / NULLIF(COUNT(*), 0), 0) FROM tasks t " +
+          'WHERE t.project_id = `Project`.`id` AND t.deleted_at IS NULL)',
+      ),
+      dir,
+    ],
+  ],
+]);
+
+interface TaskProgressGroup {
+  projectId: number;
+  status: TaskStatus;
+  dueDate: string | null;
+  taskCount: number | string;
+}
 
 /** สร้างใหม่ทุกครั้ง — Sequelize แก้ object ของ include ในที่ตอน normalize ห้ามใช้ร่วมกัน */
 function customerInclude() {
@@ -112,19 +143,24 @@ export class ProjectsService {
       Object.assign(where, { managerUserId: query.managerUserId });
     }
 
-    const sortBy = SORTABLE_FIELDS.has(query.sortBy ?? '') ? (query.sortBy as string) : 'createdAt';
+    const sortKey = query.sortBy ?? '';
+    const primaryOrder: OrderItem =
+      JOINED_SORTS.get(sortKey)?.(query.sortOrder) ??
+      (SORTABLE_FIELDS.has(sortKey) ? [sortKey, query.sortOrder] : ['createdAt', query.sortOrder]);
 
     const { rows, count } = await this.projectModel.findAndCountAll({
       where,
       include: [customerInclude(), managerInclude()],
       distinct: true,
-      order: [[sortBy, query.sortOrder]],
+      order: [primaryOrder, ['id', query.sortOrder]],
       limit: query.limit,
       offset: query.offset,
     });
 
+    const progress = await this.calculateProgressMany(rows.map((project) => project.id));
+
     return toPaginatedResult(
-      rows.map((project) => toProjectResponse(project)),
+      rows.map((project) => toProjectResponse(project, progress.get(project.id) ?? null)),
       count,
       query,
     );
@@ -132,15 +168,22 @@ export class ProjectsService {
 
   /**
    * ตัวเลือกโครงการสำหรับดรอปดาวน์/ตัวกรอง — ไม่แบ่งหน้า คืนครบทุกสถานะ
+   * ส่ง search + limit เมื่อโครงการเยอะจนโหลดทั้งหมดไม่ไหว (ไม่ส่ง = ทั้งหมดเหมือนเดิม)
    * (project.view เห็นทุกโครงการอยู่แล้ว ไม่มีการจำกัดรายคน)
    */
-  async findOptions(): Promise<ProjectOptionDto[]> {
+  async findOptions(query: QueryProjectOptionsDto = {}): Promise<ProjectOptionDto[]> {
+    const like = query.search ? '%' + query.search + '%' : null;
+
     const projects = await this.projectModel.findAll({
       attributes: ['id', 'code', 'name', 'status'],
+      ...(like && {
+        where: { [Op.or]: [{ name: { [Op.like]: like } }, { code: { [Op.like]: like } }] },
+      }),
       order: [
         ['name', 'ASC'],
         ['id', 'ASC'],
       ],
+      ...(query.limit !== undefined && { limit: query.limit }),
     });
 
     return projects.map((project) => ({
@@ -322,34 +365,67 @@ export class ProjectsService {
    * ประกอบได้ว่าเป็นเพราะยังไม่ได้แตกงาน ไม่ใช่เพราะยังไม่ได้ทำ
    */
   async calculateProgress(projectId: number): Promise<ProjectProgressDto> {
-    const tasks = await this.taskModel.findAll({
-      where: { projectId },
-      attributes: ['status', 'dueDate'],
-    });
+    const progress = await this.calculateProgressMany([projectId]);
+    return progress.get(projectId) as ProjectProgressDto;
+  }
 
-    const byStatus: Record<string, number> = {
-      [TaskStatus.TODO]: 0,
-      [TaskStatus.DOING]: 0,
-      [TaskStatus.WAITING]: 0,
-      [TaskStatus.REVIEW]: 0,
-      [TaskStatus.DONE]: 0,
-    };
+  /**
+   * ความคืบหน้าของหลายโครงการใน query เดียว — ใช้กับหน้ารายการ ไม่ให้ต้องยิงรายละเอียดทีละโครงการ
+   * รวมกลุ่มตาม (โครงการ, สถานะ, วันครบกำหนด) แล้วตัดสินเกินกำหนดด้วย isTaskOverdue() ตัวเดียวกับทั้งระบบ
+   * จำนวนแถวที่ได้จึงขึ้นกับจำนวนวันครบกำหนดที่ต่างกัน ไม่ใช่จำนวนงาน
+   */
+  async calculateProgressMany(projectIds: number[]): Promise<Map<number, ProjectProgressDto>> {
+    const counters = new Map(
+      projectIds.map((id) => [
+        id,
+        {
+          totalTasks: 0,
+          overdueTasks: 0,
+          byStatus: {
+            [TaskStatus.TODO]: 0,
+            [TaskStatus.DOING]: 0,
+            [TaskStatus.WAITING]: 0,
+            [TaskStatus.REVIEW]: 0,
+            [TaskStatus.DONE]: 0,
+          },
+        },
+      ]),
+    );
 
-    let overdueTasks = 0;
+    if (projectIds.length > 0) {
+      const groups = (await this.taskModel.findAll({
+        where: { projectId: { [Op.in]: projectIds } },
+        attributes: ['projectId', 'status', 'dueDate', [fn('COUNT', col('id')), 'taskCount']],
+        group: ['projectId', 'status', 'dueDate'],
+        raw: true,
+      })) as unknown as TaskProgressGroup[];
 
-    for (const task of tasks) {
-      byStatus[task.status] = (byStatus[task.status] ?? 0) + 1;
+      for (const group of groups) {
+        const counter = counters.get(group.projectId);
 
-      if (isTaskOverdue(task)) {
-        overdueTasks += 1;
+        if (!counter) {
+          continue;
+        }
+
+        const count = Number(group.taskCount);
+        counter.totalTasks += count;
+        counter.byStatus[group.status] = (counter.byStatus[group.status] ?? 0) + count;
+
+        if (isTaskOverdue(group)) {
+          counter.overdueTasks += count;
+        }
       }
     }
 
-    const totalTasks = tasks.length;
-    const doneTasks = byStatus[TaskStatus.DONE];
-    const percent = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100 * 100) / 100;
+    const result = new Map<number, ProjectProgressDto>();
 
-    return { totalTasks, doneTasks, percent, overdueTasks, byStatus };
+    for (const [id, { totalTasks, overdueTasks, byStatus }] of counters) {
+      const doneTasks = byStatus[TaskStatus.DONE];
+      const percent = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100 * 100) / 100;
+      result.set(id, { totalTasks, doneTasks, percent, overdueTasks, byStatus });
+    }
+
+    return result;
   }
 
   // ---- helpers -------------------------------------------------------------

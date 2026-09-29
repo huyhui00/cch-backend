@@ -123,6 +123,24 @@ export class QueryWarrantiesDto extends PaginationDto {
   deliveryId?: number;
 }
 
+/**
+ * รายการประกันทั้งบริษัท — หน้า "ประกัน" ที่ไม่ได้เข้าจากโครงการใดโครงการหนึ่ง
+ * `search` (จาก PaginationDto) ค้นเลขที่ประกัน ชื่อ/รหัสโครงการ และชื่อลูกค้า
+ */
+export class QueryCompanyWarrantiesDto extends QueryWarrantiesDto {
+  @ApiPropertyOptional({ description: 'กรองเฉพาะประกันของโครงการนี้', example: 1 })
+  @IsOptional()
+  @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
+  projectId?: number;
+
+  @ApiPropertyOptional({ description: 'กรองเฉพาะประกันของลูกค้ารายนี้', example: 1 })
+  @IsOptional()
+  @IsInt({ message: 'customerId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'customerId ต้องมากกว่า 0' })
+  customerId?: number;
+}
+
 /** หน้าจอ "ประกันใกล้หมด" — ตัวป้อนให้ notification rule แบบ WARRANTY_EXPIRING ใน Phase 11 */
 export class QueryExpiringWarrantiesDto extends PaginationDto {
   @ApiPropertyOptional({

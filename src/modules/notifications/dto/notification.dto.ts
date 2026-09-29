@@ -28,9 +28,20 @@ export class QueryNotificationsDto extends PaginationDto {
     description: 'true = ดูของทุกคน (ต้องมี notification.manage) · false/ไม่ส่ง = ดูของตัวเอง',
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => value === true || value === 'true')
+  // อ่านค่าดิบจาก obj — enableImplicitConversion แปลง 'false' เป็น true ไปก่อนแล้ว
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => obj.all === true || obj.all === 'true')
   @IsBoolean({ message: 'all ต้องเป็น boolean' })
   all?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'โหลดต่อจากรายการก่อนหน้า — ส่ง `nextCursor` จากผลลัพธ์ก่อนหน้า แล้ว page จะถูกเมิน · คืน `total: null`',
+    example: '1727580000000_151',
+  })
+  @IsOptional()
+  @IsString({ message: 'cursor ต้องเป็นข้อความ' })
+  @MaxLength(40, { message: 'cursor ไม่ถูกต้อง' })
+  cursor?: string;
 }
 
 export class CreateNotificationRuleDto {

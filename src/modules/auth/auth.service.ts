@@ -11,6 +11,7 @@ import type { JwtPayload } from '../../common/types/auth.types';
 import { hashRefreshToken, safeCompareHex, verifyPassword } from '../../common/utils/crypto.util';
 import { AccountType, Permission, User, UserStatus } from '../../models';
 import { toRoleSummary } from '../roles/dto/role.response';
+import { avatarUrlFor } from '../users/avatar.util';
 import { AuthProfileDto, LoginResponseDto, RefreshResponseDto } from './dto/auth.response';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -168,7 +169,7 @@ export class AuthService {
       nickname: user.nickname,
       email: user.email,
       position: user.position,
-      avatarUrl: user.avatarUrl,
+      avatarUrl: avatarUrlFor(user),
       accountType: user.accountType,
       status: user.status,
       isSuperAdmin,

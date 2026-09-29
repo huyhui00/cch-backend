@@ -296,6 +296,34 @@ export class ReopenTicketDto {
   reason?: string | null;
 }
 
+/** แอดมินตรวจผ่าน ส่งกลับซัพพอร์ต */
+export class ReturnToSupportDto {
+  @ApiPropertyOptional({
+    description: 'หมายเหตุถึงซัพพอร์ต (เช่น สิ่งที่ต้องบอกลูกค้า) จะถูกต่อท้ายรายละเอียดของใบ',
+    example: 'แจ้งลูกค้าให้ล้างแคชเบราว์เซอร์ก่อนเข้าใช้งาน',
+    maxLength: 2000,
+  })
+  @IsOptional()
+  @IsString({ message: 'หมายเหตุต้องเป็นข้อความ' })
+  @MaxLength(2000, { message: 'หมายเหตุยาวเกิน 2000 ตัวอักษร' })
+  @Transform(trimToNull)
+  note?: string | null;
+}
+
+/** แอดมินตรวจไม่ผ่าน ตีกลับให้ผู้แก้ */
+export class RejectReviewDto {
+  @ApiProperty({
+    description: 'เหตุผลที่ไม่ผ่าน — ผู้แก้เห็นในแจ้งเตือน และถูกต่อท้ายรายละเอียดของใบ',
+    example: 'หน้ารายงานยังแสดงยอดไม่ตรงกับระบบบัญชี',
+    maxLength: 2000,
+  })
+  @Transform(trimToNull)
+  @IsString({ message: 'กรุณาระบุเหตุผลที่ไม่ผ่าน' })
+  @IsNotEmpty({ message: 'กรุณาระบุเหตุผลที่ไม่ผ่าน' })
+  @MaxLength(2000, { message: 'เหตุผลยาวเกิน 2000 ตัวอักษร' })
+  reason: string;
+}
+
 /** ปิดงาน */
 export class CloseTicketDto {
   @ApiPropertyOptional({

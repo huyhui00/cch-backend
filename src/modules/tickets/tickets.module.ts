@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 
 import {
+  AuditLog,
   Contact,
   Customer,
   Project,
@@ -34,6 +35,7 @@ import { TicketsService } from './tickets.service';
       Contact,
       User,
       Attachment,
+      AuditLog,
     ]),
     WarrantiesModule,
     MaModule,

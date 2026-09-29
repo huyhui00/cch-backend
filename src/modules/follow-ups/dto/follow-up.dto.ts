@@ -227,6 +227,17 @@ export class QueryFollowUpsDto extends PaginationDto {
   overdue?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      '`true` = งานที่ต้องตามแล้ว — เลยกำหนดหรือครบกำหนดวันนี้ (`dueDate <= วันนี้`) และยังไม่ DONE/CANCELLED ' +
+      '= badge `followUpsMineDue` ของ GET /api/nav/counts เมื่อคู่กับ assignedUserId ของตัวเอง',
+    example: true,
+  })
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean({ message: 'dueByToday ต้องเป็น true หรือ false' })
+  dueByToday?: boolean;
+
+  @ApiPropertyOptional({
     description: 'เอาเฉพาะงานที่ครบกำหนดตั้งแต่วันนี้เป็นต้นไป (YYYY-MM-DD)',
     example: '2026-09-01',
   })

@@ -1,5 +1,8 @@
+import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module';
@@ -11,7 +14,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { createValidationPipe } from './common/pipes/validation.pipe';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false });
   const config = app.get(ConfigService);
 
   const isProduction = config.get<string>('NODE_ENV') === 'production';
@@ -20,6 +23,15 @@ async function bootstrap() {
   // ต้องมาก่อนทุกอย่าง เพื่อให้ทั้ง request วิ่งอยู่ใน AsyncLocalStorage เดียวกัน
   // Sequelize hook จึงรู้ได้ว่าใครเป็นผู้กระทำ โดยไม่ต้องส่งค่าผ่าน service (BR-09)
   app.use(requestContextMiddleware);
+
+  // ---- Cache ---------------------------------------------------------------
+  // ห้ามเบราว์เซอร์/proxy เก็บข้อมูลลูกค้าลงดิสก์ — ไม่งั้นหลังออกจากระบบบนเครื่องที่ใช้ร่วมกัน
+  // ข้อมูลยังเปิดดูได้จาก cache และ proxy กลางทางอาจส่งคำตอบของคนหนึ่งให้อีกคน
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+  app.set('etag', false);
 
   // ---- Global prefix -------------------------------------------------------
   // ทุก endpoint อยู่ใต้ /api ตาม CLAUDE.md 6.2
@@ -63,6 +75,32 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   // ---- Swagger -------------------------------------------------------------
+  // ปิดใน production เป็นค่าเริ่มต้น — ไม่ต้องแจกแผนที่ API ทั้งระบบให้คนที่ยังไม่ได้ล็อกอิน
+  const swaggerEnabled =
+    (config.get<string>('SWAGGER_ENABLED') ?? (isProduction ? 'false' : 'true')) === 'true';
+
+  if (swaggerEnabled) {
+    setupSwagger(app);
+  }
+
+  // ---- Listen --------------------------------------------------------------
+  // ค่าจาก .env เป็น string เสมอ ต้องแปลงเป็นตัวเลขเอง
+  const port = Number(config.get('PORT')) || 3000;
+  await app.listen(port);
+
+  // eslint-disable-next-line no-console
+  console.log(`[cch-backend] running on http://localhost:${port}/api`);
+  // eslint-disable-next-line no-console
+  console.log(
+    `[cch-backend] swagger  ${swaggerEnabled ? `on http://localhost:${port}/api/docs` : 'ปิดอยู่ (SWAGGER_ENABLED=false)'}`,
+  );
+  // eslint-disable-next-line no-console
+  console.log(
+    `[cch-backend] CORS allowed origins: ${allowedOrigins.length > 0 ? allowedOrigins.join(', ') : '(none — FRONTEND_URL ยังไม่ได้ตั้งค่า)'}`,
+  );
+}
+
+function setupSwagger(app: INestApplication): void {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Internal Management System API')
     .setDescription(
@@ -85,20 +123,6 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document, {
     swaggerOptions: { persistAuthorization: true },
   });
-
-  // ---- Listen --------------------------------------------------------------
-  // ค่าจาก .env เป็น string เสมอ ต้องแปลงเป็นตัวเลขเอง
-  const port = Number(config.get('PORT')) || 3000;
-  await app.listen(port);
-
-  // eslint-disable-next-line no-console
-  console.log(`[cch-backend] running on http://localhost:${port}/api`);
-  // eslint-disable-next-line no-console
-  console.log(`[cch-backend] swagger  on http://localhost:${port}/api/docs`);
-  // eslint-disable-next-line no-console
-  console.log(
-    `[cch-backend] CORS allowed origins: ${allowedOrigins.length > 0 ? allowedOrigins.join(', ') : '(none — FRONTEND_URL ยังไม่ได้ตั้งค่า)'}`,
-  );
 }
 
 void bootstrap();

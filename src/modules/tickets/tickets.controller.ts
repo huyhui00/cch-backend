@@ -14,7 +14,9 @@ import {
   QuerySupportQueueDto,
   UpdateTicketDto,
   QueryTicketsDto,
+  RejectReviewDto,
   ReopenTicketDto,
+  ReturnToSupportDto,
 } from './dto/ticket.dto';
 import {
   ResolutionCreatedDto,
@@ -42,7 +44,10 @@ export class TicketsController {
   @RequirePermission('ticket.view')
   @ApiOperation({
     summary: 'รายการใบแจ้งปัญหา',
-    description: 'กรองตามสถานะ ลูกค้า โครงการ ความสำคัญ ผู้รับผิดชอบ หรือประเภทการคิดเงินได้',
+    description:
+      'กรองตามสถานะ ลูกค้า โครงการ ความสำคัญ ผู้รับผิดชอบ หรือประเภทการคิดเงินได้ · `sortBy` = ' +
+      'ticketNo / status / priority / reportedAt / dueAt / resolvedAt / createdAt / ' +
+      'customerName / projectName / assigneeName',
   })
   @ApiResponse({ status: 200, description: 'สำเร็จ', type: [TicketResponseDto] })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
@@ -258,17 +263,44 @@ export class TicketsController {
   @RequirePermission('ticket.assign')
   @ApiOperation({
     summary: 'แอดมินตรวจผ่าน ส่งกลับซัพพอร์ต (C-1)',
-    description: 'จาก RESOLVED → WAITING_SUPPORT ให้ซัพพอร์ตบอกลูกค้า',
+    description:
+      'จาก RESOLVED → WAITING_SUPPORT เข้าคิวกลางของซัพพอร์ต (ไม่ได้ส่งให้คนเดียว) · ' +
+      'body ไม่บังคับ — `note` ถึงซัพพอร์ตถูกต่อท้ายรายละเอียดใบเป็น "[ตรวจผ่าน] ..."',
   })
   @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
   @ApiResponse({ status: 200, description: 'ส่งกลับซัพพอร์ตแล้ว', type: TicketResponseDto })
   @ApiResponse({ status: 409, description: 'ยังไม่ใช่สถานะ RESOLVED' })
   async returnToSupport(
     @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ReturnToSupportDto,
   ): Promise<{ data: TicketResponseDto; message: string }> {
     return {
-      data: await this.ticketsService.returnToSupport(id),
+      data: await this.ticketsService.returnToSupport(id, dto),
       message: 'ส่งกลับซัพพอร์ตแล้ว',
+    };
+  }
+
+  @Patch(':id/reject-review')
+  @RequirePermission('ticket.assign')
+  @ApiOperation({
+    summary: 'แอดมินตรวจไม่ผ่าน ตีกลับให้ผู้แก้ (C-1)',
+    description:
+      'จาก RESOLVED → IN_PROGRESS · ผู้แก้และแอดมินผู้รับคิวคงเดิม · ต้องระบุ `reason` ' +
+      'ซึ่งถูกต่อท้ายรายละเอียดใบเป็น "[ตรวจไม่ผ่าน] ..." และส่งแจ้งเตือนในแอปถึงผู้แก้ ' +
+      '(TICKET_REVIEW_REJECTED) · งานที่ส่งใหม่เป็นรอบถัดไปของใบเดิม โควตา MA ไม่ถูกหักซ้ำ',
+  })
+  @ApiParam({ name: 'id', description: 'id ของใบแจ้งปัญหา', example: 7 })
+  @ApiResponse({ status: 200, description: 'ตีกลับให้ผู้แก้แล้ว', type: TicketResponseDto })
+  @ApiResponse({ status: 400, description: 'ไม่ได้ระบุเหตุผล' })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  @ApiResponse({ status: 409, description: 'ใบไม่อยู่ในสถานะรอตรวจ หรือไม่มีผู้รับผิดชอบ' })
+  async rejectReview(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: RejectReviewDto,
+  ): Promise<{ data: TicketResponseDto; message: string }> {
+    return {
+      data: await this.ticketsService.rejectReview(id, dto),
+      message: 'ตีกลับให้ผู้แก้แล้ว',
     };
   }
 

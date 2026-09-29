@@ -23,7 +23,7 @@ export const ATTACHMENT_REF_TYPES = [
 export type AttachmentRefType = (typeof ATTACHMENT_REF_TYPES)[number];
 
 export interface AttachmentCreationAttributes {
-  refType: AttachmentRefType | string;
+  refType: AttachmentRefType;
   refId: number;
   fileUrl: string;
   fileName: string;

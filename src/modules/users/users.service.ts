@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -16,6 +17,9 @@ import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { DEFAULT_SALT_ROUNDS, hashPassword, verifyPassword } from '../../common/utils/crypto.util';
 import { AccessControlService } from '../../common/services/access-control.service';
 import { AccountType, Role, User, UserRole, UserStatus } from '../../models';
+import { StorageService, type StoredFileStream } from '../files/storage.service';
+import { buildStorageKey, type UploadedFileLike } from '../files/upload.util';
+import { assertAvatarFile, avatarContentType, avatarScope, isOwnAvatarKey } from './avatar.util';
 import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { AssignableCapability } from './dto/query-assignable-users.dto';
@@ -23,6 +27,7 @@ import {
   AssignRolesDto,
   ChangePasswordDto,
   ResetPasswordDto,
+  UpdateOwnProfileDto,
   UpdateUserStatusDto,
 } from './dto/user-actions.dto';
 import { type AssignableUserDto, type UserResponseDto, toUserResponse } from './dto/user.response';
@@ -56,7 +61,10 @@ export class UsersService {
     @InjectConnection() private readonly sequelize: Sequelize,
     private readonly config: ConfigService,
     private readonly accessControl: AccessControlService,
+    private readonly storage: StorageService,
   ) {}
+
+  private readonly logger = new Logger(UsersService.name);
 
   /**
    * รายชื่อพนักงานสำหรับดรอปดาวน์ "มอบหมายให้ใคร"
@@ -315,6 +323,79 @@ export class UsersService {
       refreshTokenHash: null,
       updatedBy: user.id,
     });
+  }
+
+  /** แก้ได้แค่ชื่อเล่น — ไม่ต้องมี user.update เพราะเป็นของตัวเอง */
+  async updateOwnProfile(userId: number, dto: UpdateOwnProfileDto): Promise<void> {
+    const user = await this.findSelfOrFail(userId);
+
+    if (dto.nickname !== undefined) {
+      await user.update({ nickname: dto.nickname ?? null, updatedBy: user.id });
+    }
+  }
+
+  /** อัปโหลดรูปโปรไฟล์ใหม่แทนรูปเดิม — รูปเดิมถูกลบทิ้ง (ต่างจากเอกสารที่เก็บไฟล์ไว้เป็นหลักฐาน) */
+  async setOwnAvatar(userId: number, file: UploadedFileLike | undefined): Promise<void> {
+    const extension = assertAvatarFile(file);
+    const upload = file as UploadedFileLike;
+    const user = await this.findSelfOrFail(userId);
+    const previous = user.avatarUrl;
+
+    const stored = await this.storage.put(
+      buildStorageKey(avatarScope(user.id), `avatar${extension}`),
+      upload.buffer,
+      upload.mimetype,
+    );
+    await user.update({ avatarUrl: stored.key, updatedBy: user.id });
+
+    await this.deleteAvatarFile(user.id, previous);
+  }
+
+  async removeOwnAvatar(userId: number): Promise<void> {
+    const user = await this.findSelfOrFail(userId);
+    const previous = user.avatarUrl;
+
+    if (previous === null) {
+      return;
+    }
+
+    await user.update({ avatarUrl: null, updatedBy: user.id });
+    await this.deleteAvatarFile(user.id, previous);
+  }
+
+  /** รูปโปรไฟล์ของพนักงานคนใดก็ได้ — เห็นชื่อกันอยู่แล้วทั้งระบบ (เหตุผลเดียวกับ /users/assignable) */
+  async openAvatar(userId: number): Promise<StoredFileStream & { contentType: string }> {
+    const user = await this.userModel.findByPk(userId, { paranoid: false });
+
+    if (!user || !isOwnAvatarKey(user.id, user.avatarUrl)) {
+      throw new NotFoundException('ผู้ใช้นี้ยังไม่มีรูปโปรไฟล์');
+    }
+
+    const file = await this.storage.get(user.avatarUrl);
+    return { ...file, contentType: avatarContentType(user.avatarUrl) };
+  }
+
+  /** ลบไม่สำเร็จไม่ทำให้คำขอพัง — รูปใหม่บันทึกไปแล้ว ไฟล์เก่าค้างในที่เก็บยอมรับได้ */
+  private async deleteAvatarFile(userId: number, key: string | null): Promise<void> {
+    if (!isOwnAvatarKey(userId, key)) {
+      return;
+    }
+
+    try {
+      await this.storage.delete(key);
+    } catch (error) {
+      this.logger.warn(`ลบรูปโปรไฟล์เก่าไม่สำเร็จ key=${key}: ${(error as Error).message}`);
+    }
+  }
+
+  private async findSelfOrFail(userId: number): Promise<User> {
+    const user = await this.userModel.findByPk(userId);
+
+    if (!user) {
+      throw new UnauthorizedException('ไม่พบบัญชีผู้ใช้นี้ในระบบ');
+    }
+
+    return user;
   }
 
   /**

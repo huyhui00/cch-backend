@@ -50,11 +50,10 @@ describe('NotificationsService', () => {
   it('findAll โดยปกติกรองเฉพาะของตัวเอง', async () => {
     notificationModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
     await service.findAll({ page: 1, limit: 20 } as never, viewer);
-    expect(notificationModel.findAndCountAll).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ targetUserId: 5 }),
-      }),
-    );
+    const [options] = notificationModel.findAndCountAll.mock.calls[0] as [
+      { where: { targetUserId?: number } },
+    ];
+    expect(options.where.targetUserId).toBe(5);
   });
 
   it('findAll ?all=true โดยไม่มี manage ถูกปฏิเสธ', async () => {

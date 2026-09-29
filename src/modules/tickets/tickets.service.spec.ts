@@ -151,6 +151,7 @@ describe('TicketsService', () => {
   };
   let accessControl: { hasPermission: jest.Mock };
   let attachmentModel: ModelMock;
+  let auditLogModel: ModelMock;
   let service: TicketsService;
 
   beforeEach(() => {
@@ -189,6 +190,8 @@ describe('TicketsService', () => {
     contactModel.findByPk.mockResolvedValue({ id: 2, customerId: 1 });
     userModel.findByPk.mockResolvedValue({ id: 4, status: UserStatus.ACTIVE });
     attachmentModel.findAll.mockResolvedValue([]);
+    auditLogModel = modelMock();
+    auditLogModel.findAll.mockResolvedValue([]);
 
     service = new TicketsService(
       ticketModel as unknown as typeof Ticket,
@@ -207,7 +210,9 @@ describe('TicketsService', () => {
         notifyAwaitingReview: jest.fn().mockResolvedValue(undefined),
         notifyReturnedToSupport: jest.fn().mockResolvedValue(undefined),
         notifyAssigned: jest.fn().mockResolvedValue(undefined),
+        notifyReviewRejected: jest.fn().mockResolvedValue(undefined),
       } as never,
+      auditLogModel as never,
     );
   });
 
@@ -1262,18 +1267,87 @@ describe('TicketsService', () => {
       );
     });
 
+    it('หมายเหตุตอนตรวจผ่านถูกต่อท้ายรายละเอียด ไม่ส่งมาก็ไม่แตะ', async () => {
+      const withNote = ticketRow({ status: TicketStatus.RESOLVED, description: 'เดิม' });
+      ticketModel.findByPk.mockResolvedValue(withNote);
+      await service.returnToSupport(7, { note: 'บอกลูกค้าให้ล้างแคช' });
+      expect(withNote.update).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'เดิม\n\n[ตรวจผ่าน] บอกลูกค้าให้ล้างแคช' }),
+      );
+
+      const withoutNote = ticketRow({ status: TicketStatus.RESOLVED, description: 'เดิม' });
+      ticketModel.findByPk.mockResolvedValue(withoutNote);
+      await service.returnToSupport(7, {});
+      expect(withoutNote.update).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'เดิม' }),
+      );
+    });
+  });
+
+  describe('rejectReview', () => {
+    const notifyRejected = () =>
+      (service as unknown as { ticketWorkflowNotify: { notifyReviewRejected: jest.Mock } })
+        .ticketWorkflowNotify.notifyReviewRejected;
+
+    it('ตีกลับจาก RESOLVED เป็น IN_PROGRESS คงผู้แก้และแอดมินผู้รับคิว แล้วแจ้งผู้แก้', async () => {
+      const ticket = ticketRow({
+        status: TicketStatus.RESOLVED,
+        assignedUserId: 4,
+        claimedByAdminUserId: 2,
+        description: 'เดิม',
+      });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await service.rejectReview(7, { reason: 'ยอดในรายงานยังไม่ตรง' });
+
+      const [[values]] = ticket.update.mock.calls as [[Record<string, unknown>]];
+      expect(values).toMatchObject({
+        status: TicketStatus.IN_PROGRESS,
+        description: 'เดิม\n\n[ตรวจไม่ผ่าน] ยอดในรายงานยังไม่ตรง',
+      });
+      expect(values).not.toHaveProperty('assignedUserId');
+      expect(values).not.toHaveProperty('claimedByAdminUserId');
+      expect(values).not.toHaveProperty('resolutionCount');
+      const [[, actorId, reason]] = notifyRejected().mock.calls as [[unknown, unknown, unknown]];
+      expect(actorId).toBeNull();
+      expect(reason).toBe('ยอดในรายงานยังไม่ตรง');
+    });
+
+    it.each([
+      TicketStatus.IN_PROGRESS,
+      TicketStatus.WAITING_SUPPORT,
+      TicketStatus.CLOSED,
+      TicketStatus.REOPENED,
+    ])('ตีกลับจาก %s ไม่ได้', async (status) => {
+      ticketModel.findByPk.mockResolvedValue(ticketRow({ status, assignedUserId: 4 }));
+
+      await expect(service.rejectReview(7, { reason: 'x' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(notifyRejected()).not.toHaveBeenCalled();
+    });
+
+    it('ใบที่ไม่มีผู้รับผิดชอบตีกลับไม่ได้ เพราะไม่มีคนรับงานต่อ', async () => {
+      const ticket = ticketRow({ status: TicketStatus.RESOLVED, assignedUserId: null });
+      ticketModel.findByPk.mockResolvedValue(ticket);
+
+      await expect(service.rejectReview(7, { reason: 'x' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(ticket.update).not.toHaveBeenCalled();
+    });
+
     it('บอกลูกค้าแล้วปิดจาก WAITING_SUPPORT', async () => {
       const ticket = ticketRow({ status: TicketStatus.WAITING_SUPPORT, description: 'เดิม' });
       ticketModel.findByPk.mockResolvedValue(ticket);
 
       await service.customerNotified(7, { note: 'แจ้งลูกค้าทาง LINE แล้ว' });
 
-      expect(ticket.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: TicketStatus.CLOSED,
-          closedAt: expect.any(Date),
-        }),
-      );
+      const [changes] = ticket.update.mock.calls[0] as [
+        { status: TicketStatus; closedAt: unknown },
+      ];
+      expect(changes.status).toBe(TicketStatus.CLOSED);
+      expect(changes.closedAt).toBeInstanceOf(Date);
     });
   });
 

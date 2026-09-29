@@ -221,6 +221,17 @@ src/
 
 ทำผ่าน `TransformInterceptor` + `HttpExceptionFilter` ที่ระดับ global
 
+**เลื่อนแล้วโหลดต่อ (cursor) — 29 ก.ย.** ใช้กับตารางที่โตไม่หยุด: `GET /api/audit-logs`, `GET /api/notifications`
+- หน้าแรกขอแบบปกติ ได้ `total` + `nextCursor` + `hasMore` → ขอต่อด้วย `?cursor=<nextCursor>` จน `hasMore=false`
+- โหมด cursor คืน `{ items, total: null, page: null, limit, nextCursor, hasMore }` — **ไม่ COUNT โดยเจตนา**
+ (COUNT คือส่วนที่ช้าที่สุดเมื่อมีเป็นล้านแถว) และไม่ซ้ำ/ไม่หลุดเมื่อมีแถวใหม่เข้ามาระหว่างเลื่อน
+- ลำดับต้องเป็น `created_at DESC, id DESC` เสมอ (audit-logs ส่ง sort อื่นคู่ cursor = 400) ·
+ **id ต้องเป็นตัวตัดสินรองทุกครั้ง** เพราะ `created_at` ละเอียดแค่วินาที (เคยเจอ 42 แถวในวินาทีเดียว
+ แล้วแบ่งหน้าแบบ offset ซ้ำ/หาย) — helper อยู่ที่ `common/utils/cursor.util.ts` ใช้ตัวนี้ถ้าจะเพิ่มให้ตารางอื่น
+- index รองรับ: migration `20260929000002` (`audit_logs.created_at`, `audit_logs(table_name, created_at)`,
+ `notifications(target_user_id, created_at)`)
+- ตารางงาน (โปรเจค ใบปัญหา ลูกค้า ...) ยังใช้เลขหน้าตามเดิม เพราะแอดมินต้องเห็นยอดรวมและกระโดดหน้าได้
+
 ### 6.2 Naming Convention
 
 | รายการ | รูปแบบ | ตัวอย่าง |
@@ -303,7 +314,8 @@ survey_assignments.status  PENDING | SENT | ANSWERED | EXPIRED
 notification_rules.event_type  MA_EXPIRING | WARRANTY_EXPIRING | TASK_OVERDUE |
                                DELIVERY_DUE | FOLLOWUP_DUE | TICKET_SLA | CUSTOMER_IDLE |
                                TICKET_SENT_TO_ADMIN | TICKET_AWAITING_REVIEW |
-                               TICKET_RETURNED_TO_SUPPORT | TICKET_ASSIGNED
+                               TICKET_RETURNED_TO_SUPPORT | TICKET_ASSIGNED |
+ TICKET_REVIEW_REJECTED
 notifications.status    PENDING | SENT | FAILED | READ
 ```
 
@@ -403,7 +415,7 @@ return true;
 | Q14 | ประกัน "ผูกกับ MA" (ประชุม 11 ก.ย.) หมายถึงผูกกับ**แผน** หรือกับ**สัญญา** และระหว่างอยู่ในประกัน การแก้บั๊กต้องหักโควตา MA ด้วยไหม | ✅ **ตอบแล้ว 12 ก.ย.** — ไล่ transcript ประชุมครั้งที่ 3 ซ้ำ (นาที 38:27–41:00) พี่เลี้ยงตอบทั้งสองท่อน: **ผูกกับสัญญา** ("เราดึงสัญญาดึงมาเพิ่มในประกันด้วย" แล้วอ่านแผนจากสัญญา — "จะได้รู้ว่าประกันตัวนี้มันรวม MA ตัวไหน ผูกรูปแบบไหน Standard/Basic") และ **ไม่หักโควตา** ("**ไม่ใช่คิดรวมนะ**" + "การรับประกันมัน**นอกเหนือและพิเศษกว่า MA** ... ไม่ได้อยู่ในส่วนของ MA") — เป็นการ *อ้างอิง* อย่างเดียว กฎ Phase 7 ที่ให้ประกันมาก่อนสัญญาจึงไม่เปลี่ยน ดูกฎ Phase 6 | — |
 | Q15 | รหัส (ปัญหา / โปรเจค / ลูกค้า) ให้ระบบออกอัตโนมัติได้ไหม รูปแบบอะไร | ✅ **ออกอัตโนมัติแล้ว** — รูปแบบสั้น `คำนำหน้า + ปี พ.ศ. สองหลัก + เลข 4 หลัก` เช่น `TK69-0006` (ใบปัญหา) · `CUS69-0001` · `PRJ69-0001` · `DLV69-0003` · `WAR69-0008` · `MA69-0014` · แถวเก่าที่สร้างก่อนหน้านี้ไม่ถูกเขียนทับ | — |
 | Q16 | งานติดตามทุกงานต้องมีโปรเจคไหม หรือยังตามลูกค้าที่ไม่มีโปรเจคได้ (เช่น ลูกค้า INACTIVE ที่จะเสนอ MA) | ⬜ **ถามวันจันทร์** — ตอนนี้ API ให้ `projectId` เป็นตัวเลือก หน้าจอบังคับเองได้ | — |
-| Q17 | ผู้ใช้ที่ถือหลาย role อยู่แล้ว (ก่อนเปลี่ยนเป็น role เดียว) ให้เหลืออันไหน | 🟡 **ข้อมูลตัวอย่างแก้แล้ว 12 ก.ย.** — wichai ถูกย้ายไปบทบาทรวม「ดูแลลูกค้าและใบแจ้งปัญหา」ตามวิธีที่พี่เลี้ยงบอก ส่วน**ข้อมูลจริงยังต้องถาม** ว่าแต่ละคนควรเหลือบทบาทไหน ระบบยังไม่ลบให้เอง | — |
+| Q17 | ผู้ใช้ที่ถือหลาย role อยู่แล้ว (ก่อนเปลี่ยนเป็น role เดียว) ให้เหลืออันไหน | ✅ **หมดประเด็น 29 ก.ย.** — ตรวจฐานแล้วไม่มีผู้ใช้คนไหนถือเกิน 1 role และยังไม่มีข้อมูลจริง (Q6 — คีย์ใหม่ทั้งหมด) API บังคับ role เดียวตั้งแต่ 11 ก.ย. จึงเกิดซ้ำไม่ได้ | — |
 | Q18 | แบบประเมินต้องผูกกับการแก้ปัญหาแต่ละครั้งด้วยไหม หรือผูกกับโปรเจคพอ | ✅ **ตอบแล้ว** — **ผูกกับโปรเจคพอ** ไม่ต้องผูกใบแจ้งปัญหา (`survey_assignments.project_id` มีอยู่แล้ว ห้ามเพิ่ม `ticket_id`) | — |
 | Q20 | สถานะใบแจ้งปัญหาใหม่ "ส่งงานให้ผู้รับผิดชอบแล้ว" คั่นระหว่าง RECEIVED กับ IN_PROGRESS และผู้รับผิดชอบกดเริ่มงานเอง | ✅ **ยืนยันจากไฟล์ประชุมรอบที่ 3** — ใช้สถานะ `ASSIGNED` แสดงว่า "ส่งงานแล้ว" และให้ผู้รับผิดชอบกดเริ่มเอง | — |
 
@@ -494,9 +506,9 @@ return true;
 | # | สิ่งที่ตกลง | ฝั่ง | สถานะ |
 |---|---|---|---|
 | B-1 | ผู้ใช้ถือ role ได้อันเดียว (ดู 4.2) | BE+FE | ✅ BE เสร็จ 11 ก.ย. — `roleIds` ส่งได้ไม่เกิน 1 ทั้งตอนสร้างผู้ใช้และ `PUT /users/:id/roles` |
-| B-2 | **โปรเจคเป็นพระเอก** ย้ายไปเมนูหลัก ลูกค้าเป็นข้อมูลรอง · หน้าจอใช้คำว่า "โปรเจค" แทน "โครงการ" · มุมมองลูกค้า 360° แยกเป็นเมนูของตัวเอง · หน้าลูกค้าเรียงข้อมูลภาษีขึ้นบน ผู้ติดต่อถัดลงมา โซเชียลล่างสุด | FE | ⬜ |
+| B-2 | **โปรเจคเป็นพระเอก** ย้ายไปเมนูหลัก ลูกค้าเป็นข้อมูลรอง · หน้าจอใช้คำว่า "โปรเจค" แทน "โครงการ" · มุมมองลูกค้า 360° แยกเป็นเมนูของตัวเอง · หน้าลูกค้าเรียงข้อมูลภาษีขึ้นบน ผู้ติดต่อถัดลงมา โซเชียลล่างสุด | FE | ✅ ตรวจ 29 ก.ย. — `menu-items.ts` แบ่ง main/support/settings โปรเจคอยู่ main ลูกค้า + 360° อยู่ support |
 | B-3 | **สร้างโปรเจคพร้อมลูกค้าในฟอร์มเดียว** — พิมพ์ 2–3 ตัวค้นลูกค้าเก่า หรือกรอกลูกค้าใหม่ แล้วบันทึกแยกสองตาราง | BE+FE | ✅ BE เสร็จ 11 ก.ย. — `POST /api/projects` รับ `newCustomer` (ดูกฎ Phase 5) |
-| B-4 | งานย่อยแยกออกเป็นเมนู "งาน" (กระดาน) หน้าโปรเจคเหลือรายละเอียด ความคืบหน้า เอกสาร รายงาน | FE | ⬜ |
+| B-4 | งานย่อยแยกออกเป็นเมนู "งาน" (กระดาน) หน้าโปรเจคเหลือรายละเอียด ความคืบหน้า เอกสาร รายงาน | FE | ✅ ตรวจ 29 ก.ย. — เมนู "งานโปรเจกต์" + route `tasks/board`, `tasks/me`, `tasks/review` |
 | B-5 | **เอกสารโปรเจค** — ชื่อ + ไฟล์ + รายละเอียด ไม่ต้องแยกประเภท ดาวน์โหลดย้อนหลังได้ (Phase 9) | BE+FE | ✅ BE เสร็จ 11 ก.ย. — เก็บในเครื่องไปก่อนจนกว่าจะได้ key ของ R2 (ดูกฎ Phase 9) |
 | B-6 | รายงานรายโปรเจคในหน้าโปรเจค | BE+FE | ✅ BE เสร็จ — `GET /api/projects/:id/report` (ความคืบหน้า + นับใบปัญหา/ส่งมอบ/สัญญา MA) · FE เปลี่ยนไปเรียกเส้นนี้แทนการประกอบเอง · **โควตา MA ของโปรเจค** ใช้ `GET /api/projects/:id/ma-quota` แยก (ประชุมทบทวน: ดูการใช้โควตาที่โปรเจค) |
 | B-7 | ใบแจ้งปัญหา: รับเรื่องไม่ต้องระบุผู้รับผิดชอบ มีสถานะ "ส่งงานแล้ว" คั่นก่อนผู้รับผิดชอบกดเริ่มงานเอง | BE+FE | ✅ BE ปรับ `RECEIVED → ASSIGNED → IN_PROGRESS` แล้ว · FE ใช้ `PATCH /api/tickets/:id/start` |
@@ -549,7 +561,8 @@ return true;
 > - `PATCH /api/tickets/:id/send-to-admin` — จาก `RECEIVED`/`REOPENED` → `WAITING_ADMIN` ล้าง claim + assignee · สิทธิ์ `ticket.support_queue`
 > - `PATCH /api/tickets/:id/claim` — เฉพาะ `WAITING_ADMIN` ที่ยังไม่มีคนรับ · ตั้ง `claimedByAdminUserId` = คนกด · สิทธิ์ `ticket.assign`
 > - `PATCH /api/tickets/:id/assign` — มอบหมายจาก `WAITING_ADMIN` **หลังมีคนรับคิวแล้ว** หรือจาก `REOPENED` · ไม่มอบจาก `RECEIVED` ตรง ๆ
-> - `PATCH /api/tickets/:id/return-to-support` — จาก `RESOLVED` → `WAITING_SUPPORT` · สิทธิ์ `ticket.assign`
+> - `PATCH /api/tickets/:id/return-to-support` — จาก `RESOLVED` → `WAITING_SUPPORT` (คิวรวมของซัพพอร์ต ไม่ได้ส่งให้คนเดียว — ซัพพอร์ตทุกคนเห็นในแท็บ RETURNED แต่แจ้งเตือนถึงผู้รับเรื่อง) · body `{ note? }` ต่อท้ายรายละเอียดเป็น `[ตรวจผ่าน] ...` · สิทธิ์ `ticket.assign`
+> - `PATCH /api/tickets/:id/reject-review` — **ตรวจไม่ผ่าน** จาก `RESOLVED` → `IN_PROGRESS` (29 ก.ย.) · body `{ reason }` บังคับ ต่อท้ายเป็น `[ตรวจไม่ผ่าน] ...` · ผู้แก้และแอดมินผู้รับคิวคงเดิม · ใบไม่มีผู้แก้ = 409 · แจ้งผู้แก้ `TICKET_REVIEW_REJECTED` · สิทธิ์ `ticket.assign` · **ห้ามใช้ reopen แทน** (reopen = ลูกค้าแจ้งปัญหาเดิมกลับมา และล้างแอดมินผู้รับคิว) · ส่งงานใหม่ = รอบถัดไป โควตา MA ไม่หักซ้ำ
 > - `PATCH /api/tickets/:id/customer-notified` — จาก `WAITING_SUPPORT` → `CLOSED` · สิทธิ์ `ticket.support_queue` (คนละตัวกับ `ticket.close` ของ PATCH /:id/close)
 
 ### ของที่ยังไม่ถูกใช้ — ตรวจแล้ว 11 ก.ย. ตั้งใจเก็บไว้ ไม่ใช่ลืมลบ
@@ -559,6 +572,9 @@ return true;
 (ทั้งสี่อย่างไม่มี DELETE ตามกฎ Phase 5–7), `task.assign` (มอบหมายงานผ่าน `task.update`),
 `audit.view` (ประวัติการใช้งานกั้นด้วย `@RequireAccountType(ADMIN)` ไม่ใช่สิทธิ์ ติ๊กให้ USER แล้วไม่มีผล)
 - ตอนนี้โผล่เป็นช่องติ๊กในหน้าจัดการบทบาทที่ติ๊กแล้วไม่มีผลอะไร
+- ตรวจ FE 29 ก.ย.: **ไม่มีที่ไหนใช้สิทธิ์เหล่านี้กั้นเมนูแล้ว** (เมนูประวัติกั้นด้วย accountType) เหลือแค่ป้ายชื่อใน
+ `role-editor-dialog.component.ts` ที่เขียนว่า "ยังไม่มีผลในระบบ" — ลบได้เมื่อ FE เอาป้ายออกพร้อมกัน
+ · FE ยังเรียก `DELETE /projects/:id`, `DELETE /ma-contracts/:id`, `DELETE /tickets/:id` ซึ่ง backend ไม่มีตามกฎ ต้องเปลี่ยนเป็นยกเลิก/ปิดงาน
 - **ยังไม่ลบ** เพราะเป็น master data ที่ FE อาจใช้กั้นเมนูอยู่ (เช่นใช้ `audit.view` แสดงเมนูประวัติ)
   ลบแล้ว ADMIN จะมองไม่เห็นเมนูนั้น — ต้องให้ FE เลิกอ้างก่อน แล้วค่อยทำ migration ลบแถวใน
   `permissions` + `role_permissions` และแก้ตัวเลข 76/73 ในหัวข้อ 4.1
@@ -600,18 +616,28 @@ return true;
 - **Audit log อัตโนมัติทุกตาราง** — เขียนที่ Sequelize global hook ที่เดียว
   module ใหม่ไม่ต้องเขียนโค้ด audit เพิ่มเลย ครอบคลุมทั้ง create/update/destroy และ bulk
   ค่าในช่องรหัสผ่านถูกแทนที่ด้วย `[REDACTED]` เสมอ
+- **หน้าประวัติอ่านจาก `summary` / `changes` / `tableLabel` ไม่ใช่ค่าดิบ** (29 ก.ย.) — `audit-log-describer.ts`
+ แปลเป็นไทย **ตอนอ่าน** (ไม่เก็บลงฐาน ประวัติเก่าได้ด้วย) ชื่อ/รหัสของแถวที่อ้างถึงหาแบบรวบทั้งหน้าที่ `audit-ref-loader.ts`
+ (ตารางละ query เดียว `paranoid: false`) · ตัด `id`/`createdAt`/`updatedBy`/`where` ฯลฯ ออก ·
+ คำแปลสถานะต้องตรงกับ `core/models` ของ FE · **ห้ามคืน key ไฟล์** (แสดงแค่ "มีไฟล์")
+ - ตัวกรอง `hideSessionEvents=true` (ซ่อนล็อกอิน/ต่ออายุ/ออกจากระบบ ~ครึ่งหนึ่งของทั้งตาราง),
+ `hideSystemEvents=true` (ซ่อนแถว `user_id = null` ของงานตั้งเวลา) และ
+ `excludeTableNames=notifications` — ค่าเริ่มต้นไม่กรอง · ยังบันทึกครบตาม BR-09 แค่ไม่แสดง
+ - **`summary` ต้องขึ้นต้นด้วยกริยาเสมอ ห้ามใส่ผู้กระทำในประโยค** — หน้าจอวางชื่อ/"คุณ" ไว้ข้างหน้าเอง
+ - งาน cron ที่อัปเดตหลายแถว (ประกัน/สัญญา MA หมดอายุ) ใช้ `individualHooks: true` เพื่อให้ audit
+ บันทึกทีละฉบับพร้อมสถานะเดิม และไม่เขียนแถวว่างทุกชั่วโมงเมื่อไม่มีอะไรเปลี่ยน
 - **ผู้กระทำถูกดึงผ่าน AsyncLocalStorage** — ดู `common/context/request-context.ts`
   ถ้าเขียน DB จาก scheduler ที่ไม่มี request จะได้ `user_id = null` ซึ่งถูกต้องแล้ว
 - **Endpoint ที่มีแล้ว** — auth (login/refresh/logout/me),   users (list/create/update/roles/status/
-  me-password/reset-password), roles (CRUD + permissions), permissions (list), audit-logs (list), health,
+  me-password/reset-password/me profile/me avatar/:id avatar), roles (CRUD + permissions), permissions (list), audit-logs (list), health,
   customers (CRUD + detail), contacts (CRUD), communication-logs (CRUD + detail),
   projects (list/options/detail/create/update/report/ma-quota), projects/:id/tasks (CRUD),
   tasks (company list/summary/due-soon/overdue, status, order, submit/review, reviews,
   submissions file + review-file download),
   projects/:id/deliveries (list/create), deliveries (detail/update/acceptance),
-  deliveries/:id/warranties (create), warranties (expiring/detail/update/print),
+  deliveries/:id/warranties (create), warranties (company list/expiring/detail/update/print),
   projects/:id/warranties (list),
-  tickets (list/pending/support-queue/admin-queue/detail/create/update/assign/send-to-admin/claim/start/return-to-support/customer-notified/reopen/close),
+  tickets (list/pending/support-queue/admin-queue/detail/create/update/assign/send-to-admin/claim/start/return-to-support/reject-review/customer-notified/reopen/close),
   tickets/:id/resolutions (create),
   tickets/:id/confirmation-print,
   ma-plans (CRUD), ma-contracts (list/detail/create/update/renew),
@@ -622,14 +648,28 @@ return true;
   survey-assignments/:id/response,
   reports (contract-value by-customer/by-type/upcoming, service-cost, ma-contract-overlaps),
   customers/:id/overview,
-  projects/:id/documents (list/upload), documents (detail/update/delete/download),
+  projects/:id/documents (list/upload), documents (company list/detail/update/delete/download),
   attachments (list/detail/upload/update/delete/download),
   customers/:id/overview,
   notifications (list/detail/read/read-all/read-by-ref/run/test-line),
   notification-rules (CRUD),
- — รวม ~135 เส้น (นับรวม `/api/health`)
-- **เทสต์คุมกฎธุรกิจ ~619 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
-- **e2e 110 เคส 11 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`, `tasks`, `deliveries`, `projects`, `documents`, `users-reset-password`) — รันด้วย `npm run test:e2e`
+ — รวม ~137 เส้น (นับรวม `/api/health`)
+- **เรียงตามคอลัมน์ที่ join มา (29 ก.ย.)** — `GET /api/projects` รับ `sortBy=customerName|managerName|progress`
+ `GET /api/tickets` รับ `sortBy=customerName|projectName|assigneeName` · map อยู่ที่ `JOINED_SORTS` (เป็น `Map`
+ ไม่ใช่ object เพื่อไม่ให้ `sortBy=toString` ไปเจอของใน prototype) · ตัดสินรองด้วย `id` เสมอ ·
+ ASC เอาค่าว่างขึ้นก่อน (พฤติกรรม MySQL) · `progress` เป็น subquery สูตรเดียวกับ `calculateProgressMany`
+ **โควตา MA ไม่มีให้เรียง** เพราะคำนวณจากรอบของแต่ละสัญญาใน JS ไม่ได้อยู่ในตาราง
+- **รายการรวมทั้งบริษัท (29 ก.ย.)** — `GET /api/warranties` (`warranty.view` · status/deliveryId/projectId/customerId ·
+ `search` ค้นเลขที่ประกัน + ชื่อ/รหัสโครงการ + ชื่อลูกค้า) และ `GET /api/documents` (`document.view` ·
+ projectId/customerId · `search` ค้นชื่อเอกสาร/ไฟล์ + ชื่อ/รหัสโครงการ · แต่ละแถวพ่วง `project` ผ่าน
+ `CompanyDocumentResponseDto` ไม่แตะ DTO ของเส้นรายโครงการ) · ค้นชื่อที่ join ด้วยการหา id ก่อนแล้ว `IN` ตามกฎ Phase 7
+- **`GET /api/tickets/:id` พ่วง `history`** (29 ก.ย.) — ไทม์ไลน์ของใบ อ่านจาก `audit_logs` ของตาราง `tickets`
+ (`dto/ticket-history.ts`) แปลงการเปลี่ยนสถานะเป็นเหตุการณ์ เช่น `REVIEW_REJECTED` (RESOLVED → IN_PROGRESS) แยกจาก
+ `STARTED` · `CUSTOMER_NOTIFIED` (WAITING_SUPPORT → CLOSED) แยกจาก `CLOSED` · หมายเหตุดึงจาก `[ตรวจไม่ผ่าน]`/`[ตรวจผ่าน]`
+ ที่ต่อท้ายรายละเอียด · การแก้ข้อมูลทั่วไปไม่ขึ้นไทม์ไลน์ · ผู้กระทำเป็นระบบ = `actor: null`
+ ไม่ได้เพิ่มตาราง เพราะ audit log เก็บทุกการเปลี่ยนพร้อมผู้กระทำอยู่แล้ว (BR-09)
+- **เทสต์คุมกฎธุรกิจ ~680 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
+- **e2e 111 เคส 11 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`, `tasks`, `deliveries`, `projects`, `documents`, `users-reset-password`) — รันด้วย `npm run test:e2e`
   แยกจาก `npm test` เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่
   `test/global-setup.js` สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
   มีไว้พิสูจน์สิ่งที่ mock พิสูจน์แทนไม่ได้ — SQL ที่ Sequelize สร้างรันได้จริง,
@@ -660,12 +700,21 @@ return true;
 **กฎธุรกิจที่ Phase 5 บังคับไว้**
 - ความคืบหน้าโครงการ = (task ที่ DONE / task ทั้งหมด) x 100 นับ task ทุกชั้นแบบแบน
   ไม่ถ่วงน้ำหนักด้วย estimated_hours เพราะไม่ได้กรอกกันทุกงาน โครงการที่ยังไม่มี task ได้ 0%
+- **`GET /api/projects` พ่วง `progress` ทุกแถวแล้ว** (29 ก.ย.) — เดิมมีแค่หน้ารายละเอียด FE จึงยิง `/projects/:id`
+ ทีละโครงการ (หน้าเดียว 187 คำขอ) · `calculateProgressMany()` query เดียวรวมกลุ่ม (โครงการ, สถานะ, วันครบกำหนด)
+ แล้วตัดสินด้วย `isTaskOverdue()` ตัวเดิม — `calculateProgress(id)` เรียกผ่านตัวนี้ สูตรจึงมีชุดเดียว
 - **B-6 สรุปตัวเลขบนหน้ารายละเอียดโปรเจค = `GET /api/projects/:id/report`**
   คืน `progress` (สูตรเดียวกับรายละเอียดโปรเจค) + `ticketCount` + `deliveryCount` +
   `maContractCount` นับแถวที่ยังไม่ soft delete ของโปรเจคนั้น ไม่กรองสถานะย่อย
   หน้าจอต้องเรียกเส้นนี้แทนการประกอบตัวเลขเองจากรายการในหน้า
 - **สถานะงานเปลี่ยนไปไหนก็ได้ ไม่บังคับลำดับ** เพราะงานจริงถอยกลับได้ (REVIEW ไม่ผ่าน -> DOING)
-  เป็น DONE แล้วระบบใส่ `completed_at` ให้ ถอยออกจาก DONE แล้วล้างค่า และเป็น DONE ซ้ำไม่ทับเวลาเดิม
+ เป็น DONE แล้วระบบใส่ `completed_at` ให้ ถอยออกจาก DONE แล้วล้างค่า และเป็น DONE ซ้ำไม่ทับเวลาเดิม
+ - **ยกเว้น REVIEW กับ DONE ต้องผ่านเส้นส่งตรวจ/ตรวจงานเท่านั้น** — `PATCH /tasks/:id/status` และ
+ `PUT /projects/:id/tasks/:taskId` ใช้ `assertManualStatusChange()` ตัวเดียวกัน: ตั้ง REVIEW = 400,
+ DONE จากงานที่ยังไม่ผ่านตรวจ = 409 · `PUT` ตรวจเฉพาะเมื่อสถานะเปลี่ยนจริง (ฟอร์มส่งค่าเดิมกลับมาได้)
+ - **สร้างงานเป็น REVIEW ไม่ได้ (400)** แต่สร้างเป็น DONE ได้ (บันทึกงานที่เสร็จแล้วย้อนหลัง)
+ - เหตุผล (29 ก.ย.): งาน REVIEW ที่ไม่มีรายการส่งตรวจ PENDING ไม่โผล่ในเมนูงานตรวจ ไม่มีใครตรวจได้
+ และผู้รับผิดชอบก็ขยับเองไม่ได้ — ค้างถาวร
 - **จัดลำดับ** ส่งตำแหน่งปลายทาง ระบบเรียงพี่น้องทั้งกลุ่มใหม่เป็น 0,1,2,... ไม่ใช่แก้ค่าตัวเดียว
   ไม่งั้นลำดับจะเพี้ยนหลังลากไปมาหลายรอบ — ค่านี้ใช้แสดงผลเท่านั้น ไม่ได้บังคับลำดับการทำงาน (Q5)
 - งานย่อยซ้อนได้ไม่จำกัดชั้นในฐานข้อมูล แต่ API คืนโครงสร้างซ้อน **2 ระดับ** เป็นค่าเริ่มต้น
@@ -735,8 +784,27 @@ return true;
   - ไม่ติด `@RequirePermission` — ช่องที่ไม่มีสิทธิ์ของหน้านั้นได้ **`null` ไม่ใช่ 0** (ใช้สิทธิ์ตัวเดียวกับ guard ของหน้า)
   - `ticketsMineOpen` = มอบให้ฉัน + `ASSIGNEE_OPEN_TICKET_STATUSES` (ASSIGNED/IN_PROGRESS/REOPENED)
     = แท็บ "กำลังทำ" ของหน้าใบของฉัน · `tasksMeRejected` = งานของฉัน DOING/WAITING ที่รอบส่ง**ล่าสุด**ถูกตีกลับ
+ · `tasksMeOpen` (29 ก.ย.) = total ของ `GET /tasks/me` (TODO/DOING/WAITING) = badge เมนู "งานโปรเจกต์"
+ ใช้ `TasksService.myOpenTasksWhere()` ร่วมกับรายการ · `null` ถ้าไม่มี `task.view`
+ · (29 ก.ย.) `followUpsMineDue` = total ของ `GET /follow-ups?assignedUserId=<ฉัน>&dueByToday=true`
+ (PLANNED/OVERDUE ที่ครบกำหนดภายในวันนี้ รวมที่เลยแล้ว · `followup.view`) ·
+ `warrantiesExpiringSoon` = `GET /warranties/expiring?days=30` (`warranty.view`) ·
+ `maContractsExpiringSoon` = `GET /ma-contracts?expiringInDays=30` (`ma.view`) — 30 วันอยู่ที่ `EXPIRING_SOON_DAYS`
+ ทั้งสามเรียก `findAll`/`findExpiring` ของ service เจ้าของหน้าด้วย `limit: 1` แล้วอ่าน `total` ไม่เขียน where ซ้ำ
+- **โปรไฟล์ของตัวเอง (29 ก.ย.)** — ไม่ต้องมี `user.update` ใช้ id จาก JWT · ทุกเส้นคืนรูปแบบเดียวกับ `GET /auth/me`
+ - `PATCH /api/users/me` แก้ได้แค่ `nickname` (trim, ≤ 50, `null`/`""` = ลบ) ฟิลด์อื่น = 400 จาก `forbidNonWhitelisted`
+ - `POST /api/users/me/avatar` (multipart `file`) JPG/PNG/WEBP ≤ 2 MB (`AVATAR_MAX_MB` ค่าคงที่ เหตุผลเดียวกับ `MAX_UPLOAD_MB`)
+ ตรวจทั้ง mimetype และนามสกุล · ผิดชนิด 400 / ใหญ่เกิน 413 · `DELETE /api/users/me/avatar` ลบรูป
+ - **รูปโปรไฟล์เป็นข้อยกเว้นเดียวที่ลบไฟล์จริง** ตอนเปลี่ยน/ลบรูป (`StorageService.delete`) — ไม่ใช่หลักฐาน
+ ต่างจากเอกสาร/ไฟล์แนบที่เก็บไว้เสมอ · ลบไฟล์เก่าไม่สำเร็จแค่ log ไม่ทำให้คำขอพัง
+ - `avatarUrl` ที่คืน = `/api/users/:id/avatar?v=<ชื่อไฟล์>` (ไม่คืน key · `v` เปลี่ยนทุกครั้งที่อัปโหลด) ·
+ `GET /api/users/:id/avatar` ไม่ติด `@RequirePermission` (เหตุผลเดียวกับ `/users/assignable`)
+ และเปิดได้เฉพาะ key ใต้ `users/<id>/avatar/` ของคนนั้น (`isOwnAvatarKey`) — กันคนที่แก้ `avatarUrl`
+ ผ่าน `PUT /users/:id` ชี้ไปอ่านไฟล์อื่นในที่เก็บ · ค่าเก่าที่เป็น URL ภายนอกคืนตามเดิม
 - **`GET /api/projects/options`** (`project.view`) ตัวเลือกดรอปดาวน์ ไม่แบ่งหน้า ทุกสถานะ เรียงตามชื่อ
   คืน `{ id, code, name, status }` เท่านั้น — **ห้ามเติมฟิลด์** ไม่งั้นกลายเป็นรายการโครงการเต็มที่ไม่มี limit
+ - รับ `search` (ชื่อ/รหัส) + `limit` (≤100) แบบไม่บังคับ (29 ก.ย.) ไม่ส่ง = ทั้งหมดเหมือนเดิม
+ ดรอปดาวน์ที่ใช้บ่อยควรเปลี่ยนเป็นพิมพ์ค้นเมื่อโครงการเยอะ ค่าที่เลือกไว้แล้วให้แสดงจากข้อมูลของเรคคอร์ดเอง
 
 **กฎธุรกิจที่ Phase 6 บังคับไว้**
 - **`warranties.start_date` ไม่เคยรับค่าจาก client** — คำนวณจาก `deliveries.delivered_at`
@@ -1255,6 +1323,17 @@ return true;
  - ไม่ติ๊กสิทธิ์ที่ยังไม่มี endpoint (`customer.delete`, `file.*`, `task.assign`, `audit.view`, `*.export`)
 - ใบแจ้งปัญหาเดโม: ผู้รับเรื่อง = Tom · ผู้แก้ = wichai · แอดมินคิว = somchai (account_type)
 
+**ความปลอดภัยระดับ HTTP (29 ก.ย.)**
+- ทุก response ตั้ง `Cache-Control: no-store` และปิด ETag — ข้อมูลลูกค้าไม่ค้างใน cache ของเบราว์เซอร์หลังออกจากระบบ
+ (แลกกับการไม่ได้ 304 ซึ่งไม่คุ้มกับข้อมูลภายในบริษัท)
+- Swagger ปิดเองเมื่อ `NODE_ENV=production` เปิดด้วย `SWAGGER_ENABLED=true`
+- ยังเป็น HTTP — ผ่าน Tailscale (100.x) ถูกเข้ารหัสโดย WireGuard อยู่แล้ว แต่ก่อนใช้งานจริงต้องมี HTTPS
+ (เช่น `tailscale serve` / `tailscale cert` ได้ใบรับรองชื่อ `*.ts.net`) · **ห้ามเปิดพอร์ตออกอินเทอร์เน็ตตรง ๆ แบบ HTTP**
+- ⬜ **ค้างไว้ระหว่างทดสอบ (ตกลง 29 ก.ย.)** — FE `src/environments/environment.ts` มีรหัส SuperAdmin จริงใน `devAccounts`
+ (ปุ่มล็อกอินเดโม) ซึ่งถูกส่งถึง browser ของ dev build และอยู่ใน git history แล้ว **ก่อนใช้งานจริงต้อง**
+ เอาบัญชี SuperAdmin ออกจาก `devAccounts` และเปลี่ยน `SUPER_ADMIN_PASSWORD` (แจ้งทีมก่อนเปลี่ยน)
+ · build production ปลอดภัยอยู่แล้ว (`environment.prod.ts` มี `devAccounts: []`)
+
 **การ log ระหว่างพัฒนา**
 - ทุก request ขึ้น terminal บรรทัดละหนึ่งรายการ — method, url, status, เวลาที่ใช้, ผู้เรียก
   เปิด/ปิดด้วย `REQUEST_LOG` ใน `.env` (ค่าเริ่มต้นเปิดเมื่อไม่ใช่ production)
@@ -1283,8 +1362,12 @@ return true;
     (ยกเว้นคนกดเอง · ถอนมอบหมายไม่แจ้ง)
   - `POST /resolutions` (ใบเป็น RESOLVED) → `TICKET_AWAITING_REVIEW` ให้ `claimedByAdminUserId`
     ถ้ามี ไม่มีก็กระจายเหมือนคิวแอดมิน
-  - `return-to-support` → `TICKET_RETURNED_TO_SUPPORT` ให้ `receivedByUserId`
-  - ล้มเหลวตอนแจ้ง **ห้าม** ทำให้ action ของใบพัง (กลืน error + log)
+ - `return-to-support` → `TICKET_RETURNED_TO_SUPPORT` ให้ `receivedByUserId`
+ - `reject-review` → `TICKET_REVIEW_REJECTED` ให้ `assignedUserId` พร้อมเหตุผล (migration `20260929000001`)
+ - **กันซ้ำด้วย "ยังมีแจ้งเตือนเดิมของใบนี้ที่ยังไม่อ่าน" ไม่ใช่ "วันละครั้ง"** (29 ก.ย.) — ใบวนขั้นเดิมได้หลายรอบ
+ ในวันเดียว (ตีกลับ → ส่งตรวจใหม่) ถ้ากันแบบวันละครั้ง แอดมินจะไม่รู้ว่ามีงานส่งตรวจรอบสอง
+ (กฎวันละครั้งยังใช้กับ cron ของ `notification_rules` ตามเดิม)
+ - ล้มเหลวตอนแจ้ง **ห้าม** ทำให้ action ของใบพัง (กลืน error + log)
   - cron / `notification_rules` ของวันหมดอายุ **ไม่เกี่ยวกับ** event ชุดนี้ — อย่าไปผูก LINE เข้ามา
 - **แจ้งเตือนเป็นประวัติเหตุการณ์ ไม่ใช่สถานะปัจจุบันของงาน** — คิวว่างแล้วแต่แจ้งเตือนยังไม่อ่านได้ ถูกต้องแล้ว
  เป็น READ ได้สามทาง: `PATCH /:id/read` (กดทีละอัน) · `PATCH /read-by-ref { refType, refId }`

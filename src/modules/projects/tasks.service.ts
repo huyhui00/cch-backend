@@ -278,6 +278,11 @@ export class TasksService {
 
     const status = dto.status ?? TaskStatus.TODO;
 
+    // DONE ยังสร้างได้ (บันทึกงานที่เสร็จแล้วย้อนหลัง) แต่ REVIEW ต้องมีรายการส่งตรวจคู่กันเสมอ
+    if (status === TaskStatus.REVIEW) {
+      throw new BadRequestException('สร้างงานเป็นสถานะส่งตรวจไม่ได้ กรุณาส่งตรวจหลังสร้างงาน');
+    }
+
     const task = await this.taskModel.create({
       projectId,
       parentTaskId: dto.parentTaskId ?? null,
@@ -319,10 +324,7 @@ export class TasksService {
     query: PaginationDto,
   ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
     const { rows, count } = await this.taskModel.findAndCountAll({
-      where: {
-        assignedUserId: userId,
-        status: { [Op.notIn]: [TaskStatus.REVIEW, TaskStatus.DONE] },
-      },
+      where: this.myOpenTasksWhere(userId),
       include: [assigneeInclude(), assignedByInclude(), projectInclude()],
       order: [
         ['dueDate', 'ASC'],
@@ -334,6 +336,19 @@ export class TasksService {
     });
 
     return toPaginatedResult(rows.map(toCompanyTaskResponse), count, query);
+  }
+
+  /** badge เมนูงานโปรเจกต์ = total ของ GET /tasks/me (include ของรายการเป็น required: false ทั้งหมด) */
+  countMyOpenTasks(userId: number): Promise<number> {
+    return this.taskModel.count({ where: this.myOpenTasksWhere(userId) });
+  }
+
+  /** งานของฉันที่ยังต้องลงมือ — REVIEW รอคนอื่นตรวจ, DONE จบแล้ว */
+  myOpenTasksWhere(userId: number): WhereOptions<Task> {
+    return {
+      assignedUserId: userId,
+      status: { [Op.notIn]: [TaskStatus.REVIEW, TaskStatus.DONE] },
+    };
   }
 
   async update(projectId: number, id: number, dto: UpdateTaskDto): Promise<TaskResponseDto> {
@@ -356,6 +371,11 @@ export class TasksService {
       dto.startDate !== undefined ? (dto.startDate ?? null) : task.startDate,
       dto.dueDate !== undefined ? (dto.dueDate ?? null) : task.dueDate,
     );
+
+    // ฟอร์มแก้ไขส่งสถานะเดิมกลับมาได้ — ตรวจเฉพาะเมื่อสถานะเปลี่ยนจริง
+    if (dto.status !== undefined && dto.status !== task.status) {
+      this.assertManualStatusChange(task, dto.status, actorId);
+    }
 
     await task.update({
       ...(dto.title !== undefined ? { title: dto.title } : {}),
@@ -391,15 +411,7 @@ export class TasksService {
     const actorId = getCurrentUserId();
     const task = await this.findOrFail(id);
 
-    if (dto.status === TaskStatus.REVIEW) {
-      throw new BadRequestException('กรุณาส่งรายงานผ่านเส้นทางส่งตรวจ');
-    }
-
-    if (dto.status === TaskStatus.DONE && task.status === TaskStatus.REVIEW) {
-      throw new BadRequestException('กรุณาตรวจงานผ่านเส้นทาง review');
-    }
-
-    this.assertStatusChangeAllowed(task, dto.status, actorId);
+    this.assertManualStatusChange(task, dto.status, actorId);
 
     await task.update({ ...this.statusPatch(task, dto.status), updatedBy: actorId });
 
@@ -1219,6 +1231,19 @@ export class TasksService {
     if (!actor || !(await this.accessControl.hasPermission(actor, 'task.assign'))) {
       throw new ForbiddenException('คุณไม่มีสิทธิ์มอบหมายงาน');
     }
+  }
+
+  /** เปลี่ยนสถานะด้วยมือ (PATCH /status, PUT งาน) — REVIEW/DONE ต้องผ่านเส้นส่งตรวจ/ตรวจงานเท่านั้น */
+  private assertManualStatusChange(task: Task, status: TaskStatus, actorId: number | null): void {
+    if (status === TaskStatus.REVIEW) {
+      throw new BadRequestException('กรุณาส่งรายงานผ่านเส้นทางส่งตรวจ');
+    }
+
+    if (status === TaskStatus.DONE && task.status === TaskStatus.REVIEW) {
+      throw new BadRequestException('กรุณาตรวจงานผ่านเส้นทาง review');
+    }
+
+    this.assertStatusChangeAllowed(task, status, actorId);
   }
 
   private assertStatusChangeAllowed(task: Task, status: TaskStatus, actorId: number | null): void {

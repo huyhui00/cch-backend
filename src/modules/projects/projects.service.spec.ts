@@ -2,6 +2,7 @@
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
 import { runWithRequestContext } from '../../common/context/request-context';
@@ -83,9 +84,9 @@ function projectRow(overrides: Partial<ProjectRow> = {}): ProjectRow {
   return { ...baseProjectRow(), ...overrides };
 }
 
-/** task แบบย่อ — calculateProgress ดึงมาแค่ status กับ dueDate */
-function taskRow(status: TaskStatus, dueDate: string | null = null) {
-  return { status, dueDate };
+/** แถวที่ query รวมกลุ่มคืนมา (โครงการ, สถานะ, วันครบกำหนด, จำนวน) — ค่าเริ่มต้น 1 งานของโครงการ 1 */
+function taskRow(status: TaskStatus, dueDate: string | null = null, taskCount = 1, projectId = 1) {
+  return { projectId, status, dueDate, taskCount: String(taskCount) };
 }
 
 /** วันที่เมื่อวาน / พรุ่งนี้ ในรูปแบบ YYYY-MM-DD ตามเขตเวลาเครื่องเดียวกับ service */
@@ -196,17 +197,75 @@ describe('ProjectsService', () => {
     it('นับงานทุกชั้นแบบแบน ไม่แยกงานแม่งานย่อย', async () => {
       // เงื่อนไขต้องมีแค่ projectId ถ้าเผลอใส่ parentTaskId: null เข้าไป
       // งานย่อยจะหายจากตัวหาร ทำให้เปอร์เซ็นต์สูงเกินจริง
-      let captured: { projectId: number; parentTaskId?: unknown } = { projectId: 0 };
-      taskModel.findAll.mockImplementation(
-        (options: { where: { projectId: number; parentTaskId?: unknown } }) => {
-          captured = options.where;
-          return Promise.resolve([]);
-        },
-      );
+      let captured: Record<string, unknown> = {};
+      taskModel.findAll.mockImplementation((options: { where: Record<string, unknown> }) => {
+        captured = options.where;
+        return Promise.resolve([]);
+      });
 
       await service.calculateProgress(1);
 
-      expect(captured).toEqual({ projectId: 1 });
+      expect(captured).toEqual({ projectId: { [Op.in]: [1] } });
+    });
+
+    it('หลายโครงการใน query เดียว นับจำนวนจากกลุ่ม และโครงการที่ไม่มีงานได้ 0%', async () => {
+      const yesterday = dateOnlyOffsetByDays(-1);
+      taskModel.findAll.mockResolvedValue([
+        taskRow(TaskStatus.DONE, null, 3, 1),
+        taskRow(TaskStatus.DOING, yesterday, 2, 1),
+        taskRow(TaskStatus.TODO, null, 4, 2),
+      ]);
+
+      const progress = await service.calculateProgressMany([1, 2, 3]);
+
+      expect(taskModel.findAll).toHaveBeenCalledTimes(1);
+      expect(progress.get(1)).toMatchObject({
+        totalTasks: 5,
+        doneTasks: 3,
+        percent: 60,
+        overdueTasks: 2,
+      });
+      expect(progress.get(2)).toMatchObject({ totalTasks: 4, doneTasks: 0, percent: 0 });
+      expect(progress.get(3)).toMatchObject({ totalTasks: 0, percent: 0, overdueTasks: 0 });
+    });
+
+    it('รายการโครงการพ่วง progress มาทุกแถว ด้วย query งานครั้งเดียว', async () => {
+      projectModel.findAndCountAll.mockResolvedValue({
+        rows: [projectRow({ id: 1 }), projectRow({ id: 2 })],
+        count: 2,
+      });
+      taskModel.findAll.mockResolvedValue([taskRow(TaskStatus.DONE, null, 1, 2)]);
+
+      const result = await service.findAll({ page: 1, limit: 20, offset: 0 } as never);
+
+      expect(taskModel.findAll).toHaveBeenCalledTimes(1);
+      expect(result.items.map((item) => item.progress?.percent)).toEqual([0, 100]);
+    });
+
+    it('เรียงตามชื่อลูกค้า/ผู้จัดการผ่าน association และตัดสินรองด้วย id', async () => {
+      projectModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+      const base = { page: 1, limit: 20, offset: 0, sortOrder: 'ASC' };
+
+      await service.findAll({ ...base, sortBy: 'customerName' } as never);
+      await service.findAll({ ...base, sortBy: 'managerName' } as never);
+      await service.findAll({ ...base, sortBy: 'toString' } as never);
+
+      const orders = projectModel.findAndCountAll.mock.calls.map(
+        ([options]: [{ order: unknown[] }]) => options.order,
+      );
+      expect(orders[0]).toEqual([
+        ['customer', 'name', 'ASC'],
+        ['id', 'ASC'],
+      ]);
+      expect(orders[1]).toEqual([
+        ['manager', 'fullName', 'ASC'],
+        ['id', 'ASC'],
+      ]);
+      // ค่าที่ไม่รู้จัก (รวมชื่อ property ของ Object) ตกกลับไปใช้ค่าเริ่มต้น
+      expect(orders[2]).toEqual([
+        ['createdAt', 'ASC'],
+        ['id', 'ASC'],
+      ]);
     });
 
     it('แจกแจงจำนวนงานครบทุกสถานะ แม้สถานะที่ไม่มีงานเลย', async () => {
@@ -275,6 +334,21 @@ describe('ProjectsService', () => {
       expect(options.order).toEqual([
         ['name', 'ASC'],
         ['id', 'ASC'],
+      ]);
+    });
+
+    it('พิมพ์ค้น: กรองชื่อหรือรหัส และจำกัดจำนวนตาม limit', async () => {
+      projectModel.findAll.mockResolvedValue([]);
+
+      await service.findOptions({ search: 'คลัง', limit: 20 });
+
+      const [[options]] = projectModel.findAll.mock.calls as [
+        [{ where: Record<symbol, unknown>; limit: number }],
+      ];
+      expect(options.limit).toBe(20);
+      expect(options.where[Op.or]).toEqual([
+        { name: { [Op.like]: '%คลัง%' } },
+        { code: { [Op.like]: '%คลัง%' } },
       ]);
     });
   });

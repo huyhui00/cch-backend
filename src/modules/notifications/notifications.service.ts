@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Op } from 'sequelize';
+import { Op, type Order, type WhereOptions } from 'sequelize';
 
 import { AccessControlService } from '../../common/services/access-control.service';
 import {
@@ -16,10 +16,21 @@ import {
   type PaginatedResult,
 } from '../../common/dto/pagination.dto';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
+import {
+  type CursorPaginatedResult,
+  decodeCursor,
+  encodeCursor,
+  olderThan,
+  toCursorResult,
+} from '../../common/utils/cursor.util';
 import { Notification, NotificationStatus, User, UserStatus } from '../../models';
 import { LineMessagingService } from './line-messaging.service';
 import { MarkReadByRefDto, QueryNotificationsDto, TestLinePushDto } from './dto/notification.dto';
 import { NotificationResponseDto, toNotificationResponse } from './dto/notification.response';
+
+export type NotificationPage =
+  | (PaginatedResult<NotificationResponseDto> & { nextCursor: string | null; hasMore: boolean })
+  | CursorPaginatedResult<NotificationResponseDto>;
 
 @Injectable()
 export class NotificationsService {
@@ -33,34 +44,53 @@ export class NotificationsService {
   async findAll(
     query: QueryNotificationsDto,
     viewer: AuthenticatedUser,
-  ): Promise<PaginatedResult<NotificationResponseDto>> {
+  ): Promise<NotificationPage> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
-    const where: Record<string, unknown> = {};
+    const where: WhereOptions<Notification> = {};
 
     if (query.all) {
       if (!(await this.accessControl.hasPermission(viewer, 'notification.manage'))) {
         throw new ForbiddenException('คุณไม่มีสิทธิ์ดูการแจ้งเตือนของผู้อื่น');
       }
     } else {
-      where.targetUserId = viewer.id;
+      Object.assign(where, { targetUserId: viewer.id });
     }
 
     if (query.status) {
-      where.status = query.status;
+      Object.assign(where, { status: query.status });
     }
 
+    const order: Order = [
+      ['createdAt', 'DESC'],
+      ['id', 'DESC'],
+    ];
+
+    if (query.cursor !== undefined) {
+      const rows = await this.notificationModel.findAll({
+        where: { [Op.and]: [where, olderThan(decodeCursor(query.cursor))] },
+        order,
+        limit: limit + 1,
+      });
+
+      return toCursorResult(rows, limit, toNotificationResponse);
+    }
+
+    const offset = (page - 1) * limit;
     const { rows, count } = await this.notificationModel.findAndCountAll({
       where,
-      order: [
-        ['createdAt', 'DESC'],
-        ['id', 'DESC'],
-      ],
+      order,
       limit,
-      offset: (page - 1) * limit,
+      offset,
     });
+    const hasMore = offset + rows.length < count;
+    const last = rows[rows.length - 1];
 
-    return toPaginatedResult(rows.map(toNotificationResponse), count, { page, limit });
+    return {
+      ...toPaginatedResult(rows.map(toNotificationResponse), count, { page, limit }),
+      nextCursor: hasMore && last ? encodeCursor(last) : null,
+      hasMore,
+    };
   }
 
   async findOne(id: number, viewer: AuthenticatedUser): Promise<NotificationResponseDto> {

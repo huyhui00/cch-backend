@@ -5,6 +5,7 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import { type PaginatedResult } from '../../common/dto/pagination.dto';
 import {
   CreateWarrantyDto,
+  QueryCompanyWarrantiesDto,
   QueryExpiringWarrantiesDto,
   QueryWarrantiesDto,
   UpdateWarrantyDto,
@@ -24,6 +25,24 @@ import { WarrantiesService } from './warranties.service';
 @Controller()
 export class WarrantiesController {
   constructor(private readonly warrantiesService: WarrantiesService) {}
+
+  @Get('warranties')
+  @RequirePermission('warranty.view')
+  @ApiOperation({
+    summary: 'รายการประกันทั้งบริษัท',
+    description:
+      'แบ่งหน้า · กรอง status / deliveryId / projectId / customerId · `search` ค้นเลขที่ประกัน ' +
+      'ชื่อ/รหัสโครงการ และชื่อลูกค้า · `sortBy` = startDate / endDate / durationMonth / createdAt ' +
+      '(ค่าเริ่มต้น endDate) · ให้ดู isCurrentlyActive ว่ายังคุ้มครองอยู่จริง ไม่ใช่ดูที่ status',
+  })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [WarrantyResponseDto] })
+  @ApiResponse({ status: 400, description: 'ข้อมูลไม่ถูกต้อง' })
+  @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+  findAll(
+    @Query() query: QueryCompanyWarrantiesDto,
+  ): Promise<PaginatedResult<WarrantyResponseDto>> {
+    return this.warrantiesService.findAll(query);
+  }
 
   @Get('warranties/expiring')
   @RequirePermission('warranty.view')

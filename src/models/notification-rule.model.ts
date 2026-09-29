@@ -20,6 +20,8 @@ export enum NotificationEventType {
   TICKET_RETURNED_TO_SUPPORT = 'TICKET_RETURNED_TO_SUPPORT',
   /** C-3 — แอดมินมอบหมายใบให้พนักงานแก้ */
   TICKET_ASSIGNED = 'TICKET_ASSIGNED',
+  /** C-1 — แอดมินตรวจไม่ผ่าน ตีกลับให้ผู้แก้ทำต่อ */
+  TICKET_REVIEW_REJECTED = 'TICKET_REVIEW_REJECTED',
 }
 
 /** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */

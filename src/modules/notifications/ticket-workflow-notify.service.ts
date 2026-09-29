@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op } from 'sequelize';
 
-import { todayAsDateOnly } from '../../common/utils/date.util';
 import {
   AccountType,
   Notification,
@@ -120,6 +119,28 @@ export class TicketWorkflowNotifyService {
     });
   }
 
+  /** แอดมินตรวจไม่ผ่าน — แจ้งผู้แก้พร้อมเหตุผล */
+  async notifyReviewRejected(
+    ticket: TicketNotifyRef,
+    actorUserId: number | null,
+    reason: string,
+  ): Promise<void> {
+    await this.safeRun('TICKET_REVIEW_REJECTED', async () => {
+      if (!ticket.assignedUserId) {
+        return;
+      }
+      const label = this.ticketLabel(ticket);
+      await this.createForUsers({
+        eventType: NotificationEventType.TICKET_REVIEW_REJECTED,
+        ticket,
+        recipientIds: [ticket.assignedUserId],
+        excludeUserId: actorUserId,
+        title: `ใบถูกตีกลับให้แก้ต่อ — ${label}`,
+        message: `ใบ「${ticket.title}」แอดมินตรวจไม่ผ่าน: ${reason}`,
+      });
+    });
+  }
+
   private ticketLabel(ticket: TicketNotifyRef): string {
     return ticket.ticketNo?.trim() || `#${ticket.id}`;
   }
@@ -199,7 +220,6 @@ export class TicketWorkflowNotifyService {
     title: string;
     message: string;
   }): Promise<void> {
-    const todayStart = new Date(`${todayAsDateOnly()}T00:00:00`);
     const uniqueIds = [...new Set(input.recipientIds)].filter(
       (id) => id && id !== input.excludeUserId,
     );
@@ -210,13 +230,15 @@ export class TicketWorkflowNotifyService {
         continue;
       }
 
+      // กันซ้ำเฉพาะตอนแจ้งเตือนเดิมยังไม่ถูกอ่าน — ไม่ใช่ "วันละครั้ง" แบบ cron
+      // เพราะใบวนขั้นเดิมได้หลายรอบในวันเดียว (ตีกลับ → ส่งตรวจใหม่) และแต่ละรอบต้องมีคนรู้
       const exists = await this.notificationModel.findOne({
         where: {
           eventType: input.eventType,
           targetUserId: userId,
           refType: 'TICKET',
           refId: input.ticket.id,
-          createdAt: { [Op.gte]: todayStart },
+          status: { [Op.ne]: NotificationStatus.READ },
         },
       });
       if (exists) {

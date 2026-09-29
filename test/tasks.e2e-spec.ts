@@ -64,7 +64,7 @@ describe('Tasks across projects (e2e)', () => {
     return request(app.getHttpServer() as Parameters<typeof request>[0]);
   }
 
-  function authed(method: 'get' | 'post', url: string) {
+  function authed(method: 'get' | 'post' | 'patch', url: string) {
     return api()[method](url).set('Authorization', `Bearer ${token}`);
   }
 
@@ -111,7 +111,6 @@ describe('Tasks across projects (e2e)', () => {
       { title: 'ครบกำหนดวันนี้', status: 'DOING', dueDate: today },
       { title: 'อีกสามวัน', status: 'TODO', dueDate: addDays(today, 3) },
       { title: 'อีกสามสิบวัน', status: 'TODO', dueDate: addDays(today, 30) },
-      { title: 'ไม่มีวันครบกำหนด', status: 'REVIEW', dueDate: null },
       { title: 'เสร็จแล้วแม้เลยกำหนด', status: 'DONE', dueDate: addDays(today, -2) },
     ];
 
@@ -121,6 +120,25 @@ describe('Tasks across projects (e2e)', () => {
         .expect(201);
       titles.set(task.title, (created.body as ApiResponse<{ id: number }>).data.id);
     }
+
+    // REVIEW สร้างตรง ๆ ไม่ได้ ต้องส่งรายงานแล้วส่งตรวจ เหมือนผู้ใช้จริง
+    const me = await authed('get', '/api/auth/me').expect(200);
+    const myId = (me.body as ApiResponse<{ id: number }>).data.id;
+    const reviewTask = await authed('post', `/api/projects/${projectId}/tasks`)
+      .send({ title: 'ไม่มีวันครบกำหนด', assignedUserId: myId })
+      .expect(201);
+    const reviewTaskId = (reviewTask.body as ApiResponse<{ id: number }>).data.id;
+    await authed('post', `/api/tasks/${reviewTaskId}/submissions`)
+      .field('report', 'รายงานผลทดสอบ')
+      .expect(201);
+    await authed('patch', `/api/tasks/${reviewTaskId}/submit-review`).expect(200);
+    titles.set('ไม่มีวันครบกำหนด', reviewTaskId);
+  });
+
+  it('สร้างงานเป็น REVIEW ตรง ๆ ไม่ได้ — ต้องมีรายการส่งตรวจคู่กันเสมอ', async () => {
+    await authed('post', `/api/projects/${projectId}/tasks`)
+      .send({ title: `ส่งตรวจลอย ๆ ${stamp}`, status: 'REVIEW' })
+      .expect(400);
   });
 
   afterAll(async () => {
@@ -190,10 +208,14 @@ describe('Tasks across projects (e2e)', () => {
     // งานที่เสร็จแล้วแม้เลยกำหนดไม่นับ ครบกำหนดวันนี้ก็ยังไม่นับ
     expect(board.overdueTasks).toBe(1);
     expect(board.overdueByStatus).toEqual({ TODO: 0, DOING: 0, WAITING: 1, REVIEW: 0 });
-    // ทุกงานในชุดนี้ยังไม่มีผู้รับผิดชอบ
-    expect(board.byAssignee).toEqual([
-      expect.objectContaining({ assignedUserId: null, openTasks: 5, overdueTasks: 1 }),
-    ]);
+    // งาน REVIEW ต้องมีผู้รับผิดชอบที่ส่งตรวจ ที่เหลือยังไม่มีผู้รับผิดชอบ
+    expect(board.byAssignee).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ assignedUserId: null, openTasks: 4, overdueTasks: 1 }),
+        expect.objectContaining({ openTasks: 1, overdueTasks: 0 }),
+      ]),
+    );
+    expect(board.byAssignee).toHaveLength(2);
   });
 
   it('ทุกเส้นยังต้องล็อกอินก่อน', async () => {

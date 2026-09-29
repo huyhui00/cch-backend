@@ -1,17 +1,35 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
   IsEnum,
   IsISO8601,
   IsInt,
   IsOptional,
   IsPositive,
   IsString,
+  Matches,
   MaxLength,
 } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { AuditAction } from '../../../models';
+
+// อ่านค่าดิบจาก obj ไม่ใช่ value — enableImplicitConversion แปลง 'false' เป็น true ไปก่อนแล้ว
+function toBoolean(raw: unknown): unknown {
+  return raw === 'true' ? true : raw === 'false' ? false : raw;
+}
+
+function splitList(raw: unknown): unknown {
+  return typeof raw === 'string'
+    ? raw
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+    : raw;
+}
 
 export class QueryAuditLogsDto extends PaginationDto {
   @ApiPropertyOptional({
@@ -65,4 +83,51 @@ export class QueryAuditLogsDto extends PaginationDto {
   @IsOptional()
   @IsISO8601({}, { message: 'dateTo ต้องเป็นวันที่รูปแบบ ISO 8601 เช่น 2026-09-30' })
   dateTo?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'ตัดตารางที่ไม่ต้องการเห็นออก คั่นด้วยจุลภาค เช่น `notifications` ' +
+      '(ยังบันทึกครบตาม BR-09 แค่ไม่แสดง) · ใช้คู่กับ tableName ไม่ได้ผลเพราะ tableName กรองแคบกว่าอยู่แล้ว',
+    example: 'notifications',
+  })
+  @IsOptional()
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => splitList(obj.excludeTableNames))
+  @IsArray({ message: 'excludeTableNames ต้องเป็นรายชื่อตารางคั่นด้วยจุลภาค' })
+  @ArrayMaxSize(30, { message: 'excludeTableNames ระบุได้ไม่เกิน 30 ตาราง' })
+  @IsString({ each: true, message: 'excludeTableNames ต้องเป็นข้อความ' })
+  @Matches(/^[a-z_]{1,100}$/, { each: true, message: 'ชื่อตารางใน excludeTableNames ไม่ถูกต้อง' })
+  excludeTableNames?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      '`true` = ซ่อนการเข้าสู่ระบบ / ต่ออายุ / ออกจากระบบ (แถว users ที่เปลี่ยนแค่เวลาเข้าสู่ระบบกับ token) ' +
+      'ซึ่งเกิดทุกครั้งที่มีคนล็อกอินจนกลบประวัติการทำงานจริง — การแก้ข้อมูลผู้ใช้อื่น ๆ ยังแสดงตามปกติ',
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => toBoolean(obj.hideSessionEvents))
+  @IsBoolean({ message: 'hideSessionEvents ต้องเป็น true หรือ false' })
+  hideSessionEvents?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      '`true` = ซ่อนสิ่งที่ระบบทำเองโดยไม่มีผู้กระทำ (งานตั้งเวลา เช่น ปรับประกัน/สัญญาเป็นหมดอายุ) ' +
+      'ให้เหลือแต่การกระทำของผู้ใช้ — ไม่มีผลเมื่อส่ง userId มาด้วย',
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => toBoolean(obj.hideSystemEvents))
+  @IsBoolean({ message: 'hideSystemEvents ต้องเป็น true หรือ false' })
+  hideSystemEvents?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'โหลดต่อจากรายการก่อนหน้า (เลื่อนแล้วโหลดเพิ่ม) — ส่ง `nextCursor` ที่ได้จากผลลัพธ์ก่อนหน้า ' +
+      'แล้ว page จะถูกเมิน · คืน `total: null` เพราะไม่นับจำนวนทั้งหมด · ใช้ได้เฉพาะลำดับเริ่มต้น (ใหม่ไปเก่า)',
+    example: '1727580000000_3041',
+  })
+  @IsOptional()
+  @IsString({ message: 'cursor ต้องเป็นข้อความ' })
+  @MaxLength(40, { message: 'cursor ไม่ถูกต้อง' })
+  cursor?: string;
 }

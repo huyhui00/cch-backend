@@ -86,6 +86,16 @@ export class MaContractsService {
     @InjectConnection() private readonly sequelize: Sequelize,
   ) {}
 
+  /** badge maContractsExpiringSoon = total ของ GET /ma-contracts?expiringInDays=<days> */
+  async countExpiring(days: number): Promise<number> {
+    const query = Object.assign(new QueryMaContractsDto(), {
+      page: 1,
+      limit: 1,
+      expiringInDays: days,
+    });
+    return (await this.findAll(query)).total;
+  }
+
   async findAll(query: QueryMaContractsDto): Promise<PaginatedResult<MaContractResponseDto>> {
     const where: WhereOptions = {};
 
@@ -415,11 +425,18 @@ export class MaContractsService {
     return this.findOne(created.id);
   }
 
-  /** เรียกจาก cron — ไม่มี request จึงได้ audit `user_id = null` ซึ่งถูกต้อง */
+  /**
+   * เรียกจาก cron — ไม่มี request จึงได้ audit `user_id = null` ซึ่งถูกต้อง
+   * individualHooks ให้ audit บันทึกทีละฉบับพร้อมสถานะเดิม และไม่เขียนอะไรเลยเมื่อไม่มีฉบับไหนหมด
+   * (แบบคำสั่งเดียวจะได้แถว "ปรับสถานะ" ทุกชั่วโมงโดยไม่รู้ว่าฉบับไหน)
+   */
   async expireEndedContracts(today = todayAsDateOnly()): Promise<number> {
     const [affected] = await this.contractModel.update(
       { status: MaContractStatus.EXPIRED },
-      { where: { status: MaContractStatus.ACTIVE, endDate: { [Op.lt]: today } } },
+      {
+        where: { status: MaContractStatus.ACTIVE, endDate: { [Op.lt]: today } },
+        individualHooks: true,
+      },
     );
     return affected;
   }

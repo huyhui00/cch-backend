@@ -390,6 +390,7 @@ describe('MaContractsService', () => {
             status: MaContractStatus.ACTIVE,
             endDate: { [Op.lt]: '2026-09-28' },
           },
+          individualHooks: true,
         },
       );
     });

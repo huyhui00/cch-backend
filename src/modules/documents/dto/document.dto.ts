@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
 
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
@@ -55,3 +55,18 @@ export class UpdateDocumentDto {
 
 /** `search` ค้นจากชื่อเอกสารและชื่อไฟล์ */
 export class QueryDocumentsDto extends PaginationDto {}
+
+/** รายการเอกสารทั้งบริษัท — `search` ค้นชื่อเอกสาร ชื่อไฟล์ และชื่อ/รหัสโครงการ */
+export class QueryCompanyDocumentsDto extends PaginationDto {
+  @ApiPropertyOptional({ description: 'กรองเฉพาะเอกสารของโครงการนี้', example: 3 })
+  @IsOptional()
+  @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
+  projectId?: number;
+
+  @ApiPropertyOptional({ description: 'กรองเฉพาะเอกสารของลูกค้ารายนี้', example: 1 })
+  @IsOptional()
+  @IsInt({ message: 'customerId ต้องเป็นจำนวนเต็ม' })
+  @IsPositive({ message: 'customerId ต้องมากกว่า 0' })
+  customerId?: number;
+}

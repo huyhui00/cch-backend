@@ -4,13 +4,20 @@ import { Op, type WhereOptions } from 'sequelize';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
-import { Document, DocumentType, Project, User } from '../../models';
+import { Customer, Document, DocumentType, Project, User } from '../../models';
 import { StorageService, type StoredFileStream } from '../files/storage.service';
 import { assertUploadable, buildStorageKey, type UploadedFileLike } from '../files/upload.util';
-import { QueryDocumentsDto, UpdateDocumentDto, UploadDocumentDto } from './dto/document.dto';
 import {
+  QueryCompanyDocumentsDto,
+  QueryDocumentsDto,
+  UpdateDocumentDto,
+  UploadDocumentDto,
+} from './dto/document.dto';
+import {
+  type CompanyDocumentResponseDto,
   type DocumentResponseDto,
   type DocumentUploaderDto,
+  toCompanyDocumentResponse,
   toDocumentResponse,
 } from './dto/document.response';
 
@@ -74,6 +81,71 @@ export class DocumentsService {
 
     return toPaginatedResult(
       rows.map((document) => toDocumentResponse(document, uploaders)),
+      count,
+      query,
+    );
+  }
+
+  /**
+   * รายการเอกสารทั้งบริษัท พ่วงโครงการ + ชื่อลูกค้า
+   * ค้นชื่อ/รหัสโครงการด้วยการหา id ก่อนแล้วกรอง IN — ไม่ใช้ `$project.name$` ใน query ที่มี limit
+   */
+  async findAll(
+    query: QueryCompanyDocumentsDto,
+  ): Promise<PaginatedResult<CompanyDocumentResponseDto>> {
+    const where: WhereOptions<Document> = {};
+
+    if (query.projectId !== undefined) {
+      Object.assign(where, { projectId: query.projectId });
+    }
+
+    if (query.customerId !== undefined) {
+      Object.assign(where, { customerId: query.customerId });
+    }
+
+    if (query.search) {
+      const like = { [Op.like]: '%' + query.search + '%' };
+      const projects = await this.projectModel.findAll({
+        attributes: ['id'],
+        where: { [Op.or]: [{ name: like }, { code: like }] },
+        paranoid: false,
+      });
+      const conditions: WhereOptions<Document>[] = [{ title: like }, { fileName: like }];
+
+      if (projects.length > 0) {
+        conditions.push({ projectId: { [Op.in]: projects.map((project) => project.id) } });
+      }
+
+      Object.assign(where, { [Op.or]: conditions });
+    }
+
+    const sortBy = SORTABLE_FIELDS.has(query.sortBy ?? '') ? (query.sortBy as string) : 'createdAt';
+
+    const { rows, count } = await this.documentModel.findAndCountAll({
+      where,
+      include: [
+        {
+          model: Project,
+          attributes: ['id', 'code', 'name'],
+          required: false,
+          paranoid: false,
+          include: [
+            { model: Customer, attributes: ['id', 'name'], required: false, paranoid: false },
+          ],
+        },
+      ],
+      order: [
+        [sortBy, query.sortBy ? query.sortOrder : 'DESC'],
+        ['id', query.sortBy ? query.sortOrder : 'DESC'],
+      ],
+      limit: query.limit,
+      offset: query.offset,
+    });
+
+    const uploaders = await this.findUploaders(rows);
+
+    return toPaginatedResult(
+      rows.map((document) => toCompanyDocumentResponse(document, uploaders)),
       count,
       query,
     );

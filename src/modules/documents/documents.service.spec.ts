@@ -50,7 +50,7 @@ function pdf(name = 'ใบเสนอราคา.pdf'): UploadedFileLike {
 
 describe('DocumentsService', () => {
   let documentModel: { findOne: jest.Mock; findAndCountAll: jest.Mock; create: jest.Mock };
-  let projectModel: { findByPk: jest.Mock };
+  let projectModel: { findByPk: jest.Mock; findAll: jest.Mock };
   let userModel: { findAll: jest.Mock };
   let storage: { put: jest.Mock; get: jest.Mock };
   let service: DocumentsService;
@@ -61,7 +61,10 @@ describe('DocumentsService', () => {
       findAndCountAll: jest.fn().mockResolvedValue({ rows: [documentRow()], count: 1 }),
       create: jest.fn().mockResolvedValue(documentRow()),
     };
-    projectModel = { findByPk: jest.fn().mockResolvedValue({ id: 3, customerId: 1 }) };
+    projectModel = {
+      findByPk: jest.fn().mockResolvedValue({ id: 3, customerId: 1 }),
+      findAll: jest.fn().mockResolvedValue([]),
+    };
     userModel = { findAll: jest.fn().mockResolvedValue([{ id: 4, fullName: 'สมชาย ใจดี' }]) };
     storage = {
       put: jest.fn().mockResolvedValue({ key: 'projects/3/2026/09/abc.pdf', driver: 'r2' }),
@@ -74,6 +77,56 @@ describe('DocumentsService', () => {
       userModel as unknown as typeof User,
       storage as unknown as StorageService,
     );
+  });
+
+  describe('findAll — รายการทั้งบริษัท', () => {
+    const query = (overrides: Record<string, unknown> = {}) =>
+      ({ page: 1, limit: 20, offset: 0, sortOrder: 'DESC', ...overrides }) as never;
+
+    it('ค้นชื่อ/รหัสโครงการด้วย id ของโครงการที่ตรง แล้วพ่วงโครงการ + ชื่อลูกค้า', async () => {
+      projectModel.findAll.mockResolvedValue([{ id: 3 }]);
+      documentModel.findAndCountAll.mockResolvedValue({
+        rows: [
+          documentRow({
+            project: {
+              id: 3,
+              code: 'PRJ69-0001',
+              name: 'คลังสินค้า',
+              customer: { name: 'บริษัท เอ' },
+            },
+          }),
+        ],
+        count: 1,
+      });
+
+      const result = await service.findAll(query({ search: 'คลัง', customerId: 1 }));
+
+      const [options] = documentModel.findAndCountAll.mock.calls[0] as [
+        { where: Record<string | symbol, unknown> },
+      ];
+      expect(options.where.customerId).toBe(1);
+      expect(options.where[Op.or]).toEqual([
+        { title: { [Op.like]: '%คลัง%' } },
+        { fileName: { [Op.like]: '%คลัง%' } },
+        { projectId: { [Op.in]: [3] } },
+      ]);
+      expect(result.items[0].project).toEqual({
+        id: 3,
+        code: 'PRJ69-0001',
+        name: 'คลังสินค้า',
+        customerName: 'บริษัท เอ',
+      });
+      expect(result.items[0]).not.toHaveProperty('fileUrl');
+    });
+
+    it('ไม่มีโครงการตรงคำค้น ไม่ใส่ IN () ว่าง', async () => {
+      await service.findAll(query({ search: 'ไม่มี' }));
+
+      const [options] = documentModel.findAndCountAll.mock.calls[0] as [
+        { where: Record<string | symbol, unknown> },
+      ];
+      expect(options.where[Op.or]).toHaveLength(2);
+    });
   });
 
   describe('upload', () => {
