@@ -1,8 +1,9 @@
 /// <reference types="jest" />
 // TypeScript 6 ไม่ดึง @types/jest เข้ามาให้อัตโนมัติ ต้องอ้างถึงตรงนี้เหมือน spec ตัวอื่น
 
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Op } from 'sequelize';
+import type { Sequelize } from 'sequelize-typescript';
 
 import { Customer, FollowUp, FollowUpStatus, Project, User, UserStatus } from '../../models';
 import { todayAsDateOnly } from '../../common/utils/date.util';
@@ -84,6 +85,9 @@ describe('FollowUpsService', () => {
       customerModel as unknown as typeof Customer,
       projectModel as unknown as typeof Project,
       userModel as unknown as typeof User,
+      {
+        transaction: jest.fn((work: (t: object) => Promise<unknown>) => work({ id: 'tx' })),
+      } as unknown as Sequelize,
     );
   });
 
@@ -280,6 +284,98 @@ describe('FollowUpsService', () => {
       await service.complete(12, {});
 
       expect(captured.resultNote).toBeUndefined();
+    });
+
+    it('ไม่ส่ง nextDueDate = ไม่สร้างงานครั้งถัดไป', async () => {
+      const result = await service.complete(12, { resultNote: 'โทรแล้ว' });
+
+      expect(followUpModel.create).not.toHaveBeenCalled();
+      expect(result.nextFollowUp).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M7-02 นัดติดตามครั้งถัดไปตอนปิดงาน
+  // -------------------------------------------------------------------------
+  describe('complete + nextDueDate', () => {
+    const nextDate = '2999-01-15';
+
+    function captureNext(): () => Record<string, unknown> {
+      let captured: Record<string, unknown> = {};
+      followUpModel.create.mockImplementation((values: Record<string, unknown>) => {
+        captured = values;
+        return Promise.resolve(followUpRow({ id: 13 }));
+      });
+      return () => captured;
+    }
+
+    it('ปิดงานเดิมและสร้างงานใหม่ในทรานแซกชันเดียวกัน ผูกลูกค้า/โปรเจค/ผู้รับผิดชอบเดิม', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      followUpModel.findByPk.mockResolvedValue(followUpRow({ projectId: 3, update }));
+      const next = captureNext();
+
+      const result = await service.complete(12, { resultNote: 'ขอเวลาคิด', nextDueDate: nextDate });
+
+      const [, updateOptions] = update.mock.calls[0] as [unknown, { transaction: unknown }];
+      const [, createOptions] = followUpModel.create.mock.calls[0] as [
+        unknown,
+        { transaction: unknown },
+      ];
+      expect(updateOptions.transaction).toEqual({ id: 'tx' });
+      expect(createOptions.transaction).toBe(updateOptions.transaction);
+      expect(next()).toMatchObject({
+        customerId: 1,
+        projectId: 3,
+        title: 'โทรถามความคืบหน้า',
+        detail: 'ต่อจากครั้งก่อน: ขอเวลาคิด',
+        dueDate: nextDate,
+        status: FollowUpStatus.PLANNED,
+        assignedUserId: 4,
+      });
+      expect(result.nextFollowUp).not.toBeNull();
+    });
+
+    it('ส่ง nextTitle มา = ใช้เรื่องใหม่', async () => {
+      const next = captureNext();
+
+      await service.complete(12, { nextDueDate: nextDate, nextTitle: 'ส่งใบเสนอราคา' });
+
+      expect(next().title).toBe('ส่งใบเสนอราคา');
+    });
+
+    it('ผู้รับผิดชอบเดิมไม่ ACTIVE แล้ว = งานใหม่ยังไม่มอบหมาย', async () => {
+      userModel.findByPk.mockResolvedValue({ id: 4, status: UserStatus.RESIGNED });
+      const next = captureNext();
+
+      await service.complete(12, { nextDueDate: nextDate });
+
+      expect(next().assignedUserId).toBeNull();
+    });
+
+    it('วันครั้งถัดไปอยู่ในอดีต → 400 และไม่เขียนอะไรเลย', async () => {
+      const update = jest.fn();
+      followUpModel.findByPk.mockResolvedValue(followUpRow({ update }));
+
+      await expect(service.complete(12, { nextDueDate: '2020-01-01' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(update).not.toHaveBeenCalled();
+      expect(followUpModel.create).not.toHaveBeenCalled();
+    });
+
+    it('งานที่ปิดไปแล้ว + nextDueDate → 409 กันกดซ้ำได้งานสองใบ', async () => {
+      followUpModel.findByPk.mockResolvedValue(followUpRow({ status: FollowUpStatus.DONE }));
+
+      await expect(service.complete(12, { nextDueDate: nextDate })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(followUpModel.create).not.toHaveBeenCalled();
+    });
+
+    it('ส่ง nextTitle โดยไม่มี nextDueDate → 400', async () => {
+      await expect(service.complete(12, { nextTitle: 'ส่งใบเสนอราคา' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
   });
 

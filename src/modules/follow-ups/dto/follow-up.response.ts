@@ -111,6 +111,16 @@ export class FollowUpResponseDto {
   updatedAt: Date;
 }
 
+/** ผลของ PATCH /follow-ups/:id/complete — งานที่ปิด + งานครั้งถัดไปถ้าส่ง nextDueDate มา */
+export class CompletedFollowUpResponseDto extends FollowUpResponseDto {
+  @ApiProperty({
+    type: () => FollowUpResponseDto,
+    nullable: true,
+    description: 'งานติดตามครั้งถัดไปที่สร้างพร้อมการปิดงาน — ไม่ได้ส่ง nextDueDate = null',
+  })
+  nextFollowUp: FollowUpResponseDto | null;
+}
+
 /**
  * งานติดตามเลยกำหนดหรือยัง
  *

@@ -418,6 +418,7 @@ return true;
 | Q17 | ผู้ใช้ที่ถือหลาย role อยู่แล้ว (ก่อนเปลี่ยนเป็น role เดียว) ให้เหลืออันไหน | ✅ **หมดประเด็น 29 ก.ย.** — ตรวจฐานแล้วไม่มีผู้ใช้คนไหนถือเกิน 1 role และยังไม่มีข้อมูลจริง (Q6 — คีย์ใหม่ทั้งหมด) API บังคับ role เดียวตั้งแต่ 11 ก.ย. จึงเกิดซ้ำไม่ได้ | — |
 | Q18 | แบบประเมินต้องผูกกับการแก้ปัญหาแต่ละครั้งด้วยไหม หรือผูกกับโปรเจคพอ | ✅ **ตอบแล้ว** — **ผูกกับโปรเจคพอ** ไม่ต้องผูกใบแจ้งปัญหา (`survey_assignments.project_id` มีอยู่แล้ว ห้ามเพิ่ม `ticket_id`) | — |
 | Q20 | สถานะใบแจ้งปัญหาใหม่ "ส่งงานให้ผู้รับผิดชอบแล้ว" คั่นระหว่าง RECEIVED กับ IN_PROGRESS และผู้รับผิดชอบกดเริ่มงานเอง | ✅ **ยืนยันจากไฟล์ประชุมรอบที่ 3** — ใช้สถานะ `ASSIGNED` แสดงว่า "ส่งงานแล้ว" และให้ผู้รับผิดชอบกดเริ่มเอง | — |
+| Q21 | แดชบอร์ดรายคน (ประชุมทบทวน 22–23 ก.ย. — พี่เลี้ยง: "ของใครของมัน" แยกจากรายงาน เป็นเรื่องสุดท้าย) | 🟡 **ตอบแล้วบางส่วน 29 ก.ย.** — **เห็นแค่ของตัวเองเท่านั้น** ทุกระดับบัญชีรวม SUPER_ADMIN/ADMIN (ไม่มีการดูของคนอื่น) · **ห้ามใช้ประเมินพนักงาน** เพราะระบบนี้ไม่ใช่ระบบ HR — ห้ามจัดอันดับ เทียบกับคนอื่น ค่าเฉลี่ยทีม เป้าหมาย/KPI หรือคะแนน · **ช่วงเวลาเลือกได้หลายแบบ** · BE ทำแล้ว 29 ก.ย. (`GET /api/dashboard/me` ดูกฎใน 14) ด้วยชุดตัวเลขที่ทีมเสนอ — 🟡 รอพี่เลี้ยงยืนยันรายการตัวเลข (ตัวอย่างเดียวของพี่เลี้ยงคือ "จำนวนโปรเจคต่อเดือน" ตีความเป็นโปรเจคที่ส่งมอบเสร็จ) | ท้ายสุด |
 
 > ยังไม่มีข้อสรุปว่า task ซ้อนกันได้กี่ระดับ — `parent_task_id` รองรับได้ไม่จำกัดชั้นในเชิงโครงสร้าง
 > ถ้าต้องจำกัดจริงให้ตรวจที่ service ตอน Phase 5
@@ -642,7 +643,7 @@ return true;
   tickets/:id/confirmation-print,
   ma-plans (CRUD), ma-contracts (list/detail/create/update/renew),
   ma-contracts/:id (quota/addons list/addons create/print),
-  users/assignable, roles/assignable, nav/counts,
+  users/assignable, roles/assignable, nav/counts, dashboard/me,
   follow-ups (list/detail/create/update/complete/delete),
   surveys (list/detail/create/update/status/delete + summary/score-breakdown/assignments/responses),
   survey-assignments/:id/response,
@@ -668,7 +669,7 @@ return true;
  `STARTED` · `CUSTOMER_NOTIFIED` (WAITING_SUPPORT → CLOSED) แยกจาก `CLOSED` · หมายเหตุดึงจาก `[ตรวจไม่ผ่าน]`/`[ตรวจผ่าน]`
  ที่ต่อท้ายรายละเอียด · การแก้ข้อมูลทั่วไปไม่ขึ้นไทม์ไลน์ · ผู้กระทำเป็นระบบ = `actor: null`
  ไม่ได้เพิ่มตาราง เพราะ audit log เก็บทุกการเปลี่ยนพร้อมผู้กระทำอยู่แล้ว (BR-09)
-- **เทสต์คุมกฎธุรกิจ ~680 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
+- **เทสต์คุมกฎธุรกิจ ~701 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
 - **e2e 111 เคส 11 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`, `tasks`, `deliveries`, `projects`, `documents`, `users-reset-password`) — รันด้วย `npm run test:e2e`
   แยกจาก `npm test` เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่
   `test/global-setup.js` สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
@@ -791,6 +792,20 @@ return true;
  `warrantiesExpiringSoon` = `GET /warranties/expiring?days=30` (`warranty.view`) ·
  `maContractsExpiringSoon` = `GET /ma-contracts?expiringInDays=30` (`ma.view`) — 30 วันอยู่ที่ `EXPIRING_SOON_DAYS`
  ทั้งสามเรียก `findAll`/`findExpiring` ของ service เจ้าของหน้าด้วย `limit: 1` แล้วอ่าน `total` ไม่เขียน where ซ้ำ
+- **แดชบอร์ดของฉัน = `GET /api/dashboard/me`** (29 ก.ย. — Q21 · โมดูล `dashboard/`)
+ - **ไม่มีช่องระบุผู้ใช้ และห้ามเพิ่ม** ทุก query กรองด้วย id จาก JWT — SUPER_ADMIN/ADMIN ก็ดูได้แค่ของตัวเอง
+ ส่ง `userId` มา = 400 จาก `forbidNonWhitelisted` · ถ้าวันหนึ่งหัวหน้าอยากดูของลูกทีม ต้องตกลงเป็นกติกาใหม่ก่อน
+ - **ตัวเลขดิบล้วน ห้ามเติมอันดับ ค่าเฉลี่ยทีม เทียบกับคนอื่น เป้าหมาย/KPI หรือคะแนน** (ระบบนี้ไม่ใช่ระบบ HR)
+ ตั้งใจไม่ใส่อัตราตีกลับ/ชั่วโมงต่อใบเพราะอ่านแล้วเป็นการประเมิน · งานค้าง/เลยกำหนดอยู่หน้าแรกแล้ว ไม่ซ้ำที่นี่
+ - ตัวเลข: `projectsDelivered` (ผู้จัดการ = ฉัน · `actual_end_date` ในช่วง · ไม่นับ CANCELLED) · `tasksCompleted`
+ (มอบให้ฉัน · DONE · `completed_at`) · `ticketRoundsResolved` (`resolved_by_user_id` · นับทุกรอบ) · `followUpsCompleted`
+ (ของฉัน · DONE · `completed_at`) · `communicationsLogged` (`handled_by_user_id` = คนคุย ไม่ใช่คนคีย์ · `occurred_at`)
+ + `projectsInProgress` ณ ตอนนี้ (DRAFT/IN_PROGRESS ไม่ขึ้นกับช่วง)
+ - ไม่ติด `@RequirePermission` แต่ละตัวเลขใช้สิทธิ์ view ของหน้าเรื่องนั้น ไม่มีสิทธิ์ = `null` (หลักเดียวกับ nav/counts)
+ - `period=WEEK|MONTH|QUARTER|YEAR` นับจากต้นช่วง**ถึงวันนี้** (สัปดาห์เริ่มจันทร์ · ไม่ส่ง = MONTH) หรือ `CUSTOM` +
+ `dateFrom`/`dateTo` (ส่งแค่สองค่านี้ = CUSTOM) · `groupBy=DAY|WEEK|MONTH` ไม่ส่ง = ≤31 วันรายวัน ≤184 รายสัปดาห์ นอกนั้นรายเดือน ·
+ ช่วงยาวสุด 120 เดือน · รายวันไม่เกิน 366 วัน · `series` ครบทุกช่วงเติม 0 ช่วงแรก/สุดท้ายตัดให้อยู่ในช่วงที่เลือก ·
+ จัดกลุ่มวันตามเขตเวลาเครื่อง (`toDateOnly`) · สูตรช่วงอยู่ที่ `dashboard-range.ts`
 - **โปรไฟล์ของตัวเอง (29 ก.ย.)** — ไม่ต้องมี `user.update` ใช้ id จาก JWT · ทุกเส้นคืนรูปแบบเดียวกับ `GET /auth/me`
  - `PATCH /api/users/me` แก้ได้แค่ `nickname` (trim, ≤ 50, `null`/`""` = ลบ) ฟิลด์อื่น = 400 จาก `forbidNonWhitelisted`
  - `POST /api/users/me/avatar` (multipart `file`) JPG/PNG/WEBP ≤ 2 MB (`AVATAR_MAX_MB` ค่าคงที่ เหตุผลเดียวกับ `MAX_UPLOAD_MB`)
@@ -1104,6 +1119,13 @@ return true;
   client ส่งค่านี้มาเองไม่ได้
 - **`PATCH /:id/complete` แยกจาก `PATCH /:id` เพราะใช้สิทธิ์ `followup.complete` คนละตัว**
   ทีมที่อยากให้พนักงานปิดงานของตัวเองได้แต่ไม่ให้แก้เนื้อหางาน จึงกั้นได้จริง
+- **ปิดงานพร้อมนัดครั้งถัดไป (M7-02 — 29 ก.ย.)** `PATCH /:id/complete` รับ `nextDueDate` (+ `nextTitle`) ไม่บังคับ
+  ส่งมา = สร้างงาน PLANNED ใบใหม่ **ในทรานแซกชันเดียวกับการปิดงาน** คืนที่ `nextFollowUp` (ไม่ส่ง = `null`)
+  - ผูกลูกค้า + โปรเจคเดิม · ผู้รับผิดชอบเดิมถ้ายัง ACTIVE ไม่งั้นปล่อยว่าง · `detail` = "ต่อจากครั้งก่อน: <resultNote>"
+  - `nextDueDate` ก่อนวันนี้ = 400 · `nextTitle` โดยไม่มี `nextDueDate` = 400
+  - **งานที่ DONE อยู่แล้ว + `nextDueDate` = 409** กันกดซ้ำแล้วได้งานครั้งถัดไปสองใบ
+  - ใช้สิทธิ์ `followup.complete` ตัวเดียว ไม่ต้องมี `followup.create` เพิ่ม — เป็นส่วนหนึ่งของการปิดงาน
+    ไม่ใช่การเปิดงานใหม่เรื่องอื่น (งานใหม่ผูกลูกค้า/โปรเจคเดิมเสมอ เลือกเองไม่ได้)
 - **ปิดงานติดตาม *ไม่* ไปอัปเดต `customers.last_contacted_at`** — ค่านั้นมีเจ้าของอยู่แล้ว
   คือการบันทึกการติดต่อ ซึ่งมีหลักฐานครบ (ช่องทาง เนื้อหา ผู้ติดต่อ) ถ้าที่นี่เขียนด้วย
   จะมีสองทางเขียนค่าเดียวกันโดยทางหนึ่งไม่มีหลักฐานอะไรเลย แล้วหน้าจอ "ลูกค้าที่ถูกลืม"
@@ -1350,6 +1372,8 @@ return true;
 - กฎต้องมี `targetRoleId` หรือ `targetUserId` อย่างน้อยหนึ่งอย่าง
 - ส่ง LINE ด้วย `LineMessagingService` (Messaging API push) ไม่ใช้ SDK · ไม่มี token = บันทึก FAILED
 - กันสแปม: event + ผู้รับ + ref เดียวกันในวันเดียวกันสร้างได้ครั้งเดียว
+- `CUSTOMER_IDLE` **ไม่เตือนลูกค้า CHURNED** (29 ก.ย.) — เลิกใช้บริการ/ไม่ติดตามต่อ ถ้าเตือนจะดังทุกวันตลอดไป
+  INACTIVE ยังเตือน เพราะเป็นกลุ่มที่ควรตามเสนอ MA (ความหมายตามกฎ Phase 4 — Q13 ยังรอยืนยัน)
 - `SCHEDULER_ENABLED=false` ปิด cron รายชั่วโมง · ยังยิงมือได้ที่ `POST /api/notifications/run`
 - `POST /api/notifications/test-line` ทดสอบช่องทางอย่างเดียว ไม่สร้างแถว notifications
 - `lineUserId` ตั้งผ่าน `PUT /api/users/:id` ไปก่อน ยังไม่มี webhook ผูกตอนแอดเพื่อน (Q8)

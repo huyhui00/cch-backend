@@ -1,6 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, type WhereOptions } from 'sequelize';
+import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagination.dto';
@@ -13,6 +19,7 @@ import {
   UpdateFollowUpDto,
 } from './dto/follow-up.dto';
 import {
+  type CompletedFollowUpResponseDto,
   OPEN_FOLLOW_UP_STATUSES,
   type FollowUpResponseDto,
   toFollowUpResponse,
@@ -74,6 +81,7 @@ export class FollowUpsService {
     @InjectModel(Customer) private readonly customerModel: typeof Customer,
     @InjectModel(Project) private readonly projectModel: typeof Project,
     @InjectModel(User) private readonly userModel: typeof User,
+    private readonly sequelize: Sequelize,
   ) {}
 
   async findAll(query: QueryFollowUpsDto): Promise<PaginatedResult<FollowUpResponseDto>> {
@@ -242,7 +250,7 @@ export class FollowUpsService {
    * แยก endpoint เพราะผูกกับสิทธิ์ `followup.complete` คนละตัวกับ `followup.update`
    * ทีมที่อยากให้พนักงานปิดงานของตัวเองได้แต่ไม่ให้แก้เนื้อหางาน จึงกั้นได้จริง
    */
-  async complete(id: number, dto: CompleteFollowUpDto): Promise<FollowUpResponseDto> {
+  async complete(id: number, dto: CompleteFollowUpDto): Promise<CompletedFollowUpResponseDto> {
     const actorId = getCurrentUserId();
     const followUp = await this.findOrFail(id);
 
@@ -250,14 +258,64 @@ export class FollowUpsService {
       throw new BadRequestException('งานติดตามที่ยกเลิกแล้วปิดงานไม่ได้');
     }
 
-    await followUp.update({
-      status: FollowUpStatus.DONE,
-      ...this.completedAtFor(followUp, FollowUpStatus.DONE),
-      ...(dto.resultNote !== undefined ? { resultNote: dto.resultNote } : {}),
-      updatedBy: actorId,
+    if (dto.nextDueDate === undefined && dto.nextTitle != null) {
+      throw new BadRequestException(
+        'ระบุเรื่องของงานครั้งถัดไปแล้ว กรุณาระบุวันติดตามครั้งถัดไปด้วย',
+      );
+    }
+
+    if (dto.nextDueDate !== undefined) {
+      // กดปิดซ้ำ (ดับเบิลคลิก / ยิงซ้ำ) ต้องไม่ได้งานครั้งถัดไปสองใบ
+      if (followUp.status === FollowUpStatus.DONE) {
+        throw new ConflictException(
+          'งานติดตามนี้ปิดไปแล้ว — ถ้าต้องนัดครั้งถัดไปให้สร้างงานติดตามใหม่',
+        );
+      }
+
+      if (dto.nextDueDate < todayAsDateOnly()) {
+        throw new BadRequestException('วันติดตามครั้งถัดไปต้องไม่ก่อนวันนี้');
+      }
+    }
+
+    const nextAssigneeId =
+      dto.nextDueDate !== undefined ? await this.carryOverAssignee(followUp.assignedUserId) : null;
+
+    const nextId = await this.sequelize.transaction(async (transaction) => {
+      await followUp.update(
+        {
+          status: FollowUpStatus.DONE,
+          ...this.completedAtFor(followUp, FollowUpStatus.DONE),
+          ...(dto.resultNote !== undefined ? { resultNote: dto.resultNote } : {}),
+          updatedBy: actorId,
+        },
+        { transaction },
+      );
+
+      if (dto.nextDueDate === undefined) {
+        return null;
+      }
+
+      const next = await this.followUpModel.create(
+        {
+          customerId: followUp.customerId,
+          projectId: followUp.projectId ?? null,
+          title: dto.nextTitle ?? followUp.title,
+          detail: dto.resultNote ? `ต่อจากครั้งก่อน: ${dto.resultNote}` : null,
+          dueDate: dto.nextDueDate,
+          status: FollowUpStatus.PLANNED,
+          assignedUserId: nextAssigneeId,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        { transaction },
+      );
+      return next.id;
     });
 
-    return this.findOne(id);
+    return {
+      ...(await this.findOne(id)),
+      nextFollowUp: nextId === null ? null : await this.findOne(nextId),
+    };
   }
 
   /**
@@ -276,6 +334,16 @@ export class FollowUpsService {
   }
 
   // ---- helpers -------------------------------------------------------------
+
+  /** ผู้รับผิดชอบเดิมที่ลาออก/ถูกระงับไปแล้ว ไม่ส่งต่อให้งานครั้งถัดไป — ปล่อยว่างให้มอบหมายใหม่ */
+  private async carryOverAssignee(userId: number | null): Promise<number | null> {
+    if (userId === null) {
+      return null;
+    }
+
+    const user = await this.userModel.findByPk(userId, { attributes: ['id', 'status'] });
+    return user?.status === UserStatus.ACTIVE ? userId : null;
+  }
 
   /**
    * ค่า `completed_at` ที่ควรเป็นหลังเปลี่ยนสถานะ

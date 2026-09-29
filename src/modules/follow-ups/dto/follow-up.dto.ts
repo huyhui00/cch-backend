@@ -185,6 +185,28 @@ export class CompleteFollowUpDto {
   @IsString({ message: 'ผลของการติดตามต้องเป็นข้อความ' })
   @Transform(trimToNull)
   resultNote?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'นัดติดตามครั้งถัดไป (M7-02) — ส่งมา = สร้างงานติดตามใหม่ในทรานแซกชันเดียวกับการปิดงาน ' +
+      'ผูกลูกค้า โปรเจค และผู้รับผิดชอบเดิม · ต้องไม่ก่อนวันนี้',
+    example: '2026-10-15',
+  })
+  @IsOptional()
+  @Matches(DATE_ONLY_PATTERN, { message: 'วันติดตามครั้งถัดไปต้องอยู่ในรูปแบบ YYYY-MM-DD' })
+  nextDueDate?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'เรื่องของงานติดตามครั้งถัดไป — ไม่ส่ง = ใช้เรื่องเดิม · ใช้คู่กับ nextDueDate เท่านั้น',
+    maxLength: 255,
+    example: 'โทรยืนยันใบเสนอราคาต่อสัญญา MA',
+  })
+  @IsOptional()
+  @IsString({ message: 'เรื่องของงานติดตามครั้งถัดไปต้องเป็นข้อความ' })
+  @MaxLength(255, { message: 'เรื่องของงานติดตามครั้งถัดไปยาวเกิน 255 ตัวอักษร' })
+  @Transform(trimToNull)
+  nextTitle?: string | null;
 }
 
 export class QueryFollowUpsDto extends PaginationDto {

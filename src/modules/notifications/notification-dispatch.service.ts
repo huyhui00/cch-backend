@@ -6,6 +6,7 @@ import { addDays, todayAsDateOnly } from '../../common/utils/date.util';
 import { OPEN_FOLLOW_UP_STATUSES } from '../follow-ups/dto/follow-up.response';
 import {
   Customer,
+  CustomerStatus,
   FollowUp,
   MaContract,
   MaContractStatus,
@@ -351,6 +352,8 @@ export class NotificationDispatchService {
     const cutoff = addDays(todayAsDateOnly(), -Math.max(idleDays, 1));
     const rows = await this.customerModel.findAll({
       where: {
+        // CHURNED = เลิกใช้บริการ / ไม่ติดตามต่อ — INACTIVE ยังเตือน เพราะเป็นกลุ่มที่ควรตามเสนอ MA
+        status: { [Op.ne]: CustomerStatus.CHURNED },
         [Op.or]: [
           { lastContactedAt: null },
           { lastContactedAt: { [Op.lt]: new Date(`${cutoff}T00:00:00`) } },

@@ -19,7 +19,7 @@ import {
   QueryFollowUpsDto,
   UpdateFollowUpDto,
 } from './dto/follow-up.dto';
-import { FollowUpResponseDto } from './dto/follow-up.response';
+import { CompletedFollowUpResponseDto, FollowUpResponseDto } from './dto/follow-up.response';
 import { FollowUpsService } from './follow-ups.service';
 
 /**
@@ -108,19 +108,33 @@ export class FollowUpsController {
       'ทางลัดของการตั้งสถานะเป็น DONE แยกเป็นสิทธิ์ followup.complete ต่างหาก ' +
       'เพื่อให้ทีมที่อยากให้พนักงานปิดงานของตัวเองได้แต่ไม่ให้แก้เนื้อหางาน กั้นได้จริง — ' +
       '**การปิดงานไม่ไปอัปเดต customers.lastContactedAt** ถ้าติดต่อลูกค้าจริงแล้ว ' +
-      'ให้บันทึกการติดต่อแยกอีกใบที่ POST /api/communication-logs',
+      'ให้บันทึกการติดต่อแยกอีกใบที่ POST /api/communication-logs · ' +
+      'ส่ง nextDueDate มา = นัดครั้งถัดไป (M7-02) ระบบสร้างงานใหม่ให้ในทรานแซกชันเดียวกัน ' +
+      'คืนมาที่ nextFollowUp',
   })
   @ApiParam({ name: 'id', description: 'id ของงานติดตาม', example: 12 })
-  @ApiResponse({ status: 200, description: 'ปิดงานเรียบร้อย', type: FollowUpResponseDto })
-  @ApiResponse({ status: 400, description: 'งานที่ยกเลิกแล้วปิดงานไม่ได้' })
+  @ApiResponse({
+    status: 200,
+    description: 'ปิดงานเรียบร้อย',
+    type: CompletedFollowUpResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'งานที่ยกเลิกแล้วปิดงานไม่ได้ / วันครั้งถัดไปอยู่ในอดีต / ส่ง nextTitle โดยไม่มี nextDueDate',
+  })
   @ApiResponse({ status: 404, description: 'ไม่พบงานติดตามนี้' })
+  @ApiResponse({ status: 409, description: 'งานปิดไปแล้ว แต่ส่ง nextDueDate มาอีก' })
   async complete(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CompleteFollowUpDto,
-  ): Promise<{ data: FollowUpResponseDto; message: string }> {
+  ): Promise<{ data: CompletedFollowUpResponseDto; message: string }> {
+    const data = await this.followUpsService.complete(id, dto);
     return {
-      data: await this.followUpsService.complete(id, dto),
-      message: 'ปิดงานติดตามเรียบร้อย',
+      data,
+      message: data.nextFollowUp
+        ? 'ปิดงานติดตามและนัดครั้งถัดไปเรียบร้อย'
+        : 'ปิดงานติดตามเรียบร้อย',
     };
   }
 

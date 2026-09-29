@@ -25,6 +25,7 @@ import { UsersModule } from './modules/users/users.module';
 import { WarrantiesModule } from './modules/warranties/warranties.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { NavModule } from './modules/nav/nav.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { NavModule } from './modules/nav/nav.module';
     AttachmentsModule,
     NotificationsModule,
     NavModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [
