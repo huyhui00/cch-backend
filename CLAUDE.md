@@ -669,8 +669,8 @@ return true;
  `STARTED` · `CUSTOMER_NOTIFIED` (WAITING_SUPPORT → CLOSED) แยกจาก `CLOSED` · หมายเหตุดึงจาก `[ตรวจไม่ผ่าน]`/`[ตรวจผ่าน]`
  ที่ต่อท้ายรายละเอียด · การแก้ข้อมูลทั่วไปไม่ขึ้นไทม์ไลน์ · ผู้กระทำเป็นระบบ = `actor: null`
  ไม่ได้เพิ่มตาราง เพราะ audit log เก็บทุกการเปลี่ยนพร้อมผู้กระทำอยู่แล้ว (BR-09)
-- **เทสต์คุมกฎธุรกิจ ~701 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
-- **e2e 111 เคส 11 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`, `tasks`, `deliveries`, `projects`, `documents`, `users-reset-password`) — รันด้วย `npm run test:e2e`
+- **เทสต์คุมกฎธุรกิจ ~703 เคส** — guard สิทธิ์, สูตรวันที่, และ service ของ Phase 4–9 + M7, M8, M10, M11 (LINE)
+- **e2e 112 เคส 11 ไฟล์** (`tickets`, `ma`, `permissions`, `follow-ups`, `surveys`, `reports`, `tasks`, `deliveries`, `projects`, `documents`, `users-reset-password`) — รันด้วย `npm run test:e2e`
   แยกจาก `npm test` เพราะต้องมี MySQL จริง ใช้ฐาน `<DB_DATABASE>_test` ที่
   `test/global-setup.js` สร้าง+migrate+seed ให้เอง จึงไม่มีทางเขียนทับฐานที่ใช้พัฒนา
   มีไว้พิสูจน์สิ่งที่ mock พิสูจน์แทนไม่ได้ — SQL ที่ Sequelize สร้างรันได้จริง,
@@ -847,7 +847,10 @@ return true;
   และ `resyncByDelivery()` · `WarrantyExpiryScheduler` รายชั่วโมง + ตอนเปิดเซิร์ฟเวอร์
   (ปิดด้วย `SCHEDULER_ENABLED=false`) · VOID ไม่ถูกเปลี่ยนตามวันที่
 - **เอกสารแนบของใบประกัน** (ประชุมทบทวน นาที 28:50) — `POST /api/attachments` refType=`WARRANTY`
-  `GET /api/warranties/:id` พ่วง `attachments` (รายการอื่นคืน `[]`)
+  `GET /api/warranties/:id` พ่วง `attachments` (รายการอื่นคืน `[]`) · **ทุกเส้นคืน `attachmentCount`** (30 ก.ย.)
+ นับรวบทั้งหน้าด้วย query เดียว — หน้าจอใช้เตือน "ยังไม่แนบใบที่ลูกค้าเซ็น" เมื่อเป็น 0
+ - **ไม่มีขั้น "ยืนยันประกัน" แยก** (30 ก.ย.) หลักฐานว่าลูกค้ารับประกันแล้วคือไฟล์สแกนที่เซ็น (BR-12)
+ FE เคยมีกล่องยืนยันที่เก็บใน localStorage และบังออกประกันใบที่สอง — ตกลงให้ตัดทิ้ง ห้ามทำกลับมา
 - **พิมพ์ใบรับประกัน = `GET /api/warranties/:id/print` คืน JSON** ("เหมือนซื้อตู้เย็นได้ใบประกัน")
   ประกัน + ใบส่งมอบ (ผู้รับมอบ) + โครงการ + ลูกค้า + ผู้ติดต่อหลัก + สัญญา MA ที่ผูก + `attachScanHint`
   หลักเดียวกับพิมพ์สัญญา MA: ไม่กั้นตามสถานะ · ไม่มีผู้ติดต่อหลัก = `null` ไม่หยิบคนแรก ·

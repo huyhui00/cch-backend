@@ -186,6 +186,14 @@ export class WarrantyResponseDto {
   })
   attachments: AttachmentSummaryDto[];
 
+  @ApiProperty({
+    description:
+      'จำนวนเอกสารแนบของใบประกัน (ref_type = WARRANTY) มีค่าจริงทุก endpoint รวมรายการ — ' +
+      'หน้าจอใช้เตือน "ยังไม่แนบใบที่ลูกค้าเซ็น" เมื่อเป็น 0 (BR-12)',
+    example: 1,
+  })
+  attachmentCount: number;
+
   @ApiProperty()
   createdAt: Date;
 
@@ -235,6 +243,7 @@ export function toWarrantyResponse(
   warranty: Warranty,
   onDate: string,
   attachments: Attachment[] = [],
+  attachmentCount: number = attachments.length,
 ): WarrantyResponseDto {
   return {
     id: warranty.id,
@@ -275,6 +284,7 @@ export function toWarrantyResponse(
     daysRemaining: daysUntil(warranty.endDate),
     scopeNote: warranty.scopeNote,
     attachments: attachments.map(toAttachmentSummary),
+    attachmentCount,
     createdAt: warranty.createdAt,
     updatedAt: warranty.updatedAt,
   };

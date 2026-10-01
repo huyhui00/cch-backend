@@ -267,4 +267,41 @@ describe('Deliveries → Warranties (e2e)', () => {
     // "ไม่ใช่คิดรวมนะ" — การผูกหรือถอดสัญญาต้องไม่กระทบความคุ้มครองของประกันเลย
     expect(after.isCurrentlyActive).toBe(warranty.isCurrentlyActive);
   });
+
+  it('รายการประกันคืน attachmentCount จริง — แนบใบที่ลูกค้าเซ็นแล้วนับเพิ่ม (BR-12)', async () => {
+    const customer = await authed('post', '/api/customers')
+      .send({ name: `ลูกค้าทดสอบไฟล์ประกัน ${stamp}` })
+      .expect(201);
+    const created = await authed('post', '/api/projects')
+      .send({
+        customerId: (customer.body as ApiResponse<{ id: number }>).data.id,
+        name: `โครงการทดสอบไฟล์ประกัน ${stamp}`,
+        status: 'IN_PROGRESS',
+      })
+      .expect(201);
+    projectId = (created.body as ApiResponse<{ id: number }>).data.id;
+
+    const finalId = await deliver('ส่งงานครั้งสุดท้าย', '2026-09-03T10:00:00+07:00');
+    await accept(finalId, { acceptanceStatus: 'ACCEPTED', isFinal: true }).expect(200);
+    const issued = await issueWarranty(finalId, 12).expect(201);
+    const warrantyId = (issued.body as ApiResponse<{ id: number }>).data.id;
+
+    const countOf = async (): Promise<number | undefined> => {
+      const response = await authed('get', `/api/projects/${projectId}/warranties`).expect(200);
+      const items = (
+        response.body as ApiResponse<{ items: { id: number; attachmentCount: number }[] }>
+      ).data.items;
+      return items.find((item) => item.id === warrantyId)?.attachmentCount;
+    };
+
+    expect(await countOf()).toBe(0);
+
+    await authed('post', '/api/attachments')
+      .field('refType', 'WARRANTY')
+      .field('refId', String(warrantyId))
+      .attach('file', Buffer.from('%PDF-1.4 signed'), 'ใบรับประกันเซ็นแล้ว.pdf')
+      .expect(201);
+
+    expect(await countOf()).toBe(1);
+  });
 });

@@ -42,6 +42,7 @@ interface ModelMock {
   findOne: jest.Mock;
   findAll: jest.Mock;
   findAndCountAll: jest.Mock;
+  count: jest.Mock;
   create: jest.Mock;
   update: jest.Mock;
 }
@@ -52,6 +53,7 @@ function modelMock(): ModelMock {
     findOne: jest.fn(),
     findAll: jest.fn(),
     findAndCountAll: jest.fn(),
+    count: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   };
@@ -689,6 +691,35 @@ describe('WarrantiesService', () => {
       expect(options.order[0]).toEqual(['endDate', 'DESC']);
       expect(projectModel.findAll).not.toHaveBeenCalled();
     });
+
+    it('คืน attachmentCount ของทุกใบด้วย query เดียว ใบที่ไม่มีไฟล์ได้ 0', async () => {
+      warrantyModel.findAndCountAll.mockResolvedValue({
+        rows: [warrantyRow({ id: 4 }), warrantyRow({ id: 9 })],
+        count: 2,
+      });
+      attachmentModel.count.mockResolvedValue([{ refId: 4, count: 2 }]);
+
+      const result = await service.findAll(queryDto());
+
+      expect(attachmentModel.count).toHaveBeenCalledTimes(1);
+      expect(attachmentModel.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { refType: 'WARRANTY', refId: { [Op.in]: [4, 9] } },
+          group: ['refId'],
+        }),
+      );
+      expect(result.items.map((item) => [item.id, item.attachmentCount])).toEqual([
+        [4, 2],
+        [9, 0],
+      ]);
+      expect(result.items[0].attachments).toEqual([]);
+    });
+
+    it('หน้าว่างไม่ยิง query นับไฟล์', async () => {
+      await service.findAll(queryDto());
+
+      expect(attachmentModel.count).not.toHaveBeenCalled();
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -766,6 +797,7 @@ describe('WarrantiesService', () => {
         expect.objectContaining({ where: { refType: 'WARRANTY', refId: 4 } }),
       );
       expect(result.attachments).toHaveLength(1);
+      expect(result.attachmentCount).toBe(1);
       expect(result.attachments[0].downloadUrl).toBe('/api/attachments/30/download');
       expect(result.attachments[0]).not.toHaveProperty('fileUrl');
     });

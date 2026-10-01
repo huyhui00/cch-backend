@@ -330,13 +330,7 @@ export class WarrantiesService {
       offset: query.offset,
     });
 
-    const onDate = todayAsDateOnly();
-
-    return toPaginatedResult(
-      rows.map((warranty) => toWarrantyResponse(warranty, onDate)),
-      count,
-      query,
-    );
+    return toPaginatedResult(await this.toListResponses(rows, todayAsDateOnly()), count, query);
   }
 
   /**
@@ -376,12 +370,26 @@ export class WarrantiesService {
       offset: query.offset,
     });
 
-    const onDate = todayAsDateOnly();
+    return toPaginatedResult(await this.toListResponses(rows, todayAsDateOnly()), count, query);
+  }
 
-    return toPaginatedResult(
-      rows.map((warranty) => toWarrantyResponse(warranty, onDate)),
-      count,
-      query,
+  /** รายการประกัน + จำนวนเอกสารแนบของแต่ละใบ นับรวบทั้งหน้าด้วย query เดียว */
+  private async toListResponses(rows: Warranty[], onDate: string): Promise<WarrantyResponseDto[]> {
+    const counts = new Map<number, number>();
+
+    if (rows.length > 0) {
+      const grouped = (await this.attachmentModel.count({
+        where: { refType: ATTACHMENT_REF_TYPE, refId: { [Op.in]: rows.map((row) => row.id) } },
+        group: ['refId'],
+      })) as unknown as { refId: number; count: number }[];
+
+      for (const { refId, count } of grouped) {
+        counts.set(Number(refId), Number(count));
+      }
+    }
+
+    return rows.map((warranty) =>
+      toWarrantyResponse(warranty, onDate, [], counts.get(warranty.id) ?? 0),
     );
   }
 
@@ -439,11 +447,7 @@ export class WarrantiesService {
       offset: query.offset,
     });
 
-    return toPaginatedResult(
-      rows.map((warranty) => toWarrantyResponse(warranty, today)),
-      count,
-      query,
-    );
+    return toPaginatedResult(await this.toListResponses(rows, today), count, query);
   }
 
   /** badge warrantiesExpiringSoon = total ของ GET /warranties/expiring?days=<days> */
