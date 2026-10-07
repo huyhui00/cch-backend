@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AppController } from './app.controller';
 import { AccessControlModule } from './common/access-control.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
+import { createUserOrIpTracker, sharedBucketKey } from './common/throttle/throttle-tracker';
 import { DatabaseModule } from './database/database.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -35,6 +37,20 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
       cache: true,
     }),
     ScheduleModule.forRoot(),
+    // นับในหน่วยความจำของโปรเซส — รีสตาร์ทแล้วตัวนับเริ่มใหม่ ซึ่งพอสำหรับเซิร์ฟเวอร์เดียว
+    // ล็อกอินแล้วนับต่อผู้ใช้ ยังไม่ล็อกอินนับต่อ IP · ถังเดียวรวมทุกเส้น
+    // หน้าจอหนึ่งหน้ายิงหลายเส้นพร้อมกัน (nav/counts, รายการ, ตัวเลือก) ค่ารวมจึงต้องหลวม
+    // ส่วนเส้นล็อกอินมีถังแยกที่เข้มกว่าที่ AuthController
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [{ ttl: 60_000, limit: 300 }],
+        errorMessage: 'มีคำขอมากเกินไป กรุณารอสักครู่แล้วลองใหม่',
+        skipIf: () => process.env.THROTTLE_ENABLED === 'false',
+        getTracker: createUserOrIpTracker(config.getOrThrow<string>('JWT_ACCESS_SECRET')),
+        generateKey: sharedBucketKey,
+      }),
+    }),
     DatabaseModule,
     AccessControlModule,
 
@@ -63,8 +79,10 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     // module ใหม่ที่เพิ่มใน phase ถัดไปจึงถูกป้องกันทันทีโดยไม่ต้องจำใส่ guard เอง
     // endpoint ที่เข้าถึงได้โดยไม่ต้องมี token ต้องประกาศ @Public() ออกมาให้ชัด
     //
-    // ลำดับสำคัญ: JwtAuthGuard ต้องมาก่อน เพราะ PermissionsGuard อ่าน request.user
+    // ลำดับสำคัญ: ThrottlerGuard มาก่อนสุด เพื่อนับคำขอที่ยังไม่มี token ด้วย (กันเดารหัสผ่าน)
+    // JwtAuthGuard ต้องมาก่อน PermissionsGuard เพราะ PermissionsGuard อ่าน request.user
     // ที่ตัวแรกแนบไว้ให้
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],

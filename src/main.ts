@@ -33,6 +33,15 @@ async function bootstrap() {
   });
   app.set('etag', false);
 
+  // ---- Proxy ---------------------------------------------------------------
+  // อยู่หลัง Cloudflare / nginx ต้องตั้ง TRUST_PROXY (จำนวนชั้นของ proxy เช่น 1) ไม่งั้น req.ip
+  // เป็น IP ของ proxy ทุกคำขอ — ผู้ใช้ทั้งบริษัทจะใช้เพดานล็อกอินร่วมกัน และ audit log ได้ IP ผิด
+  // ห้ามตั้งเมื่อเปิดตรง เพราะใครก็ปลอม X-Forwarded-For หนีเพดานได้
+  const trustProxy = config.get<string>('TRUST_PROXY', '').trim();
+  if (trustProxy) {
+    app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+  }
+
   // ---- Global prefix -------------------------------------------------------
   // ทุก endpoint อยู่ใต้ /api ตาม CLAUDE.md 6.2
   app.setGlobalPrefix('api');

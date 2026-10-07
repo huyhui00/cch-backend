@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/sequelize';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Sequelize } from 'sequelize-typescript';
 
 import { Public } from './common/decorators/public.decorator';
@@ -11,6 +12,7 @@ import { Public } from './common/decorators/public.decorator';
  */
 // ต้องเรียกได้โดยไม่ต้องล็อกอิน เพราะ health check ของ infrastructure ไม่มี token
 @Public()
+@SkipThrottle()
 @ApiTags('health')
 @Controller('health')
 export class AppController {

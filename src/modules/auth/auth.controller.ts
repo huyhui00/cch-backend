@@ -1,12 +1,25 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ipTracker, loginBucketKey } from '../../common/throttle/throttle-tracker';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { AuthProfileDto, LoginResponseDto, RefreshResponseDto } from './dto/auth.response';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+
+/**
+ * ลองล็อกอินได้กี่ครั้งต่อนาทีต่อ IP — กันการสุ่มเดารหัสผ่าน แต่พิมพ์ผิดไม่กี่ครั้งยังไม่โดน
+ * นับต่อ IP เสมอแม้แนบ token มา ไม่งั้นคนที่มีบัญชีอยู่แล้วจะย้ายไปใช้ถังของผู้ใช้เพื่อหนีเพดานของ IP
+ */
+export const LOGIN_THROTTLE = {
+  limit: 10,
+  ttl: 60_000,
+  getTracker: ipTracker,
+  generateKey: loginBucketKey,
+};
 
 @ApiTags('auth')
 @Controller('auth')
@@ -14,6 +27,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle({ default: LOGIN_THROTTLE })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -28,6 +42,7 @@ export class AuthController {
     status: 401,
     description: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีนี้ถูกระงับการใช้งาน',
   })
+  @ApiResponse({ status: 429, description: 'ลองเข้าสู่ระบบบ่อยเกินไป ต้องรอสักครู่แล้วลองใหม่' })
   login(@Body() dto: LoginDto): Promise<LoginResponseDto> {
     return this.authService.login(dto);
   }
