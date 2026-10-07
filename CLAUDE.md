@@ -315,7 +315,8 @@ notification_rules.event_type  MA_EXPIRING | WARRANTY_EXPIRING | TASK_OVERDUE |
                                DELIVERY_DUE | FOLLOWUP_DUE | TICKET_SLA | CUSTOMER_IDLE |
                                TICKET_SENT_TO_ADMIN | TICKET_AWAITING_REVIEW |
                                TICKET_RETURNED_TO_SUPPORT | TICKET_ASSIGNED |
- TICKET_REVIEW_REJECTED
+ TICKET_REVIEW_REJECTED |
+ DAILY_DIGEST (แถวสรุปรูปแบบเดิม 7 ต.ค. — ไม่ถูกสร้างใหม่ สร้างเป็นกฎไม่ได้)
 notifications.status    PENDING | SENT | FAILED | READ
 ```
 
@@ -467,7 +468,7 @@ return true;
 | 13 | **Surveys (M8)** | ✅ เสร็จ 10 ก.ย. |
 | 10 | **Reports + Analytics (M10) + M1-05/M1-06** | ✅ เสร็จ 10 ก.ย. |
 | 9 | Documents + Files (R2, M9) | ✅ **เอกสารโปรเจค (B-5) + ไฟล์แนบทั่วไปเสร็จ** — `POST/GET/PATCH/DELETE /api/attachments` + download · รองรับ COMMUNICATION_LOG / DELIVERY / TICKET / TICKET_RESOLUTION / MA_CONTRACT / WARRANTY · รอ key ของ R2 จากพี่เลี้ยง (ระหว่างนี้เก็บ local ได้) |
-| 11 | Notifications + Scheduler + LINE (M11) | ✅ **โครงหลักเสร็จ 22 ก.ย.** — ส่ง LINE จริงได้ · กฎ/รายการแจ้งเตือน · cron รายชั่วโมง · `POST /notifications/run` + `test-line` · ยังไม่มี webhook รับ follow เพื่อผูก `lineUserId` อัตโนมัติ (ตั้งผ่าน `PUT /users/:id` ไปก่อน) · `DELIVERY_DUE` ข้ามเพราะยังไม่มี due ในใบส่งมอบ |
+| 11 | Notifications + Scheduler + LINE (M11) | ✅ **โครงหลักเสร็จ 22 ก.ย.** — ส่ง LINE จริงได้ · กฎ/รายการแจ้งเตือน · cron รายชั่วโมง · `POST /notifications/run` + `test-line` · ยังไม่มี webhook รับ follow เพื่อผูก `lineUserId` อัตโนมัติ (ตั้งผ่าน `PUT /users/:id` ไปก่อน) · **7 ต.ค. เปลี่ยนเป็นแจ้งตามกำหนดของแต่ละรายการ** (ใกล้ครบ/เลยกำหนด ครั้งเดียวต่อขั้น — ดูกฎ Phase 11) |
 
 **✅ ปรับลำดับแล้ว 10 ก.ย. 2026 (ทีม frontend ยืนยัน)** — ตารางข้างบนเรียงตามลำดับที่ทำจริง
 ไม่ใช่ตามเลข Phase เดิม เหตุผล:
@@ -582,7 +583,7 @@ return true;
 
 **2. ของที่เตรียมไว้ให้งานที่ยังไม่ทำ — เก็บไว้**
 - ~~Phase 11: ตาราง/สิทธิ์/env~~ — **โมดูลใช้งานแล้ว** เหลือ webhook ผูก `line_user_id` อัตโนมัติ
-  กับเหตุการณ์ `DELIVERY_DUE` (ยังไม่มี due date ใน schema)
+  (`DELIVERY_DUE` ใช้แล้ว 7 ต.ค. — อ่านจาก `projects.target_end_date`)
 - ยังไม่ตัดสิน: `customer.export`, `report.export` (A-8), `documents.doc_no/issued_date`,
   `ma_plans.onsite_quota_per_month` (Q19)
 - `role.view` / `permission.view` ไม่มี endpoint ใช้ แต่เป็นส่วนของ `SUPER_ADMIN_ONLY_PERMISSIONS` (9.4) ห้ามลบ
@@ -1386,13 +1387,42 @@ return true;
 - **BR-11** — แจ้งเฉพาะพนักงาน (`notifications.target_user_id` → `users`) ไม่มีทางยิงหาลูกค้า
 - กฎต้องมี `targetRoleId` หรือ `targetUserId` อย่างน้อยหนึ่งอย่าง
 - ส่ง LINE ด้วย `LineMessagingService` (Messaging API push) ไม่ใช้ SDK · ไม่มี token = บันทึก FAILED
-- กันสแปม: event + ผู้รับ + ref เดียวกันในวันเดียวกันสร้างได้ครั้งเดียว
-- `CUSTOMER_IDLE` **ไม่เตือนลูกค้า CHURNED** (29 ก.ย.) — เลิกใช้บริการ/ไม่ติดตามต่อ ถ้าเตือนจะดังทุกวันตลอดไป
-  INACTIVE ยังเตือน เพราะเป็นกลุ่มที่ควรตามเสนอ MA (ความหมายตามกฎ Phase 4 — Q13 ยังรอยืนยัน)
-- `SCHEDULER_ENABLED=false` ปิด cron รายชั่วโมง · ยังยิงมือได้ที่ `POST /api/notifications/run`
+- **แจ้งตามกำหนดของแต่ละรายการ ไม่ใช่รายวัน (7 ต.ค.)** — `notification-digest.ts` (ประกอบข้อความ) +
+  `NotificationDispatchService.runAll()` (หารายการ/กันซ้ำ/ส่ง) · เดิมวันเดียวกันเคยเป็นสรุปวันละครั้ง (`DAILY_DIGEST`)
+  ผู้ใช้เปลี่ยนใจ — enum ยังเหลือให้แถวเก่าอ่านได้ ไม่ถูกสร้างใหม่ สร้างเป็นกฎไม่ได้ (400)
+  - **แต่ละรายการแจ้งครั้งเดียวต่อขั้น** — ขั้น "ใกล้ครบ" (เข้าช่วง `daysBefore`) กับขั้น "เลยกำหนด" กันซ้ำด้วย
+    `notifications.dedupe_key` = `ชนิด:refType:refId:ขั้น:วันกำหนด` ต่อผู้รับ (migration `20261007000002`) ·
+    **เลื่อนวันกำหนด = key ใหม่ = แจ้งใหม่** · ไม่เตือนซ้ำทุกวันระหว่างค้าง
+  - **เลยกำหนดเกิน `OVERDUE_LOOKBACK_DAYS` (7) วันไม่ถูกแจ้ง** — ไม่ใช่เหตุการณ์ "เพิ่งเลย" แล้ว กันวันแรกที่เปิดใช้ยิงงานค้างเก่าทั้งหมด
+  - **ทุกผู้รับเห็นรายการชุดเดียวกันทั้งบริษัท ไม่กรองตามผู้รับผิดชอบหรือสิทธิ์** — ตัดสินโดยเจ้าของโปรเจกต์ 7 ต.ค.
+    ให้แยกตามคน/สิทธิ์ไว้ถามพี่เลี้ยงก่อน ห้ามเติมเองโดยไม่ได้ตกลง
+  - ผู้รับ = `targetUserId`/`targetRoleId` ของกฎ · **รอบหนึ่งรวมรายการใหม่ของคนเดียวกันเป็นข้อความ LINE เดียว**
+    (โควตา LINE OA) · กระดิ่งได้ **หนึ่งแถวต่อรายการ** (`ruleId` = กฎ · `refType` = `TASK`/`PROJECT`/`FOLLOW_UP`/`TICKET`/
+    `WARRANTY`/`MA_CONTRACT` + `refId` → กดไปหน้ารายการได้) · ส่ง LINE ถ้ากฎใดของรายการเหล่านั้นเปิด `sendLine`
+  - scheduler เช็คทุก 5 นาที **ส่งเฉพาะ `NOTIFY_START_TIME`–`NOTIFY_END_TIME` (08:30–18:00) จันทร์–ศุกร์**
+    (`NOTIFY_WEEKENDS=true` เปิดเสาร์–อาทิตย์) นอกช่วงรอส่งตอนเริ่มช่วงถัดไป · กำหนดส่งเป็น *วันที่* จึงเข้าขั้นใหม่ได้วันละครั้ง
+    ในทางปฏิบัติจะมาตอน 08:30 ส่วนรายการที่สร้าง/แก้ระหว่างวันจนเข้าเกณฑ์ และใบแจ้งปัญหา (กำหนดมีเวลา) มาภายใน 5 นาที ·
+    `POST /run` ไม่สนช่วงเวลา (กันซ้ำเหมือนกัน)
+  - **รูปแบบข้อความ (ตกลง 7 ต.ค.)** รายการที่ยังไม่เลยกำหนดอยู่ใต้ `■ หัวข้อ` ของตัวเอง แสดงแค่วันที่ (ไม่มีวงเล็บ)
+    · รายการที่เลยกำหนดแล้วของทุกหัวข้อ (งาน/โปรเจกต์/งานติดตาม/ใบแจ้งปัญหา) **รวมเป็นก้อนเดียวท้ายข้อความ**
+    ขึ้นต้น `เลยกำหนดแล้ว N รายการ` แต่ละรายการบอก `(เลยมา N วัน)` · ข้อความ LINE แสดงกลุ่มละไม่เกิน 5 รายการ
+    (`DIGEST_ITEM_LIMIT` — ครบทุกรายการอยู่ในกระดิ่ง) · ข้อความยาวเกิน 4,800 ตัวถูกตัดที่ขึ้นบรรทัดใหม่ (LINE รับไม่เกิน 5,000)
+  - `message_template` ของกฎไม่ถูกใช้ (หัวข้อมาจาก `digestHeading()`)
+  - **แต่ละรายการมีป้ายกำกับ ไม่แสดงรหัส/id** (ตกลง 7 ต.ค. — ผู้ใช้อ่าน "ชื่อ — ชื่อ" แล้วเข้าใจผิดว่าเป็นสองโปรเจกต์)
+    บรรทัดแรก `งาน:` / `โปรเจกต์:` / `ติดตาม:` / `ปัญหา:` + ชื่อ แล้วย่อหน้า `ลูกค้า:` `โปรเจกต์:` และวันที่จริงพร้อมระยะ
+    เช่น `วันจบตามแผน 7 ต.ค.` / `วันจบตามแผน 30 ก.ย. (เลยมา 7 วัน)` (`digestItem()` + `dateLine()`)
+  - หัวข้อและช่วง (`daysBefore` ของกฎ · ไม่ใส่ = ค่าในวงเล็บ):
+    `TASK_OVERDUE` งานโปรเจกต์ที่ยังไม่ DONE ครบภายใน N วัน (3) **รวมที่เลยกำหนด** ไม่นับโปรเจกต์ CLOSED/CANCELLED ·
+    `DELIVERY_DUE` โปรเจกต์ DRAFT/IN_PROGRESS ที่ `target_end_date` ภายใน N วัน (7) รวมที่เลยแล้ว ·
+    `FOLLOWUP_DUE` งานติดตามที่ยังเปิดและครบภายใน N วัน (0 = วันนี้) รวมที่เลยแล้ว ·
+    `TICKET_SLA` ใบที่ยังไม่ RESOLVED/CLOSED/WAITING_SUPPORT และเลย `due_at` ·
+    `WARRANTY_EXPIRING` ประกันไม่ VOID หมดภายใน N วัน (30) · `MA_EXPIRING` สัญญาที่คุ้มครองอยู่หมดภายใน N วัน (30) ·
+    **`CUSTOMER_IDLE` ไม่ถูกแจ้งแล้ว** — ไม่ใช่กำหนดส่ง ไม่มีจังหวะ "ใกล้ครบ" (ผู้ใช้ไม่เอาแจ้งรายคนว่าไม่ได้ติดต่อนาน)
+    migration ปิดกฎเริ่มต้นไว้ (`is_active = false`) ไม่ลบ · ดูรายชื่อที่ `GET /api/customers?idleDays=N`
+- `SCHEDULER_ENABLED=false` ปิด scheduler · ยังยิงมือได้ที่ `POST /api/notifications/run`
 - `POST /api/notifications/test-line` ทดสอบช่องทางอย่างเดียว ไม่สร้างแถว notifications
 - `lineUserId` ตั้งผ่าน `PUT /api/users/:id` ไปก่อน ยังไม่มี webhook ผูกตอนแอดเพื่อน (Q8)
-- `DELIVERY_DUE` ใน enum มีแล้วแต่ **ยังไม่รัน** เพราะใบส่งมอบไม่มี due date
+- ถามบอทใน LINE (rich menu / webhook) **ยังไม่ทำ** — ต้องมี HTTPS สาธารณะและคำตอบ Q8 ก่อน เป็น endpoint นอก scope ต้องเสนอก่อน
 - **C-3 แจ้งเตือนสายงานใบปัญหา = inbox ในแอปเท่านั้น ไม่ยิง LINE**
   (`TicketWorkflowNotifyService` — สร้างแถว `notifications` สถานะ `SENT` ทันที · `ruleId = null`)
   - `send-to-admin` → `TICKET_SENT_TO_ADMIN` ให้ SUPER_ADMIN/ADMIN + USER ที่ถือ `ticket.assign`

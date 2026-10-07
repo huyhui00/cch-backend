@@ -20,6 +20,7 @@ export interface NotificationCreationAttributes {
   message?: string | null;
   refType?: string | null;
   refId?: number | null;
+  dedupeKey?: string | null;
   status?: NotificationStatus;
   scheduledAt?: Date | null;
   sentAt?: Date | null;
@@ -64,6 +65,13 @@ export class Notification extends AuditedModel<Notification, NotificationCreatio
 
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'ref_id' })
   refId: number | null;
+
+  /**
+   * แจ้งกำหนดส่ง: `ชนิด:refType:refId:ขั้น:วันกำหนด` — คนเดิม key เดิม = แจ้งไปแล้ว ไม่แจ้งซ้ำ
+   * วันกำหนดอยู่ใน key เพราะเลื่อนกำหนดแล้วต้องแจ้งใหม่ · แถวอื่น (สายงานใบปัญหา) เป็น null
+   */
+  @Column({ type: DataType.STRING(191), allowNull: true, field: 'dedupe_key' })
+  dedupeKey: string | null;
 
   @Column({
     type: DataType.ENUM(...Object.values(NotificationStatus)),

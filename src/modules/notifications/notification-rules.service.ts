@@ -8,7 +8,7 @@ import {
   toPaginatedResult,
   type PaginatedResult,
 } from '../../common/dto/pagination.dto';
-import { NotificationRule, Role, User, UserStatus } from '../../models';
+import { NotificationEventType, NotificationRule, Role, User, UserStatus } from '../../models';
 import {
   CreateNotificationRuleDto,
   QueryNotificationRulesDto,
@@ -18,6 +18,13 @@ import {
   NotificationRuleResponseDto,
   toNotificationRuleResponse,
 } from './dto/notification.response';
+
+/** DAILY_DIGEST เป็นชนิดของแถวสรุปรูปแบบเดิม ไม่ใช่หัวข้อ — ทำเป็นกฎจะไม่มีอะไรให้ตรวจ */
+function assertRuleEventType(eventType: NotificationEventType): void {
+  if (eventType === NotificationEventType.DAILY_DIGEST) {
+    throw new BadRequestException('สรุปประจำวันไม่ใช่หัวข้อแจ้งเตือน เลือกชนิดเหตุการณ์อื่น');
+  }
+}
 
 @Injectable()
 export class NotificationRulesService {
@@ -58,6 +65,7 @@ export class NotificationRulesService {
     dto: CreateNotificationRuleDto,
     actorId: number,
   ): Promise<NotificationRuleResponseDto> {
+    assertRuleEventType(dto.eventType);
     await this.assertTargets(dto.targetRoleId, dto.targetUserId);
 
     const row = await this.ruleModel.create({
@@ -82,6 +90,9 @@ export class NotificationRulesService {
     actorId: number,
   ): Promise<NotificationRuleResponseDto> {
     const row = await this.requireRule(id);
+    if (dto.eventType !== undefined) {
+      assertRuleEventType(dto.eventType);
+    }
 
     const nextRoleId = dto.targetRoleId !== undefined ? dto.targetRoleId : row.targetRoleId;
     const nextUserId = dto.targetUserId !== undefined ? dto.targetUserId : row.targetUserId;

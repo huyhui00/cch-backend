@@ -121,15 +121,15 @@ export class DispatchRunResultDto {
   @ApiProperty({ description: 'จำนวนกฎที่รัน' })
   rulesProcessed: number;
 
-  @ApiProperty({ description: 'จำนวนแจ้งเตือนที่สร้างใหม่' })
+  @ApiProperty({ description: 'จำนวนแจ้งเตือนที่สร้างใหม่ (หนึ่งแถวต่อรายการต่อผู้รับ)' })
   created: number;
 
-  @ApiProperty({ description: 'จำนวนที่ส่ง LINE สำเร็จ' })
+  @ApiProperty({ description: 'จำนวนข้อความ LINE ที่ส่งสำเร็จ (หนึ่งข้อความต่อผู้รับต่อรอบ)' })
   lineSent: number;
 
-  @ApiProperty({ description: 'จำนวนที่ส่ง LINE ไม่สำเร็จ' })
+  @ApiProperty({ description: 'จำนวนข้อความ LINE ที่ส่งไม่สำเร็จ' })
   lineFailed: number;
 
-  @ApiProperty({ description: 'จำนวนที่ข้ามเพราะมีแจ้งเตือนซ้ำในวันเดียวกันแล้ว' })
+  @ApiProperty({ description: 'จำนวนรายการที่ข้ามเพราะแจ้งขั้นนี้ไปแล้ว' })
   skippedDuplicate: number;
 }

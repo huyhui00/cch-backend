@@ -37,13 +37,19 @@ module.exports = {
         message_template: 'กรุณาตรวจสอบสัญญา MA ที่ใกล้หมดอายุ',
       },
       {
-        name: 'งานย่อยเกินกำหนด',
+        name: 'งานโปรเจกต์ใกล้ครบกำหนดและเลยกำหนด',
         event_type: 'TASK_OVERDUE',
         days_before: null,
         message_template: 'มีงานที่เลยกำหนดแล้ว',
       },
       {
-        name: 'งานติดตามเลยกำหนด',
+        name: 'โปรเจกต์ใกล้ถึงวันจบตามแผน (7 วัน)',
+        event_type: 'DELIVERY_DUE',
+        days_before: 7,
+        message_template: null,
+      },
+      {
+        name: 'งานติดตามที่ครบกำหนดและเลยกำหนด',
         event_type: 'FOLLOWUP_DUE',
         days_before: null,
         message_template: 'มีงานติดตามที่เลยกำหนดแล้ว',
@@ -55,10 +61,12 @@ module.exports = {
         message_template: 'มีใบแจ้งปัญหาที่เลยกำหนดส่ง',
       },
       {
+        // ไม่ใช่กำหนดส่ง จึงไม่ถูกแจ้ง — เก็บไว้ปิดเผื่อกลับมาใช้
         name: 'ลูกค้าที่ไม่ได้ติดต่อ (30 วัน)',
         event_type: 'CUSTOMER_IDLE',
         days_before: 30,
         message_template: 'มีลูกค้าที่ไม่ได้ติดต่อนาน',
+        is_active: false,
       },
     ].filter((d) => !have.has(d.event_type));
 
@@ -72,7 +80,7 @@ module.exports = {
         name: d.name,
         event_type: d.event_type,
         days_before: d.days_before,
-        is_active: true,
+        is_active: d.is_active ?? true,
         target_role_id: null,
         target_user_id: targetUserId,
         message_template: d.message_template,
@@ -93,8 +101,9 @@ module.exports = {
       name: [
         'ประกันใกล้หมดอายุ (30 วัน)',
         'สัญญา MA ใกล้หมดอายุ (30 วัน)',
-        'งานย่อยเกินกำหนด',
-        'งานติดตามเลยกำหนด',
+        'งานโปรเจกต์ใกล้ครบกำหนดและเลยกำหนด',
+        'โปรเจกต์ใกล้ถึงวันจบตามแผน (7 วัน)',
+        'งานติดตามที่ครบกำหนดและเลยกำหนด',
         'ใบแจ้งปัญหาเลยกำหนด (SLA)',
         'ลูกค้าที่ไม่ได้ติดต่อ (30 วัน)',
       ],

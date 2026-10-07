@@ -22,6 +22,8 @@ export enum NotificationEventType {
   TICKET_ASSIGNED = 'TICKET_ASSIGNED',
   /** C-1 — แอดมินตรวจไม่ผ่าน ตีกลับให้ผู้แก้ทำต่อ */
   TICKET_REVIEW_REJECTED = 'TICKET_REVIEW_REJECTED',
+  /** สรุปประจำวันรูปแบบเดิม (ใช้ 7 ต.ค. วันเดียว) — เหลือไว้ให้แถวเก่าอ่านได้ ไม่ถูกสร้างใหม่ สร้างเป็นกฎไม่ได้ */
+  DAILY_DIGEST = 'DAILY_DIGEST',
 }
 
 /** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
