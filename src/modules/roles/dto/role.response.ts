@@ -59,7 +59,6 @@ export class RoleDetailDto extends RoleSummaryDto {
   updatedAt: Date;
 }
 
-/** รายการสิทธิ์ทั้งหมดจัดกลุ่มตาม module — จัดรูปมาให้พร้อมวาดหน้าติ๊กสิทธิ์แล้ว */
 export class PermissionGroupDto {
   @ApiProperty({ example: 'customer' })
   module: string;

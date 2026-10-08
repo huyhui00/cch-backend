@@ -10,7 +10,6 @@ import { UserRole } from './user-role.model';
  * Role เป็น dynamic ทั้งหมด ไม่ hardcode ในโค้ด
  * Super Admin เท่านั้นที่สร้าง/แก้/ลบได้ (BR-10)
  */
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface RoleCreationAttributes {
   name: string;
   description?: string | null;

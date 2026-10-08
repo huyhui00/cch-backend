@@ -4,10 +4,6 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 
 import { MaContractsService } from './ma-contracts.service';
 
-/**
- * เปลี่ยนสัญญา ACTIVE ที่เลยวันสิ้นสุดเป็น EXPIRED — รายชั่วโมง และตอนเปิดเซิร์ฟเวอร์
- * ปิดด้วย SCHEDULER_ENABLED=false เหมือน NotificationSchedulerService
- */
 @Injectable()
 export class MaContractExpiryScheduler implements OnApplicationBootstrap {
   private readonly logger = new Logger(MaContractExpiryScheduler.name);

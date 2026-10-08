@@ -42,13 +42,8 @@ async function bootstrap() {
     app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
   }
 
-  // ---- Global prefix -------------------------------------------------------
-  // ทุก endpoint อยู่ใต้ /api ตาม CLAUDE.md 6.2
   app.setGlobalPrefix('api');
 
-  // ---- CORS ----------------------------------------------------------------
-  // เปิดเฉพาะ FRONTEND_URL เท่านั้น (Angular แยก repo คนละ origin)
-  // รองรับหลาย origin โดยคั่นด้วย comma เช่น "http://localhost:4200,https://app.example.com"
   const frontendUrl = config.get<string>('FRONTEND_URL', '');
   const allowedOrigins = frontendUrl
     .split(',')
@@ -63,19 +58,11 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  // ---- Validation ----------------------------------------------------------
   app.useGlobalPipes(createValidationPipe());
 
-  // ---- Response format (CLAUDE.md 6.1) ------------------------------------
-  // เปิด log ทุก request อัตโนมัติเมื่อไม่ใช่ production ปิดได้ด้วย REQUEST_LOG=false
-  // ประโยชน์หลักคือแยกให้ออกว่า frontend ยิงมาถึงจริงหรือถูกบล็อกที่เบราว์เซอร์
   const requestLogEnabled =
     (config.get<string>('REQUEST_LOG') ?? (isProduction ? 'false' : 'true')) === 'true';
 
-  // ลำดับสำคัญ:
-  //   RequestLoggingInterceptor อยู่หน้าสุด โค้ดหลัง handler ของมันจึงทำงานท้ายสุด
-  //     ได้เวลาที่ใกล้เคียงของจริงที่สุด
-  //   RequestContextInterceptor เติม userId ลง context ให้ทันก่อน controller เขียนฐานข้อมูล
   app.useGlobalInterceptors(
     new RequestLoggingInterceptor(requestLogEnabled),
     new RequestContextInterceptor(),
@@ -83,8 +70,6 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // ---- Swagger -------------------------------------------------------------
-  // ปิดใน production เป็นค่าเริ่มต้น — ไม่ต้องแจกแผนที่ API ทั้งระบบให้คนที่ยังไม่ได้ล็อกอิน
   const swaggerEnabled =
     (config.get<string>('SWAGGER_ENABLED') ?? (isProduction ? 'false' : 'true')) === 'true';
 
@@ -92,8 +77,6 @@ async function bootstrap() {
     setupSwagger(app);
   }
 
-  // ---- Listen --------------------------------------------------------------
-  // ค่าจาก .env เป็น string เสมอ ต้องแปลงเป็นตัวเลขเอง
   const port = Number(config.get('PORT')) || 3000;
   await app.listen(port);
 

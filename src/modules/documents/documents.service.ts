@@ -28,18 +28,6 @@ export interface DocumentFile extends StoredFileStream {
   mimeType: string | null;
 }
 
-/**
- * เอกสารของโครงการ (Phase 9 — ประชุม 11 ก.ย. B-5)
- *
- * พี่เลี้ยง: ในหน้าโครงการมีปุ่มเพิ่มเอกสาร → ตั้งชื่อ แนบไฟล์ ใส่รายละเอียด → ดาวน์โหลดย้อนหลังได้
- * เช่น ใบเสนอราคา ใบแจ้งหนี้ ใบเสร็จแต่ละงวด แผนโครงการ ไฟล์ขอบเขตงาน
- *
- * - **ลบแล้วไฟล์ยังอยู่ในที่เก็บ** (soft delete เฉพาะแถว) เพราะเอกสารเหล่านี้คือหลักฐาน
- *   ถ้ามีคนลบผิด ผู้ดูแลยังกู้คืนได้จาก audit log + ไฟล์ที่ยังไม่หาย
- * - **เปลี่ยนไฟล์ไม่ได้** แก้ได้แค่ชื่อกับรายละเอียด ไฟล์ฉบับใหม่ = อัปโหลดเป็นเอกสารใหม่
- *   ฉบับเก่าจะได้ไม่หายไปเงียบ ๆ
- * - ไม่มีคอลัมน์ยอดเงิน/สถานะชำระเงิน แม้ไฟล์จะเป็นใบแจ้งหนี้ (กฎ M10 — ไม่ใช่ระบบบัญชี)
- */
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
@@ -68,7 +56,6 @@ export class DocumentsService {
 
     const { rows, count } = await this.documentModel.findAndCountAll({
       where,
-      // ค่าเริ่มต้นเอกสารล่าสุดขึ้นก่อน
       order: [
         [sortBy, query.sortBy ? query.sortOrder : 'DESC'],
         ['id', 'DESC'],
@@ -86,10 +73,6 @@ export class DocumentsService {
     );
   }
 
-  /**
-   * รายการเอกสารทั้งบริษัท พ่วงโครงการ + ชื่อลูกค้า
-   * ค้นชื่อ/รหัสโครงการด้วยการหา id ก่อนแล้วกรอง IN — ไม่ใช้ `$project.name$` ใน query ที่มี limit
-   */
   async findAll(
     query: QueryCompanyDocumentsDto,
   ): Promise<PaginatedResult<CompanyDocumentResponseDto>> {
@@ -156,13 +139,6 @@ export class DocumentsService {
     return toDocumentResponse(document, await this.findUploaders([document]));
   }
 
-  /**
-   * อัปโหลดไฟล์แล้วบันทึกเป็นเอกสารของโครงการ
-   *
-   * ตรวจทุกอย่างก่อนส่งไฟล์ขึ้นที่เก็บ ส่วนกรณีไฟล์ขึ้นแล้วแต่บันทึกแถวไม่สำเร็จ ไฟล์จะค้างอยู่
-   * ในที่เก็บโดยไม่มีแถวชี้ — ยอมรับได้ เพราะไฟล์ค้างไม่ทำให้ข้อมูลผิด แค่กินพื้นที่ (log ไว้ให้ตามเก็บ)
-   * ส่วนการกลับลำดับ (บันทึกแถวก่อนแล้วค่อยอัปโหลด) จะได้แถวที่ชี้ไปหาไฟล์ที่ไม่มีอยู่จริงแทน ซึ่งแย่กว่า
-   */
   async upload(
     projectId: number,
     file: UploadedFileLike | undefined,
@@ -215,7 +191,6 @@ export class DocumentsService {
     return this.findOne(id);
   }
 
-  /** soft delete เฉพาะแถว — ไฟล์ในที่เก็บไม่ถูกลบ (เป็นหลักฐาน) */
   async remove(id: number): Promise<void> {
     const actorId = getCurrentUserId();
     const document = await this.findOrFail(id);
@@ -225,7 +200,6 @@ export class DocumentsService {
     await document.destroy();
   }
 
-  /** เปิดไฟล์ของเอกสารเพื่อส่งกลับให้ดาวน์โหลด */
   async openFile(id: number): Promise<DocumentFile> {
     const document = await this.findOrFail(id);
 
@@ -242,12 +216,6 @@ export class DocumentsService {
     };
   }
 
-  // ---- helpers -------------------------------------------------------------
-
-  /**
-   * เอกสารของโครงการเท่านั้น — แถวใน `documents` ที่ไม่มี project_id (ถ้าวันหนึ่งมีจากส่วนอื่น)
-   * ไม่ถูกเปิดผ่านเส้นนี้ เพราะสิทธิ์และที่มาของมันคนละเรื่องกัน
-   */
   private async findOrFail(id: number): Promise<Document> {
     const document = await this.documentModel.findOne({
       where: { id, projectId: { [Op.ne]: null } },

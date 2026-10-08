@@ -2,31 +2,15 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 import type { NextFunction, Request, Response } from 'express';
 
-/**
- * ข้อมูลของ request ที่กำลังทำงานอยู่ ณ ขณะนั้น
- *
- * ตัว object ถูกสร้างครั้งเดียวตอนต้น request แล้วส่งต่อ "โดยอ้างอิง"
- * จึงแก้ค่า userId ทีหลังได้ หลังจาก guard ยืนยันตัวตนเสร็จ
- */
 export interface RequestContext {
   userId: number | null;
   ipAddress: string | null;
   userAgent: string | null;
-  /** เวลาที่ request เข้ามาถึง middleware ใช้วัดว่าใช้เวลาทั้งหมดเท่าไร */
   startedAt: number;
 }
 
-/**
- * หัวใจของ Phase นี้ — AsyncLocalStorage เก็บค่าไว้ผูกกับ "สายการทำงานแบบ async"
- * ไม่ใช่ผูกกับตัวแปร global
- *
- * โค้ดที่ถูกเรียกลึกลงไปเท่าไรก็ตามภายใน callback ของ storage.run() จะเห็นค่าเดียวกัน
- * แม้จะผ่าน await กี่ชั้นก็ตาม และ request คนละใบที่วิ่งพร้อมกันจะไม่เห็นค่าของกันและกัน
- * นี่คือเหตุผลที่ Sequelize hook ซึ่งไม่มีทางรู้จัก HTTP request เลย ยังรู้ได้ว่าใครเป็นคนสั่ง
- */
 const storage = new AsyncLocalStorage<RequestContext>();
 
-/** คืน undefined เมื่อถูกเรียกนอก request เช่นจาก scheduler หรือ seeder */
 export function getRequestContext(): RequestContext | undefined {
   return storage.getStore();
 }
@@ -44,7 +28,6 @@ export function setCurrentUserId(userId: number | null): void {
   }
 }
 
-/** เวลาที่ผ่านไปตั้งแต่ request เข้ามา — คืน null เมื่อเรียกนอก request */
 export function getElapsedMs(): number | null {
   const store = storage.getStore();
   return store ? Date.now() - store.startedAt : null;
@@ -54,27 +37,14 @@ export function runWithRequestContext<T>(context: RequestContext, callback: () =
   return storage.run(context, callback);
 }
 
-/** ความยาวสูงสุดตามคอลัมน์ใน audit_logs */
 const MAX_IP_LENGTH = 45;
 const MAX_USER_AGENT_LENGTH = 500;
 
-/**
- * Express middleware ที่เปิด context ให้ทั้ง request
- *
- * ต้องเป็น middleware ไม่ใช่ interceptor เพราะ middleware ทำงานก่อนสุดในสาย
- * ทุกอย่างที่เกิดหลังจากนี้ (guard, interceptor, controller, service, hook)
- * จึงอยู่ภายใน callback เดียวกันทั้งหมด
- *
- * ตอนนี้ยังไม่รู้ว่า user เป็นใคร เพราะ guard ยังไม่ทำงาน จึงตั้ง userId เป็น null ไว้ก่อน
- * แล้วให้ RequestContextInterceptor มาเติมให้ทีหลัง
- */
 export function requestContextMiddleware(req: Request, _res: Response, next: NextFunction): void {
   const context: RequestContext = {
     userId: null,
     ipAddress: truncate(req.ip ?? req.socket.remoteAddress, MAX_IP_LENGTH),
     userAgent: truncate(req.headers['user-agent'], MAX_USER_AGENT_LENGTH),
-    // จับเวลาตั้งแต่จุดแรกสุดของสาย ไม่ใช่ตอน controller เริ่มทำงาน
-    // จะได้เห็นเวลาที่หมดไปกับ guard ตรวจสิทธิ์ด้วย ซึ่งมีการ query ฐานข้อมูล
     startedAt: Date.now(),
   };
 

@@ -237,10 +237,6 @@ export class SurveysController {
   }
 }
 
-/**
- * บันทึกคำตอบที่ลูกค้าให้มา — แยก controller เพราะผูกกับ "การส่ง 1 ครั้ง"
- * ไม่ใช่กับตัวแบบประเมิน (1 การส่ง ตอบได้ครั้งเดียว)
- */
 @ApiTags('surveys')
 @ApiBearerAuth('access-token')
 @Controller('survey-assignments')

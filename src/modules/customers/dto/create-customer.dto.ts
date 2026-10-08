@@ -25,7 +25,6 @@ const trimToNull = ({ value }: { value: unknown }) => {
 };
 
 export class CreateCustomerDto {
-  /** รับไว้เพื่อให้โค้ดเก่าคอมไพล์ได้ แต่ ValidationPipe จะปฏิเสธฟิลด์นี้ */
   @ApiHideProperty()
   code?: unknown;
 

@@ -10,11 +10,6 @@ export class AttachmentUploaderDto {
   fullName: string;
 }
 
-/**
- * ไฟล์แนบทั่วไป (ตาราง attachments)
- *
- * **ไม่คืน object key ของที่เก็บ** — ดาวน์โหลดผ่าน downloadUrl ที่ตรวจสิทธิ์ทุกครั้ง
- */
 export class AttachmentResponseDto {
   @ApiProperty({ example: 12 })
   id: number;
@@ -55,7 +50,6 @@ export class AttachmentResponseDto {
   updatedAt: Date;
 }
 
-/** ไฟล์แนบแบบย่อ ใช้ฝังในรายละเอียดของเอกสารต้นทาง (ใบส่งมอบ / ประกัน) */
 export class AttachmentSummaryDto {
   @ApiProperty({ example: 12 })
   id: number;

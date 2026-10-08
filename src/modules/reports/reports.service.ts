@@ -83,10 +83,6 @@ export class ReportsService {
     @InjectModel(FollowUp) private readonly followUpModel: typeof FollowUp,
   ) {}
 
-  // ==========================================================================
-  // M10-01 + M10-03 — มูลค่าตามสัญญาแยกรายลูกค้า และจัดอันดับ
-  // ==========================================================================
-
   async contractValueByCustomer(query: QueryContractValueDto): Promise<ContractValueByCustomerDto> {
     const customers = await this.customerModel.findAll({ attributes: ['id', 'name', 'code'] });
     const [projects, contracts, addons, tickets] = await this.loadValueSources(query);
@@ -122,7 +118,6 @@ export class ReportsService {
       bucketOf(project.customerId).project += this.toNumber(project.contractValue);
     }
 
-    // สัญญาที่ยกเลิก — ตัดทั้งตัวสัญญาและของเสริมที่ผูกอยู่ใต้มัน (กติกาข้อ 2)
     const cancelledContractIds = new Set(
       contracts
         .filter((contract) => contract.status === MaContractStatus.CANCELLED)
@@ -204,10 +199,6 @@ export class ReportsService {
     };
   }
 
-  // ==========================================================================
-  // M10-02 — มูลค่าตามสัญญาแยกตามประเภท
-  // ==========================================================================
-
   async contractValueByType(query: ReportPeriodDto): Promise<ContractValueByTypeDto> {
     const [projects, contracts, addons, tickets] = await this.loadValueSources(query);
 
@@ -273,14 +264,9 @@ export class ReportsService {
     };
   }
 
-  // ==========================================================================
-  // M10-04 — มูลค่าตามสัญญาจากสัญญาที่ยังไม่หมดอายุ
-  // ==========================================================================
-
   async upcomingContractValue(): Promise<UpcomingContractValueDto> {
     const today = todayAsDateOnly();
 
-    // เทียบช่วงวันซ้ำ ไม่เชื่อ status อย่างเดียว — ดูเหตุผลที่หัวคลาส
     const contracts = await this.contractModel.findAll({
       where: {
         status: MaContractStatus.ACTIVE,
@@ -312,17 +298,6 @@ export class ReportsService {
     };
   }
 
-  // ==========================================================================
-  // M10-05 — ต้นทุนการให้บริการ
-  // ==========================================================================
-
-  /**
-   * ต้นทุนคิดจากเวลาที่กรอกไว้จริงเท่านั้น
-   *
-   * **รอบที่ไม่ได้กรอก `hours_spent` ไม่ถูกนับเป็น 0 ชั่วโมง** เพราะค่าว่างแปลว่า
-   * "ยังไม่ได้กรอก" ไม่ใช่ "ใช้เวลาศูนย์ชั่วโมง" ถ้านับเป็น 0 ตัวเลขต้นทุนจะดูต่ำกว่า
-   * ความจริงโดยไม่มีใครรู้ — รายงานจึงคืนความครบถ้วนกลับไปคู่กันเสมอ
-   */
   async serviceCost(query: QueryServiceCostDto): Promise<ServiceCostReportDto> {
     const ticketWhere: WhereOptions = {};
 
@@ -410,10 +385,6 @@ export class ReportsService {
       items: items.map(({ _hours: _ignored, ...rest }) => rest),
     };
   }
-
-  // ==========================================================================
-  // ตรวจสัญญา MA ที่ช่วงเวลาซ้อนทับกัน — ตรวจจับและรายงานเท่านั้น
-  // ==========================================================================
 
   /**
    * **ไม่แก้ ไม่ลบ ไม่รวม และไม่เลือกสัญญาใดแทน** — Q4 ยังไม่มีข้อสรุปจากผู้บริหาร
@@ -505,10 +476,6 @@ export class ReportsService {
       items,
     };
   }
-
-  // ==========================================================================
-  // M1-05 มุมมองลูกค้า 360° + M1-06 มูลค่ารวมตลอดอายุ
-  // ==========================================================================
 
   async customerOverview(customerId: number): Promise<CustomerOverviewDto> {
     const customer = await this.customerModel.findByPk(customerId);
@@ -616,12 +583,6 @@ export class ReportsService {
     };
   }
 
-  /**
-   * M1-06 — มูลค่ารวมตามสัญญาตลอดอายุการใช้บริการ
-   *
-   * รายการที่ CANCELLED ถูกตัดออกจากมูลค่าหลัก แต่ยกมาแสดงแยกให้ตรวจย้อนหลังได้
-   * ของเสริมถูกตัดตามสถานะของสัญญาแม่ เพราะ `ma_addons` ไม่มีคอลัมน์ status ของตัวเอง
-   */
   private buildLifetimeValue(
     projects: Project[],
     contracts: MaContract[],
@@ -686,10 +647,6 @@ export class ReportsService {
     };
   }
 
-  // ==========================================================================
-  // helpers
-  // ==========================================================================
-
   /**
    * ค่าบริการรายครั้ง — นับเฉพาะใบที่ `billing_type = ONE_TIME`
    *
@@ -712,7 +669,6 @@ export class ReportsService {
     };
   }
 
-  /** โหลดแหล่งที่มาของมูลค่าทั้งสี่ทางในครั้งเดียว ใช้ร่วมกันระหว่าง M10-01/02 */
   private async loadValueSources(
     query: ReportPeriodDto,
   ): Promise<[Project[], MaContract[], MaAddon[], Ticket[]]> {
@@ -745,19 +701,16 @@ export class ReportsService {
     return [projects, contracts, addons, tickets];
   }
 
-  /** จำนวนสัญญาที่ซ้อนทับ แยกรายลูกค้า — ใช้ติดธงเตือนบนยอดรวม */
   private async countOverlapsByCustomer(): Promise<Map<number, number>> {
     const report = await this.contractOverlaps({});
 
     return new Map(report.items.map((item) => [item.customerId, item.overlappingContractCount]));
   }
 
-  /** ช่วงวันของสองสัญญาคาบเกี่ยวกันไหม — เทียบสตริง YYYY-MM-DD ได้ตรง ๆ */
   private rangesOverlap(a: MaContract, b: MaContract): boolean {
     return a.startDate <= b.endDate && b.startDate <= a.endDate;
   }
 
-  /** id ของสัญญาที่มีคู่ซ้อนทับอย่างน้อยหนึ่งคู่ */
   private findOverlappingIds(contracts: MaContract[]): Set<number> {
     const usable = contracts.filter(
       (contract) =>
@@ -809,14 +762,12 @@ export class ReportsService {
     }
 
     if (query.dateTo !== undefined) {
-      // รวมทั้งวันของขอบบน ไม่ใช่ตัดที่เที่ยงคืนตรงซึ่งจะตกรายการของวันสุดท้ายทั้งวัน
       bounds[Op.lte] = new Date(`${query.dateTo}T23:59:59.999`);
     }
 
     return Object.getOwnPropertySymbols(bounds).length > 0 ? bounds : null;
   }
 
-  /** DECIMAL ถูกคืนมาเป็น string เสมอ — แปลงตรงจุดเดียวเพื่อไม่ให้ปัดเศษกระจาย */
   private toNumber(value: string | null): number {
     return value === null ? 0 : Number(value);
   }
@@ -825,7 +776,6 @@ export class ReportsService {
     return values.reduce((total: number, value) => total + this.toNumber(value), 0);
   }
 
-  /** คืนเป็น string ทศนิยม 2 ตำแหน่ง ให้ชนิดตรงกับที่ DECIMAL คืนมา */
   private toMoney(value: number): string {
     return value.toFixed(2);
   }

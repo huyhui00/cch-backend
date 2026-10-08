@@ -8,7 +8,6 @@ import {
   CustomerStatus,
 } from '../../../models';
 
-/** ผู้ใช้แบบย่อ — ใช้แสดงชื่อผู้ดูแลหรือผู้ที่คุยกับลูกค้า โดยไม่ต้องยิงถามตาราง users ซ้ำ */
 export class UserSummaryDto {
   @ApiProperty({ example: 3 })
   id: number;
@@ -179,7 +178,6 @@ export class CommunicationLogResponseDto {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-/** วันที่ไม่ได้ติดต่อ — คืน null เมื่อยังไม่เคยติดต่อเลย เพื่อแยกจากค่า 0 ที่แปลว่าติดต่อวันนี้ */
 function daysSince(date: Date | null): number | null {
   if (!date) {
     return null;

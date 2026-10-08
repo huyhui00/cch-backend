@@ -92,7 +92,6 @@ export class CreateContactDto {
   note?: string | null;
 }
 
-/** ย้ายผู้ติดต่อข้ามลูกค้าไม่ได้ — ถ้าคนเดิมย้ายบริษัทให้สร้างรายการใหม่ ของเดิมเก็บไว้เป็นประวัติ */
 export class UpdateContactDto extends PartialType(
   OmitType(CreateContactDto, ['customerId'] as const),
 ) {}

@@ -41,7 +41,6 @@ const OWNER_INCLUDE = {
   as: 'owner',
   attributes: ['id', 'username', 'fullName'],
   required: false,
-  // ยังต้องเห็นชื่อผู้ดูแลแม้พนักงานคนนั้นลาออกและถูก soft delete ไปแล้ว
   paranoid: false,
 };
 
@@ -110,8 +109,6 @@ export class CustomersService {
       Object.assign(where, { province: query.province });
     }
 
-    // หน้าจอ "ลูกค้าที่ถูกลืม" — ตอบ pain point ที่ผู้บริหารบ่นว่าลืมติดตามลูกค้า
-    // จนเลยไปเป็นเดือนสองเดือน คนที่ยังไม่เคยติดต่อเลยต้องติดมาด้วย ไม่ใช่หลุดออกไป
     if (query.idleDays !== undefined) {
       const threshold = new Date(Date.now() - query.idleDays * MS_PER_DAY);
       Object.assign(where, {
@@ -139,7 +136,6 @@ export class CustomersService {
     const customer = await this.customerModel.findByPk(id, {
       include: [
         OWNER_INCLUDE,
-        // เรียงผู้ติดต่อหลักขึ้นก่อนเสมอ หน้าจอจะได้ไม่ต้องเรียงเอง
         {
           ...CONTACTS_INCLUDE,
           separate: true,
@@ -166,13 +162,6 @@ export class CustomersService {
     return this.findOne(customer.id);
   }
 
-  /**
-   * สร้างแถวลูกค้า — กติกาการสร้างลูกค้าอยู่ที่นี่ที่เดียว
-   *
-   * ใช้ทั้ง `POST /api/customers` และตอนสร้างโครงการพร้อมลูกค้าใหม่ในฟอร์มเดียว
-   * (ประชุม 11 ก.ย. — B-3) ซึ่งส่ง transaction มา เพื่อให้ลูกค้ากับโครงการถูกบันทึก
-   * พร้อมกันหรือไม่ถูกบันทึกเลย ไม่เหลือลูกค้าลอยอยู่เมื่อการสร้างโครงการพัง
-   */
   async createRecord(
     dto: CreateCustomerDto,
     actorId: number | null,
@@ -198,8 +187,6 @@ export class CustomersService {
         website: dto.website ?? null,
         lineOfficialId: dto.lineOfficialId ?? null,
         facebookUrl: dto.facebookUrl ?? null,
-        // ไม่ส่งมา = ลูกค้าปัจจุบัน เพราะบันทึกเฉพาะลูกค้าที่ใช้บริการจริงแล้ว (ไม่มีผู้มุ่งหวัง)
-        // เขียนไว้ที่นี่ด้วยแทนที่จะพึ่ง default ของคอลัมน์อย่างเดียว กติกาจะได้อ่านเจอในโค้ด
         status: dto.status ?? CustomerStatus.ACTIVE,
         source: dto.source ?? null,
         ownerUserId: dto.ownerUserId ?? null,
@@ -240,13 +227,6 @@ export class CustomersService {
     return this.findOne(id);
   }
 
-  /**
-   * ลบลูกค้า — เป็น soft delete และลบผู้ติดต่อกับบันทึกการติดต่อตามไปด้วย
-   *
-   * บล็อกไว้ถ้ามีโครงการหรือใบแจ้งปัญหาผูกอยู่ เพราะข้อมูลพวกนั้นเป็นประวัติทางธุรกิจ
-   * ที่ต้องอ้างอิงย้อนหลังได้ ลูกค้าที่เลิกใช้บริการแล้วให้เปลี่ยนสถานะเป็น CHURNED แทน
-   * ซึ่งเป็นวิธีเดียวกับที่ใช้กับพนักงานที่ลาออก (CLAUDE.md 4.3)
-   */
   async remove(id: number, actorId: number): Promise<void> {
     const customer = await this.findOrFail(id);
 
@@ -272,8 +252,6 @@ export class CustomersService {
       await customer.destroy({ transaction });
     });
   }
-
-  // ---- ใช้ร่วมกับ service อื่นในโมดูลนี้ ------------------------------------
 
   async findOrFail(id: number): Promise<Customer> {
     const customer = await this.customerModel.findByPk(id);
@@ -307,12 +285,6 @@ export class CustomersService {
     await customer.save();
   }
 
-  // ---- helpers -------------------------------------------------------------
-
-  /**
-   * รหัสลูกค้าต้องไม่ซ้ำ — ตรวจรวมรายการที่ถูก soft delete ไปแล้วด้วย (paranoid: false)
-   * เพราะ unique index ในฐานข้อมูลไม่สนใจ deleted_at
-   */
   private async assertCodeIsAvailable(code: string, excludeId?: number): Promise<void> {
     const where: WhereOptions<Customer> = excludeId
       ? { code, id: { [Op.ne]: excludeId } }

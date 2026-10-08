@@ -19,11 +19,6 @@ import { TaskResponseDto } from './dto/project.response';
 import { CreateTaskDto, QueryTasksDto, UpdateTaskDto } from './dto/task.dto';
 import { TasksService } from './tasks.service';
 
-/**
- * งานย่อยของโครงการ — CRUD อยู่ใต้เส้นทางของโครงการเพราะงานไม่มีความหมายถ้าไม่มีโครงการ
- * ส่วนการเปลี่ยนสถานะ จัดลำดับ และดูงานเกินกำหนด อยู่ที่ /api/tasks เพราะเป็นการทำงาน
- * ข้ามโครงการที่ผู้ใช้ทำจากหน้าจอรวม
- */
 @ApiTags('tasks')
 @ApiBearerAuth('access-token')
 @Controller('projects/:projectId/tasks')

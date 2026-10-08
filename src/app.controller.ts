@@ -6,11 +6,6 @@ import { Sequelize } from 'sequelize-typescript';
 
 import { Public } from './common/decorators/public.decorator';
 
-/**
- * Endpoint เดียวที่มีในเฟส Setup — ไว้ยืนยันว่า boot ขึ้นและต่อ DB ติด
- * ไม่ใช่ endpoint ทางธุรกิจ ถ้าไม่ต้องการสามารถลบไฟล์นี้และถอดออกจาก AppModule ได้
- */
-// ต้องเรียกได้โดยไม่ต้องล็อกอิน เพราะ health check ของ infrastructure ไม่มี token
 @Public()
 @SkipThrottle()
 @ApiTags('health')

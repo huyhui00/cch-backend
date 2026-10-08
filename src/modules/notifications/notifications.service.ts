@@ -114,9 +114,6 @@ export class NotificationsService {
     return toNotificationResponse(row);
   }
 
-  /**
-   * แตะเฉพาะของตัวเองเสมอ แม้มี notification.manage — การอ่านแทนคนอื่นจะทำให้เจ้าของไม่เห็นแจ้งเตือน
-   */
   async markAllRead(viewer: AuthenticatedUser): Promise<{ updated: number }> {
     return this.markOwnUnreadAsRead(viewer, {});
   }
@@ -149,10 +146,6 @@ export class NotificationsService {
     return { updated };
   }
 
-  /**
-   * ส่งข้อความทดสอบไป LINE ของพนักงาน — ใช้ตรวจว่า token + lineUserId ถูกต้อง
-   * ยังไม่สร้างแถวใน notifications (เป็นการทดสอบช่องทาง ไม่ใช่เหตุการณ์จริง)
-   */
   async testLinePush(
     dto: TestLinePushDto,
     viewer: AuthenticatedUser,

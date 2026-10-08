@@ -86,7 +86,6 @@ export class MaContractsService {
     @InjectConnection() private readonly sequelize: Sequelize,
   ) {}
 
-  /** badge maContractsExpiringSoon = total ของ GET /ma-contracts?expiringInDays=<days> */
   async countExpiring(days: number): Promise<number> {
     const query = Object.assign(new QueryMaContractsDto(), {
       page: 1,
@@ -147,7 +146,6 @@ export class MaContractsService {
     );
   }
 
-  /** รายละเอียดสัญญา พร้อมของเสริมและสถานะโควตาของรอบที่วันที่กำหนดตกอยู่ */
   async findOne(id: number, onDate?: Date): Promise<MaContractResponseDto> {
     const contract = await this.findOrFail(id);
 
@@ -179,7 +177,6 @@ export class MaContractsService {
           model: Customer,
           required: false,
           paranoid: false,
-          // ผู้ติดต่อที่ถูกลบไปแล้วไม่ควรไปโผล่ในสัญญาใหม่ จึงไม่ปิด paranoid ของชั้นนี้
           include: [{ model: Contact, required: false }],
         },
         {
@@ -208,8 +205,6 @@ export class MaContractsService {
       throw new NotFoundException('ไม่พบสัญญา MA นี้');
     }
 
-    // ทั้งสามคอลัมน์เป็น NOT NULL และ include ปิด paranoid แล้ว ถ้ายังหาไม่เจอแปลว่า
-    // ข้อมูลอ้างอิงหายไปจริง พิมพ์ต่อไม่ได้ เพราะเอกสารจะขาดคู่สัญญาหรือเนื้อหาบริการ
     if (!contract.customer || !contract.project || !contract.plan) {
       throw new NotFoundException(
         'ข้อมูลลูกค้า โครงการ หรือแผน MA ของสัญญานี้ไม่ครบ จึงพิมพ์ร่างสัญญาไม่ได้',
@@ -323,8 +318,6 @@ export class MaContractsService {
 
     this.assertStatusIsSettable(dto.status);
 
-    // ถอย RENEWED กลับเป็นสถานะอื่นได้ = ฉบับเดิมกับฉบับใหม่ ACTIVE ซ้อนกันทั้งคู่
-    // หน้าจอที่แก้ฉบับที่ต่อแล้ว (เช่นแก้หมายเหตุ) ต้องไม่ส่ง status มา
     if (
       contract.status === MaContractStatus.RENEWED &&
       dto.status !== undefined &&
@@ -425,11 +418,6 @@ export class MaContractsService {
     return this.findOne(created.id);
   }
 
-  /**
-   * เรียกจาก cron — ไม่มี request จึงได้ audit `user_id = null` ซึ่งถูกต้อง
-   * individualHooks ให้ audit บันทึกทีละฉบับพร้อมสถานะเดิม และไม่เขียนอะไรเลยเมื่อไม่มีฉบับไหนหมด
-   * (แบบคำสั่งเดียวจะได้แถว "ปรับสถานะ" ทุกชั่วโมงโดยไม่รู้ว่าฉบับไหน)
-   */
   async expireEndedContracts(today = todayAsDateOnly()): Promise<number> {
     const [affected] = await this.contractModel.update(
       { status: MaContractStatus.EXPIRED },
@@ -455,8 +443,6 @@ export class MaContractsService {
     }
   }
 
-  // ---- ของเสริม ------------------------------------------------------------
-
   async findAddons(contractId: number): Promise<MaAddon[]> {
     return this.addonModel.findAll({
       where: { contractId },
@@ -474,13 +460,6 @@ export class MaContractsService {
     return (await this.findAddons(contractId)).map(toMaAddonResponse);
   }
 
-  /**
-   * เพิ่มของเสริม
-   *
-   * `effectiveYear` กับ `effectiveMonth` ต้องมาคู่กันหรือไม่มาเลย เพราะ `resolveQuota()`
-   * เทียบทั้งสองค่าพร้อมกันกับรอบที่กำลังคำนวณ ถ้ามาแค่ค่าเดียว addon นั้นจะไม่เข้า
-   * เงื่อนไขไหนเลย กลายเป็นของที่ลูกค้าจ่ายแล้วแต่ระบบไม่เคยนับให้
-   */
   async createAddon(contractId: number, dto: CreateMaAddonDto): Promise<MaAddonResponseDto> {
     const actorId = getCurrentUserId();
     const contract = await this.findOrFail(contractId);
@@ -514,15 +493,6 @@ export class MaContractsService {
     return toMaAddonResponse(addon);
   }
 
-  // ---- โควตา ---------------------------------------------------------------
-
-  /**
-   * สรุปโควตาของสัญญา MA ทั้งหมดในโปรเจคหนึ่ง
-   *
-   * ประชุมทบทวนระบบ: การใช้โควตา/ครั้งที่เหลือให้ดูที่โปรเจค (ใหญ่ → ย่อย)
-   * หน้ารายการสัญญาเป็นภาพรวมอย่างเดียว ไม่ยัดรายการใช้ทุกโปรเจคเข้าไป
-   * รูปโควตาต่อฉบับใช้ `buildQuotaStatus()` ตัวเดียวกับ GET /ma-contracts/:id/quota
-   */
   async listQuotaForProject(projectId: number, onDate?: Date): Promise<ProjectMaQuotaSummaryDto> {
     await this.findProjectOrFail(projectId);
 
@@ -548,7 +518,6 @@ export class MaContractsService {
     return { projectId, items };
   }
 
-  /** สถานะโควตาของรอบที่วันที่กำหนดตกอยู่ — ใช้โชว์บนหน้าจอสัญญาและก่อนกดบันทึกการแก้ไข */
   async getQuota(contractId: number, onDate?: Date): Promise<QuotaStatusResponseDto> {
     const contract = await this.findOrFail(contractId);
 
@@ -574,10 +543,7 @@ export class MaContractsService {
     };
   }
 
-  // ---- helpers -------------------------------------------------------------
-
   private assertDateRange(startDate: string, endDate: string): void {
-    // เทียบสตริงได้ตรง ๆ เพราะ YYYY-MM-DD เรียงตามพจนานุกรมแล้วได้ลำดับเวลาที่ถูกต้อง
     if (endDate <= startDate) {
       throw new BadRequestException('วันสิ้นสุดสัญญาต้องอยู่หลังวันเริ่มสัญญา');
     }
@@ -605,7 +571,6 @@ export class MaContractsService {
     return project;
   }
 
-  /** แผนที่ปิดใช้งานแล้วเอามาทำสัญญาใหม่ไม่ได้ แต่สัญญาเดิมที่ใช้อยู่ไม่ถูกกระทบ */
   private async assertPlanIsUsable(planId: number): Promise<void> {
     const plan = await this.planModel.findByPk(planId);
 
@@ -621,7 +586,6 @@ export class MaContractsService {
   private async assertContractNoIsAvailable(contractNo: string, exceptId?: number): Promise<void> {
     const existing = await this.contractModel.findOne({
       where: exceptId === undefined ? { contractNo } : { contractNo, id: { [Op.ne]: exceptId } },
-      // unique index ไม่สนใจ deleted_at เลขที่สัญญาที่ลบไปแล้วจึงยังจองอยู่
       paranoid: false,
     });
 

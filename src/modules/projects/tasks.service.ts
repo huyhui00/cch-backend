@@ -77,13 +77,6 @@ const SORTABLE_FIELDS = new Set([
   'updatedAt',
 ]);
 
-/**
- * ประกาศเป็นฟังก์ชัน ไม่ใช่ const ที่ใช้ร่วมกัน
- *
- * Sequelize แก้ไข object ของ include ในที่ตอน normalize (ยัด association ที่ resolve ได้
- * กลับเข้าไปใน object เดิม) ถ้าเอา object ตัวเดียวกันไปใช้ทั้งระดับบนและซ้อนใต้ include อื่น
- * ค่าที่ถูกยัดไว้จากรอบแรกจะไปปนกับรอบที่สอง จนได้ SQL ที่ join ผิดคอลัมน์
- */
 function assigneeInclude() {
   return {
     model: User,
@@ -135,7 +128,6 @@ function reviewedByInclude() {
   };
 }
 
-/** โครงการที่งานสังกัด — ใช้กับรายการรวมทั้งบริษัทที่มีงานหลายโครงการปนกัน */
 function projectInclude() {
   return {
     model: Project,
@@ -144,7 +136,6 @@ function projectInclude() {
   };
 }
 
-/** งานย่อยหนึ่งชั้น พร้อมผู้รับผิดชอบของแต่ละตัว */
 function subTasksInclude() {
   return {
     model: Task,
@@ -156,17 +147,12 @@ function subTasksInclude() {
   };
 }
 
-/**
- * ลำดับของเมนูงานตรวจ — อ้างคอลัมน์ของตารางที่ join ผ่าน alias ของ Sequelize
- * (task, task->project) ได้เพราะทุก include เป็น belongsTo จึงไม่ถูกห่อเป็น subquery
- */
 function reviewSortOrder(sortBy: TaskReviewSortField, direction: SortOrder): Order {
   const tieBreaker: [string, string] = ['id', direction];
 
   switch (sortBy) {
     case 'projectCode':
       return [
-        // ไม่มีรหัสอยู่ท้ายเสมอไม่ว่าเรียงทางไหน
         [Sequelize.fn('ISNULL', Sequelize.col('task->project.code')), 'ASC'],
         [Sequelize.col('task->project.code'), direction],
         tieBreaker,
@@ -200,13 +186,6 @@ export class TasksService {
     private readonly storage: StorageService,
   ) {}
 
-  /**
-   * รายการงานของโครงการ — คืนโครงสร้างซ้อน 2 ระดับเป็นค่าเริ่มต้น
-   *
-   * ระดับที่ 1 คืองานที่ไม่มีงานแม่ (parentTaskId = null) แต่ละตัวพ่วงงานย่อยชั้นเดียวมาด้วย
-   * ชั้นที่ 3 ขึ้นไปมีอยู่จริงในฐานข้อมูลแต่ไม่ถูกคืนมาโดยอัตโนมัติ ให้เจาะดูด้วย
-   * parentTaskId แทน เพื่อไม่ให้ payload บวมโดยที่หน้าจอส่วนใหญ่ไม่ได้ใช้
-   */
   async findAllByProject(
     projectId: number,
     query: QueryTasksDto,
@@ -215,7 +194,6 @@ export class TasksService {
 
     const where: WhereOptions<Task> = { projectId };
 
-    // ไม่ได้เจาะดูงานย่อยชั้นลึก = แสดงเฉพาะงานระดับบนสุด
     if (query.parentTaskId !== undefined) {
       Object.assign(where, { parentTaskId: query.parentTaskId });
     } else {
@@ -278,7 +256,6 @@ export class TasksService {
 
     const status = dto.status ?? TaskStatus.TODO;
 
-    // DONE ยังสร้างได้ (บันทึกงานที่เสร็จแล้วย้อนหลัง) แต่ REVIEW ต้องมีรายการส่งตรวจคู่กันเสมอ
     if (status === TaskStatus.REVIEW) {
       throw new BadRequestException('สร้างงานเป็นสถานะส่งตรวจไม่ได้ กรุณาส่งตรวจหลังสร้างงาน');
     }
@@ -294,7 +271,6 @@ export class TasksService {
       assignedByUserId: dto.assignedUserId ? actorId : null,
       startDate: dto.startDate ?? null,
       dueDate: dto.dueDate ?? null,
-      // สร้างมาเป็น DONE เลยก็ได้ กรณีบันทึกงานที่ทำเสร็จไปแล้วย้อนหลัง
       completedAt: status === TaskStatus.DONE ? new Date() : null,
       estimatedHours: dto.estimatedHours ?? null,
       actualHours: dto.actualHours ?? null,
@@ -318,7 +294,6 @@ export class TasksService {
     return toTaskResponse(task);
   }
 
-  /** งานที่มอบหมายให้ผู้ใช้ปัจจุบัน — ไม่รับ user id จาก client */
   async findMyTasks(
     userId: number,
     query: PaginationDto,
@@ -338,12 +313,10 @@ export class TasksService {
     return toPaginatedResult(rows.map(toCompanyTaskResponse), count, query);
   }
 
-  /** badge เมนูงานโปรเจกต์ = total ของ GET /tasks/me (include ของรายการเป็น required: false ทั้งหมด) */
   countMyOpenTasks(userId: number): Promise<number> {
     return this.taskModel.count({ where: this.myOpenTasksWhere(userId) });
   }
 
-  /** งานของฉันที่ยังต้องลงมือ — REVIEW รอคนอื่นตรวจ, DONE จบแล้ว */
   myOpenTasksWhere(userId: number): WhereOptions<Task> {
     return {
       assignedUserId: userId,
@@ -372,7 +345,6 @@ export class TasksService {
       dto.dueDate !== undefined ? (dto.dueDate ?? null) : task.dueDate,
     );
 
-    // ฟอร์มแก้ไขส่งสถานะเดิมกลับมาได้ — ตรวจเฉพาะเมื่อสถานะเปลี่ยนจริง
     if (dto.status !== undefined && dto.status !== task.status) {
       this.assertManualStatusChange(task, dto.status, actorId);
     }
@@ -418,7 +390,6 @@ export class TasksService {
     return this.findOne(id);
   }
 
-  /** ผู้รับผิดชอบส่งงานให้ผู้มอบหมายตรวจ */
   async submitForReview(id: number): Promise<TaskResponseDto> {
     const actorId = getCurrentUserId();
     const task = await this.findOrFail(id);
@@ -448,7 +419,6 @@ export class TasksService {
     return this.findOne(id);
   }
 
-  /** ผู้มอบหมายหรือผู้มีสิทธิ์ตรวจอนุมัติ/ส่งงานกลับแก้ไข */
   async review(id: number, dto: ReviewTaskDto, file?: UploadedFileLike): Promise<TaskResponseDto> {
     const actorId = getCurrentUserId();
     const task = await this.findOrFail(id);
@@ -472,7 +442,6 @@ export class TasksService {
       throw new BadRequestException('ไม่พบรายงานที่รอตรวจ');
     }
 
-    // ตรวจไฟล์ก่อนเปลี่ยนสถานะงาน — ไฟล์ผิดประเภทต้องไม่ทำให้งานถูกตรวจไปครึ่งทาง
     const reviewFileName = file ? assertUploadable(file) : null;
     const storedReviewFile = file
       ? await this.storage.put(
@@ -577,7 +546,6 @@ export class TasksService {
     }
   }
 
-  /** บันทึกรายงานของผู้รับผิดชอบหนึ่งรอบ ก่อนกดส่งตรวจ */
   async createSubmission(
     id: number,
     dto: CreateTaskSubmissionDto,
@@ -641,7 +609,6 @@ export class TasksService {
     };
   }
 
-  /** ไฟล์ที่ผู้ตรวจแนบตอนส่งกลับแก้ */
   async openReviewFile(
     id: number,
   ): Promise<StoredFileStream & { fileName: string; mimeType: string | null }> {
@@ -659,19 +626,11 @@ export class TasksService {
     };
   }
 
-  /**
-   * เมนู "งานตรวจ" (ประชุมทบทวน 22–23 ก.ย. นาที 00:12–00:13) — หนึ่งแถวต่อรายงานหนึ่งรอบ
-   *
-   * PENDING = รายงานที่ยังรอตรวจของงานที่อยู่ในสถานะ REVIEW และฉันมีสิทธิ์ตรวจ
-   * (ขอบเขตเดียวกับ GET /tasks?status=REVIEW) · REVIEWED = รายงานที่ฉันเป็นผู้ตรวจ
-   * — ADMIN ก็เห็นเฉพาะที่ตัวเองตรวจ เพราะแท็บนี้คือ "ประวัติการตรวจของฉัน"
-   */
   async findReviews(
     query: QueryTaskReviewsDto,
     user: AuthenticatedUser,
   ): Promise<PaginatedResult<TaskReviewItemDto>> {
     const taskWhere: WhereOptions<Task> = {};
-    // ขอบเขตผู้ตรวจกับคำค้นต่างใช้ Op.or — รวมใต้ Op.and ไม่ให้ทับกัน
     const taskConditions: WhereOptions<Task>[] = [];
     let filterByTask = false;
 
@@ -682,7 +641,6 @@ export class TasksService {
 
     if (query.search) {
       const like = '%' + query.search + '%';
-      // รหัสโครงการมีหลายรูปแบบปนกัน (PRJ-2026-002 / PRJ69-0001) ค้นตามค่าที่เก็บจริง
       const projects = await this.projectModel.findAll({
         where: { [Op.or]: [{ code: { [Op.like]: like } }, { name: { [Op.like]: like } }] },
         attributes: ['id'],
@@ -719,7 +677,6 @@ export class TasksService {
       if (scope) {
         taskConditions.push(scope);
       }
-      // รอนานที่สุดขึ้นก่อน
       order = [
         ['createdAt', 'ASC'],
         ['id', 'ASC'],
@@ -734,8 +691,6 @@ export class TasksService {
       Object.assign(taskWhere, { [Op.and]: taskConditions });
     }
 
-    // หา id ของงานก่อนแล้วกรองด้วย IN — findAndCountAll ที่มี limit + include
-    // อาจถูกห่อเป็น subquery จนเงื่อนไขของตารางที่ join หายจาก WHERE
     if (filterByTask) {
       const tasks = await this.taskModel.findAll({ where: taskWhere, attributes: ['id'] });
       Object.assign(where, { taskId: { [Op.in]: tasks.map((task) => task.id) } });
@@ -762,16 +717,11 @@ export class TasksService {
     return toPaginatedResult(rows.map(toTaskReviewItem), count, query);
   }
 
-  /** badge เมนูงานตรวจ — เรียก findReviews() ตัวเดียวกัน ตัวเลขจึงเท่ากับ total ของแท็บรอตรวจ */
   async countPendingReviews(user: AuthenticatedUser): Promise<number> {
     const query = Object.assign(new QueryTaskReviewsDto(), { page: 1, limit: 1 });
     return (await this.findReviews(query, user)).total;
   }
 
-  /**
-   * badge เมนูงานโปรเจกต์ — งานของฉัน (DOING / WAITING) ที่รอบส่งล่าสุดถูกตีกลับ
-   * เป็นส่วนหนึ่งของ GET /tasks/me เสมอ เพราะรายการนั้นตัดแค่ REVIEW กับ DONE
-   */
   async countRejectedMyTasks(userId: number): Promise<number> {
     const tasks = await this.taskModel.findAll({
       where: {
@@ -805,10 +755,6 @@ export class TasksService {
       .length;
   }
 
-  /**
-   * ขอบเขตงานที่ USER ตรวจได้ — งานที่ตัวเองมอบหมาย หรืองานในโครงการที่ตัวเองเป็นผู้จัดการ
-   * คืน null = ตรวจได้ทุกงาน (SUPER_ADMIN / ADMIN) · ไม่มีสิทธิ์ task.review = 403
-   */
   private async reviewerScope(user: AuthenticatedUser): Promise<WhereOptions<Task> | null> {
     if (!(await this.accessControl.hasPermission(user, 'task.review'))) {
       throw new ForbiddenException('คุณไม่มีสิทธิ์ตรวจงาน');
@@ -831,13 +777,6 @@ export class TasksService {
     };
   }
 
-  /**
-   * ลากจัดลำดับ — รับตำแหน่งปลายทาง แล้วเรียงพี่น้องทั้งกลุ่มใหม่เป็น 0, 1, 2, ...
-   *
-   * เขียนค่าใหม่ให้ทุกตัวในกลุ่มแทนที่จะแก้เฉพาะตัวที่ย้าย เพราะถ้าแก้ตัวเดียว
-   * ค่าจะชนกันเรื่อย ๆ จนลำดับเพี้ยนหลังลากไปมาหลายรอบ การเขียนใหม่ทั้งกลุ่ม
-   * ทำให้ลำดับถูกต้องเสมอไม่ว่าสภาพก่อนหน้าจะเป็นอย่างไร
-   */
   async updateOrder(id: number, dto: UpdateTaskOrderDto): Promise<TaskResponseDto> {
     const actorId = getCurrentUserId();
     const task = await this.findOrFail(id);
@@ -867,10 +806,6 @@ export class TasksService {
     return this.findOne(id);
   }
 
-  /**
-   * งานที่เกินกำหนด — dueDate ผ่านไปแล้วและสถานะยังไม่ใช่ DONE
-   * เป็นตัวป้อนให้ notification rule แบบ TASK_OVERDUE ใน Phase 11
-   */
   async findOverdue(query: QueryOverdueTasksDto): Promise<PaginatedResult<TaskResponseDto>> {
     const where: WhereOptions<Task> = {
       dueDate: { [Op.lt]: todayAsDateOnly() },
@@ -888,7 +823,6 @@ export class TasksService {
     const { rows, count } = await this.taskModel.findAndCountAll({
       where,
       include: [assigneeInclude()],
-      // ค้างนานสุดขึ้นก่อน แล้วงานด่วนขึ้นก่อนในวันเดียวกัน
       order: [
         ['dueDate', 'ASC'],
         ['priority', 'DESC'],
@@ -904,12 +838,6 @@ export class TasksService {
     );
   }
 
-  /**
-   * M2-06 งานใกล้ครบกำหนด — ครบกำหนดตั้งแต่วันนี้ถึงอีก N วัน และยังไม่ DONE
-   *
-   * ขอบล่างคือ "วันนี้" ไม่ใช่เมื่อวาน เพื่อให้ต่อกับ findOverdue() พอดีไม่ซ้อนไม่เว้น —
-   * งานที่ครบกำหนดวันนี้ยังไม่เกินกำหนด (กติกา Phase 5) จึงต้องมาอยู่ในรายการนี้แทน
-   */
   async findDueSoon(query: QueryDueSoonTasksDto): Promise<PaginatedResult<TaskResponseDto>> {
     const today = todayAsDateOnly();
     const where: WhereOptions<Task> = {
@@ -928,7 +856,6 @@ export class TasksService {
     const { rows, count } = await this.taskModel.findAndCountAll({
       where,
       include: [assigneeInclude()],
-      // ใกล้ครบกำหนดที่สุดขึ้นก่อน แล้วงานด่วนขึ้นก่อนในวันเดียวกัน — ลำดับเดียวกับงานเกินกำหนด
       order: [
         ['dueDate', 'ASC'],
         ['priority', 'DESC'],
@@ -944,12 +871,6 @@ export class TasksService {
     );
   }
 
-  /**
-   * M2-07 รายการงานทั้งบริษัท (ข้ามโครงการ) — แบบแบน นับงานย่อยทุกชั้นเป็นหนึ่งงาน
-   *
-   * ต่างจาก findAllByProject() ที่คืนโครงสร้างซ้อน เพราะหน้าจอรวมใช้ดูว่า "อะไรติดอยู่ที่ไหน"
-   * ไม่ได้ใช้ดูโครงสร้างงาน ถ้าคืนแบบซ้อน งานย่อยที่ค้างจะถูกซ่อนอยู่ใต้งานแม่ที่อาจเสร็จไปแล้ว
-   */
   async findCompanyTasks(
     query: QueryCompanyTasksDto,
     user?: AuthenticatedUser,
@@ -971,7 +892,6 @@ export class TasksService {
     if (query.status === TaskStatus.REVIEW && user) {
       const scope = await this.reviewerScope(user);
       if (scope) {
-        // ห่อด้วย Op.and — ?search= ด้านล่างใช้คีย์ Op.or เหมือนกัน ถ้าวางตรง ๆ จะทับกัน
         Object.assign(where, { [Op.and]: [scope] });
       }
     }
@@ -993,7 +913,6 @@ export class TasksService {
           ['id', 'ASC'],
         ]
       : [
-          // งานที่ไม่มีวันครบกำหนดไปไว้ท้าย — MySQL เรียง NULL ขึ้นก่อนเสมอถ้าไม่บอก
           [Sequelize.fn('ISNULL', Sequelize.col('Task.due_date')), 'ASC'],
           ['dueDate', 'ASC'],
           ['priority', 'DESC'],
@@ -1011,13 +930,6 @@ export class TasksService {
     return toPaginatedResult(rows.map(toCompanyTaskResponse), count, query);
   }
 
-  /**
-   * M2-07 สรุปภาพรวมงานทั้งบริษัท — แยกตามสถานะ งานเกินกำหนดแยกตามสถานะ และภาระงานรายคน
-   *
-   * รวมใน JavaScript จากแถวที่ดึงมาเฉพาะคอลัมน์ที่ใช้ แทนการ GROUP BY หลายชั้นใน SQL
-   * เพราะปริมาณงานของบริษัทขนาดนี้ไม่มากพอให้คุ้ม และสูตร "เกินกำหนด" จะมาจาก
-   * isTaskOverdue() ตัวเดียวกับที่ใช้ทั้งระบบ ไม่มีโอกาสนับไม่ตรงกับ flag isOverdue ในรายการ
-   */
   async summarizeBoard(query: QueryTaskBoardDto): Promise<TaskBoardSummaryDto> {
     const where: WhereOptions<Task> = {};
 
@@ -1099,7 +1011,6 @@ export class TasksService {
     };
   }
 
-  /** ลบงาน — soft delete พร้อมงานย่อยทุกชั้นที่อยู่ใต้มัน */
   async remove(projectId: number, id: number): Promise<void> {
     const actorId = getCurrentUserId();
     const task = await this.findOrFailInProject(projectId, id);
@@ -1108,8 +1019,6 @@ export class TasksService {
       await this.removeWithDescendants(task, actorId, transaction);
     });
   }
-
-  // ---- helpers -------------------------------------------------------------
 
   private async findOrFail(id: number): Promise<Task> {
     const task = await this.taskModel.findByPk(id);
@@ -1121,7 +1030,6 @@ export class TasksService {
     return task;
   }
 
-  /** กันการแก้งานของโครงการอื่นผ่าน URL ของโครงการนี้ */
   private async findOrFailInProject(projectId: number, id: number): Promise<Task> {
     const task = await this.findOrFail(id);
 
@@ -1132,13 +1040,11 @@ export class TasksService {
     return task;
   }
 
-  /** ตั้งหรือล้าง completedAt ให้สอดคล้องกับสถานะเสมอ */
   private statusPatch(
     task: Task,
     status: TaskStatus,
   ): { status: TaskStatus; completedAt: Date | null } {
     if (status === TaskStatus.DONE) {
-      // เปลี่ยนเป็น DONE ซ้ำไม่ทับเวลาเดิม จะได้รู้ว่าเสร็จจริงเมื่อไร
       return { status, completedAt: task.completedAt ?? new Date() };
     }
 
@@ -1150,10 +1056,6 @@ export class TasksService {
     return count;
   }
 
-  /**
-   * งานแม่ต้องอยู่ในโครงการเดียวกัน และต้องไม่ทำให้เกิดวงกลม
-   * (งาน A เป็นลูกของ B ที่เป็นลูกของ A) ซึ่งจะทำให้การไล่โครงสร้างวนไม่รู้จบ
-   */
   private async assertParentIsUsable(
     parentTaskId: number,
     projectId: number,
@@ -1179,7 +1081,6 @@ export class TasksService {
       throw new BadRequestException('ตั้งให้งานเป็นงานแม่ของตัวเองไม่ได้');
     }
 
-    // ไล่ขึ้นไปตามสายงานแม่ ถ้าเจอตัวเองแปลว่ากำลังจะสร้างวงกลม
     let cursor: number | null = parent.parentTaskId;
 
     while (cursor !== null) {
@@ -1233,7 +1134,6 @@ export class TasksService {
     }
   }
 
-  /** เปลี่ยนสถานะด้วยมือ (PATCH /status, PUT งาน) — REVIEW/DONE ต้องผ่านเส้นส่งตรวจ/ตรวจงานเท่านั้น */
   private assertManualStatusChange(task: Task, status: TaskStatus, actorId: number | null): void {
     if (status === TaskStatus.REVIEW) {
       throw new BadRequestException('กรุณาส่งรายงานผ่านเส้นทางส่งตรวจ');

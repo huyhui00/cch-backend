@@ -3,10 +3,6 @@ import { ApiProperty } from '@nestjs/swagger';
 import { AccountType, UserStatus } from '../../../models';
 import { RoleSummaryDto } from '../../roles/dto/role.response';
 
-/**
- * ข้อมูลผู้ใช้ที่ล็อกอินอยู่ พร้อมสิทธิ์ที่ union แล้ว
- * frontend ใช้ก้อนนี้ตัดสินใจว่าจะแสดงเมนูไหนบ้าง
- */
 export class AuthProfileDto {
   @ApiProperty({ example: 1 })
   id: number;

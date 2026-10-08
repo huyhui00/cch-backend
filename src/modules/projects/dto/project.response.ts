@@ -12,7 +12,6 @@ import {
   TaskStatus,
 } from '../../../models';
 
-/** ผู้ใช้แบบย่อ — แสดงชื่อผู้จัดการหรือผู้รับผิดชอบงานโดยไม่ต้องยิงถามตาราง users ซ้ำ */
 export class UserSummaryDto {
   @ApiProperty({ example: 3 })
   id: number;
@@ -169,11 +168,6 @@ export class TaskProjectSummaryDto {
   status: ProjectStatus;
 }
 
-/**
- * งานในรายการรวมทั้งบริษัท (M2-07) — เหมือน TaskResponseDto ทุกฟิลด์ เพิ่มโครงการที่งานสังกัด
- * เพราะหน้าจอรวมแสดงงานหลายโครงการปนกัน ถ้าไม่มีชื่อโครงการจะแยกไม่ออกว่างานไหนของใคร
- * แยกเป็นคลาสใหม่ ไม่ได้เพิ่มฟิลด์ลงใน TaskResponseDto เพื่อไม่เปลี่ยนสัญญาของ endpoint เดิม
- */
 export class CompanyTaskResponseDto extends TaskResponseDto {
   @ApiProperty({ type: TaskProjectSummaryDto, nullable: true })
   project: TaskProjectSummaryDto | null;
@@ -211,7 +205,6 @@ export class TaskReviewTaskSummaryDto {
   dueDate: string | null;
 }
 
-/** แถวในเมนู "งานตรวจ" — หนึ่งแถวต่อรายงานการส่งตรวจหนึ่งรอบ */
 export class TaskReviewItemDto {
   @ApiProperty({ type: TaskSubmissionResponseDto })
   submission: TaskSubmissionResponseDto;
@@ -249,12 +242,6 @@ export class TaskAssigneeLoadDto {
   byStatus: Record<string, number>;
 }
 
-/**
- * M2-07 ภาพรวมงานทั้งบริษัท — ดูว่างานติดขัดอยู่ที่ขั้นตอนไหนและอยู่กับใคร
- *
- * นับงานทุกชั้นแบบแบน (งานย่อยนับเป็นหนึ่งงาน) กติกาเดียวกับความคืบหน้าโครงการ
- * สถานะที่ไม่มีงานเลยคืนมาเป็น 0 เสมอ หน้าจอจะวาดคอลัมน์ได้ครบทุกสถานะโดยไม่ต้องเติมเอง
- */
 export class TaskBoardSummaryDto {
   @ApiProperty({ description: 'จำนวนงานทั้งหมด', example: 40 })
   totalTasks: number;
@@ -285,7 +272,6 @@ export class TaskBoardSummaryDto {
   byAssignee: TaskAssigneeLoadDto[];
 }
 
-/** สรุปความคืบหน้าของโครงการ — นับ task ทุกชั้นแบบแบน ไม่แยกงานแม่งานย่อย */
 export class ProjectProgressDto {
   @ApiProperty({ description: 'จำนวนงานทั้งหมดในโครงการ (นับรวมงานย่อยทุกชั้น)', example: 12 })
   totalTasks: number;
@@ -310,13 +296,6 @@ export class ProjectProgressDto {
   byStatus: Record<string, number>;
 }
 
-/**
- * B-6 — สรุปตัวเลขบนหน้ารายละเอียดโปรเจค (ประชุมครั้งที่ 3)
- *
- * FE เคยประกอบจากข้อมูลในหน้าเองชั่วคราว เพราะยังไม่มีเส้นนี้
- * นับแถวที่ยังไม่ soft delete ตาม project_id — ไม่กรองสถานะย่อย
- * (CANCELLED / CLOSED ยังถูกนับ เพราะยังอยู่ในประวัติของโปรเจค)
- */
 export class ProjectReportDto {
   @ApiProperty({ example: 1 })
   projectId: number;
@@ -408,11 +387,6 @@ function toUserSummary(
   return user ? { id: user.id, username: user.username, fullName: user.fullName } : null;
 }
 
-/**
- * เกินกำหนด = มีวันครบกำหนด และวันนั้นผ่านไปแล้ว และงานยังไม่ DONE
- * เทียบเป็นวัน ไม่ใช่เวลา เพราะ due_date เก็บเป็น DATEONLY — งานที่ครบกำหนดวันนี้
- * ยังไม่ถือว่าเกิน จนกว่าจะข้ามไปวันถัดไป
- */
 export function isTaskOverdue(task: Pick<Task, 'dueDate' | 'status'>): boolean {
   if (!task.dueDate || task.status === TaskStatus.DONE) {
     return false;
@@ -421,8 +395,6 @@ export function isTaskOverdue(task: Pick<Task, 'dueDate' | 'status'>): boolean {
   return task.dueDate < todayAsDateOnly();
 }
 
-// นิยามจริงอยู่ที่ common/utils/date.util.ts — ปล่อยผ่านต่อไว้ตรงนี้เพื่อไม่ให้
-// ผู้เรียกเดิมต้องแก้ import และไม่ให้มีสูตรวันที่สองชุดในระบบ
 export { todayAsDateOnly };
 
 export function toTaskResponse(task: Task, includeSubTasks = true): TaskResponseDto {
@@ -446,7 +418,6 @@ export function toTaskResponse(task: Task, includeSubTasks = true): TaskResponse
     submissions: (task.submissions ?? []).map(toTaskSubmissionResponse),
     sortOrder: task.sortOrder,
     isOverdue: isTaskOverdue(task),
-    // ตัดที่ชั้นเดียว — งานย่อยของงานย่อยไม่ถูกคืนมาโดยอัตโนมัติ
     subTasks:
       includeSubTasks && task.subTasks
         ? task.subTasks.map((sub) => toTaskResponse(sub, false))

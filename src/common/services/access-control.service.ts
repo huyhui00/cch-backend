@@ -19,12 +19,6 @@ import type { AuthenticatedUser } from '../types/auth.types';
 export class AccessControlService {
   constructor(@InjectModel(User) private readonly userModel: typeof User) {}
 
-  /**
-   * role ทั้งหมดของผู้ใช้พร้อม permission ของแต่ละ role
-   *
-   * นับเฉพาะ role ที่ is_active = true — role ที่ถูกปิดไว้ยังผูกกับผู้ใช้อยู่
-   * แต่ไม่ให้สิทธิ์ ส่วน role ที่ถูก soft delete แล้ว paranoid ตัดออกให้เอง
-   */
   async findRolesWithPermissions(userId: number): Promise<Role[]> {
     const user = await this.userModel.findByPk(userId, {
       attributes: ['id'],
@@ -50,10 +44,6 @@ export class AccessControlService {
     return user?.roles ?? [];
   }
 
-  /**
-   * สิทธิ์ทั้งหมดของผู้ใช้ = union ของทุก role ที่ถืออยู่ (CLAUDE.md 4.2)
-   * เคสจริงคือพนักงานคนหนึ่งทำทั้ง Support และ Marketing จึงได้สิทธิ์ทั้งสองฝั่งรวมกัน
-   */
   async findPermissionCodes(userId: number): Promise<Set<string>> {
     const roles = await this.findRolesWithPermissions(userId);
     const codes = new Set<string>();

@@ -26,7 +26,6 @@ export class TicketHistoryUserDto {
   fullName: string;
 }
 
-/** เหตุการณ์หนึ่งในสายงานของใบ — อ่านจาก audit_logs ไม่ได้เก็บแยก */
 export class TicketHistoryEventDto {
   @ApiProperty({ example: 'REVIEW_REJECTED' })
   code: TicketHistoryCode;
@@ -75,7 +74,6 @@ export interface TicketAuditRow {
 
 export type UserNames = ReadonlyMap<number, string>;
 
-/** id ของผู้ใช้ทุกคนที่ต้องหาชื่อ (ผู้กระทำ + ผู้ถูกมอบหมาย) */
 export function collectHistoryUserIds(rows: TicketAuditRow[]): number[] {
   const ids = new Set<number>();
 
@@ -88,11 +86,6 @@ export function collectHistoryUserIds(rows: TicketAuditRow[]): number[] {
   return [...ids];
 }
 
-/**
- * แปลงประวัติของใบเป็นลำดับเหตุการณ์ของสายงาน C-1
- * เก็บเฉพาะการเปลี่ยนสถานะ / รับคิว / เปลี่ยนผู้แก้ — การแก้หัวข้อหรือรายละเอียดอยู่ในหน้าประวัติการใช้งาน
- * ตรวจไม่ผ่านกับเริ่มงานจบที่ IN_PROGRESS เหมือนกัน แยกด้วยสถานะก่อนหน้า (RESOLVED = ตีกลับ)
- */
 export function buildTicketHistory(
   rows: TicketAuditRow[],
   names: UserNames,
@@ -203,7 +196,6 @@ const NOTE_LABELS: Partial<Record<TicketHistoryCode, string>> = {
   RETURNED_TO_SUPPORT: 'ตรวจผ่าน',
 };
 
-/** ข้อความที่ต่อท้ายรายละเอียดใบในการกระทำครั้งนั้น (รูปแบบของ appendNote: "[label] ข้อความ") */
 function noteFor(code: TicketHistoryCode, description: unknown): string | null {
   const label = NOTE_LABELS[code];
 

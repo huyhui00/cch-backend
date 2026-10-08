@@ -1,18 +1,13 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import type { ValidationError } from '@nestjs/common';
 
-/**
- * ValidationPipe ตัวเดียวที่ใช้ทั้งระบบ (ผูกเป็น global ใน main.ts)
- * แยกออกมาเป็น factory เพื่อให้ test ใช้ค่าเดียวกับ runtime จริง
- */
 export function createValidationPipe(): ValidationPipe {
   return new ValidationPipe({
-    whitelist: true, // ตัด field ที่ไม่ได้ประกาศใน DTO ทิ้ง
+    whitelist: true,
     forbidNonWhitelisted: true, // ส่ง field แปลกปลอมมา = 400
-    transform: true, // แปลง payload เป็น instance ของ DTO
+    transform: true,
     transformOptions: { enableImplicitConversion: true },
     stopAtFirstError: true,
-    // ข้อความที่ส่งกลับผู้ใช้ต้องเป็นภาษาไทยเสมอ (CLAUDE.md 6.5)
     exceptionFactory: (errors: ValidationError[]) =>
       new BadRequestException(firstThaiMessage(errors)),
   });

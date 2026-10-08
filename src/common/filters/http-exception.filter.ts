@@ -19,11 +19,6 @@ import { URL_COLUMN_WIDTH } from '../interceptors/request-logging.interceptor';
 import type { ApiResponse } from '../interceptors/transform.interceptor';
 import type { AuthenticatedUser } from '../types/auth.types';
 
-/**
- * ข้อความ default ภาษาไทยต่อ HTTP status (CLAUDE.md 6.5)
- * ใช้เมื่อ error ไม่ได้ระบุข้อความมาเอง
- */
-/** สถานะตั้งแต่ค่านี้ขึ้นไปถือเป็นความผิดพลาดฝั่งเรา ต้อง log stack เก็บไว้ */
 const SERVER_ERROR_THRESHOLD = 500;
 
 const DEFAULT_MESSAGES: Record<number, string> = {
@@ -41,10 +36,6 @@ const DEFAULT_MESSAGES: Record<number, string> = {
   [HttpStatus.SERVICE_UNAVAILABLE]: 'ระบบไม่พร้อมให้บริการชั่วคราว',
 };
 
-/**
- * จับ error ทุกชนิด (ไม่ใช่แค่ HttpException) แล้วส่งกลับในรูปแบบเดียวกับ
- * TransformInterceptor เสมอ — { success: false, data: null, message: '...' }
- */
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -56,15 +47,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const { status, message } = this.resolve(exception);
 
-    // ให้บรรทัด log ของ request ที่ล้มเหลวมีข้อมูลชุดเดียวกับที่สำเร็จ
-    // ตัวนี้ต้องเป็นคน log เองเพราะ guard ทำงานก่อน interceptor — เมื่อ guard
-    // ปฏิเสธ RequestLoggingInterceptor จะไม่ถูกเรียกเลย
     const elapsed = String(getElapsedMs() ?? 0).padStart(5);
     const actor = request.user ? request.user.username : 'ไม่ระบุตัวตน';
     const url = request.originalUrl.padEnd(URL_COLUMN_WIDTH);
     const line = `${request.method.padEnd(6)} ${url} ${status} ${elapsed}ms  ${actor}`;
 
-    // 5xx = ปัญหาของเรา ต้องเก็บ stack ไว้สืบสวน แต่ไม่ส่งออกไปให้ client
     if (status >= SERVER_ERROR_THRESHOLD) {
       this.logger.error(
         `${line} — ${exception instanceof Error ? exception.message : String(exception)}`,
@@ -99,12 +86,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
     };
   }
 
-  /**
-   * ดึงข้อความจาก HttpException
-   * - ValidationPipe ส่ง message เป็น array ของข้อความ -> เอาข้อความแรก
-   * - throw ด้วย string ธรรมดา -> ใช้ string นั้น
-   * - ไม่มีข้อความที่อ่านรู้เรื่อง -> ใช้ default ภาษาไทยตาม status
-   */
   private extractHttpMessage(exception: HttpException, status: number): string {
     const fallback = DEFAULT_MESSAGES[status] ?? 'เกิดข้อผิดพลาดในการทำงาน';
     const payload = exception.getResponse();
@@ -129,7 +110,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
     return fallback;
   }
 
-  /** ข้อความอังกฤษที่รู้จักแปลเป็นไทย ข้อความทั่วไปของ Nest ใช้ fallback ตาม status */
   private translate(message: string, fallback: string): string {
     const known = KNOWN_ENGLISH_MESSAGES[message.toLowerCase()];
 
@@ -163,7 +143,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
       };
     }
 
-    // connection error, timeout ฯลฯ — ไม่เปิดเผยรายละเอียด DB ให้ client
     this.logger.error(`Sequelize error: ${exception.name} — ${exception.message}`);
     return {
       status: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -171,10 +150,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
     };
   }
 
-  /**
-   * Nest ใส่ข้อความอังกฤษมาตรฐานมาให้เอง เช่น "Not Found", "Unauthorized"
-   * เคสนี้เราแทนด้วยข้อความไทย ไม่ใช่ส่งอังกฤษออกไป
-   */
   private isGenericEnglish(message: string): boolean {
     return /^[\x20-\x7E]+$/.test(message) && !/[ก-๙]/.test(message)
       ? GENERIC_NEST_MESSAGES.has(message.toLowerCase())
@@ -182,10 +157,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
   }
 }
 
-/**
- * ข้อความอังกฤษเฉพาะเจาะจงที่ไลบรารีโยนมา แปลเป็นไทยที่บอกผู้ใช้ได้ว่าต้องแก้อะไร
- * ตอนนี้มีแต่ของ multer (อัปโหลดไฟล์ — Phase 9) ที่ FileInterceptor ห่อเป็น HttpException ให้
- */
 const KNOWN_ENGLISH_MESSAGES: Record<string, string> = {
   'file too large': 'ไฟล์มีขนาดใหญ่เกินกำหนด',
   'too many files': 'แนบไฟล์ได้ครั้งละ 1 ไฟล์',

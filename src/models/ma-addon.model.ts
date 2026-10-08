@@ -8,13 +8,6 @@ export enum MaAddonType {
   OTHER = 'OTHER',
 }
 
-/**
- * ของเสริมที่ซื้อเพิ่มระหว่างอายุสัญญา
- * โควตาจากที่นี่ถูกนำไปบวกกับ ma_plans.bug_quota_per_month ตอนคำนวณ (CLAUDE.md 9.2)
- *
- * effective_year / effective_month = addon มีผลกับรอบเดือนไหน
- * ถ้าเว้นว่าง = มีผลตลอดอายุสัญญา
- */
 export interface MaAddonCreationAttributes {
   contractId: number;
   addonType?: MaAddonType;

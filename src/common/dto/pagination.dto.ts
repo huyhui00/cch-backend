@@ -11,10 +11,6 @@ export const DEFAULT_PAGE = 1;
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 100;
 
-/**
- * Query string มาตรฐานของทุก endpoint ที่เป็นรายการ
- * ใช้คู่กับ response format แบบ paginate ใน CLAUDE.md 6.1
- */
 export class PaginationDto {
   @ApiPropertyOptional({
     description: 'หน้าที่ต้องการ เริ่มที่ 1',
@@ -74,13 +70,11 @@ export class PaginationDto {
   @IsEnum(SortOrder, { message: 'sortOrder ต้องเป็น ASC หรือ DESC เท่านั้น' })
   sortOrder: SortOrder = SortOrder.DESC;
 
-  /** offset สำหรับส่งเข้า Sequelize */
   get offset(): number {
     return (this.page - 1) * this.limit;
   }
 }
 
-/** รูปแบบ data ของ response แบบแบ่งหน้า (CLAUDE.md 6.1) */
 export interface PaginatedResult<T> {
   items: T[];
   total: number;
@@ -88,7 +82,6 @@ export interface PaginatedResult<T> {
   limit: number;
 }
 
-/** helper ประกอบผลลัพธ์จาก Sequelize `findAndCountAll` */
 export function toPaginatedResult<T>(
   rows: T[],
   count: number,

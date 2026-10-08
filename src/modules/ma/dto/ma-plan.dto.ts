@@ -39,18 +39,10 @@ const toBoolean = ({ value }: { value: unknown }) => {
   return value;
 };
 
-/** โควตาที่สูงกว่านี้แทบจะเป็นการพิมพ์ผิดเสมอ — บริษัทขนาดนี้ไม่รับงานเดือนละพันใบ */
 const MAX_QUOTA = 999;
 
-/** เวลาตอบกลับที่นานกว่า 30 วันไม่มีความหมายในเชิงสัญญาบริการ */
 const MAX_RESPONSE_HOUR = 24 * 30;
 
-/**
- * รายการบริการย่อยในแผน (`ma_plan_items`)
- *
- * ส่งมาพร้อมแผนได้เลยตอนสร้าง เพราะแผนที่ไม่มีรายการย่อยบอกลูกค้าไม่ได้ว่าได้อะไรบ้าง
- * แยกเป็นตารางไม่ใช่ JSON เพื่อให้ค้นและแก้ทีละรายการได้ตามที่ออกแบบไว้ในกลุ่ม D
- */
 export class MaPlanItemDto {
   @ApiProperty({ description: 'ชื่อบริการย่อย', maxLength: 255, example: 'ตรวจสุขภาพระบบรายเดือน' })
   @IsString({ message: 'ชื่อรายการต้องเป็นข้อความ' })
@@ -94,7 +86,6 @@ export class CreateMaPlanDto {
     if (typeof value !== 'string') {
       return value;
     }
-    // ช่องว่างล้วน = ไม่ใส่รหัส ไม่ใช่รหัสที่เป็นสตริงว่าง (ซึ่งจะชน unique กันเอง)
     const normalized = value.trim().toUpperCase();
     return normalized.length > 0 ? normalized : null;
   })
@@ -183,13 +174,6 @@ export class CreateMaPlanDto {
   items?: MaPlanItemDto[];
 }
 
-/**
- * แก้ไขแผน
- *
- * ส่ง `items` มาเมื่อไหร่ = แทนที่รายการย่อยทั้งชุด ไม่ใช่การเพิ่มต่อท้าย
- * เพราะหน้าจอแก้แผนเป็นฟอร์มเดียวที่ผู้ใช้ลาก เพิ่ม ลบ แล้วกดบันทึกครั้งเดียว
- * ไม่ส่งมา = ไม่แตะรายการย่อยเดิม
- */
 export class UpdateMaPlanDto extends CreateMaPlanDto {
   @ApiPropertyOptional({
     description: 'แก้รหัสแผนได้ถ้ายังไม่ซ้ำกับแผนอื่น — ส่ง null เพื่อล้างรหัสออก',

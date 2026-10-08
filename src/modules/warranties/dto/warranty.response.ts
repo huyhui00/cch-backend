@@ -13,12 +13,6 @@ import {
   toAttachmentSummary,
 } from '../../attachments/dto/attachment.response';
 
-/**
- * ใบส่งมอบต้นทางแบบย่อ
- *
- * ประกาศไว้ที่นี่เอง ไม่ได้ import จาก dto ของ deliveries เพื่อไม่ให้สอง module
- * import วนกัน — ฝั่ง deliveries เป็นคนดึงของจากไฟล์นี้ไปใช้ทางเดียว
- */
 export class DeliverySummaryDto {
   @ApiProperty({ example: 5 })
   id: number;
@@ -76,7 +70,6 @@ export class WarrantyProjectSummaryDto {
   customerName: string | null;
 }
 
-/** รูปย่อของประกัน ใช้ฝังในใบส่งมอบ รายละเอียดเต็มอยู่ที่ /api/warranties */
 export class WarrantySummaryDto {
   @ApiProperty({ example: 4 })
   id: number;
@@ -289,8 +282,6 @@ export function toWarrantyResponse(
     updatedAt: warranty.updatedAt,
   };
 }
-
-// ---- ข้อมูลสำหรับพิมพ์ใบรับประกัน ------------------------------------------------
 
 export class WarrantyPrintWarrantyDto {
   @ApiProperty({ example: 4 })

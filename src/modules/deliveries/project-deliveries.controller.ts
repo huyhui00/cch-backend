@@ -7,11 +7,6 @@ import { DeliveriesService } from './deliveries.service';
 import { CreateDeliveryDto, QueryDeliveriesDto } from './dto/delivery.dto';
 import { DeliveryResponseDto } from './dto/delivery.response';
 
-/**
- * การส่งมอบอยู่ใต้เส้นทางของโครงการ เพราะใบส่งมอบไม่มีความหมายถ้าไม่มีโครงการ
- * ส่วนการแก้ไขและการตรวจรับอยู่ที่ /api/deliveries/:id เพราะทำจากหน้าจอรายละเอียด
- * ที่ผู้ใช้เข้าถึงได้โดยไม่ต้องรู้ว่าใบนั้นอยู่โครงการไหน
- */
 @ApiTags('deliveries')
 @ApiBearerAuth('access-token')
 @Controller('projects/:projectId/deliveries')

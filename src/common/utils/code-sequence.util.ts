@@ -1,11 +1,6 @@
 import { QueryTypes, type Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
-/**
- * รหัสที่ระบบออกให้ — รูปแบบสั้น `TK69-0006`
- *   คำนำหน้า + ปี พ.ศ. สองหลัก + เลขรัน 4 หลัก
- * ปีใช้ พ.ศ. เพราะเป็นรหัสที่พนักงานไทยอ่านบนหน้าจอ ไม่ใช่รหัสในฐานข้อมูล
- */
 export const CODE_PREFIX = {
   CUSTOMER: 'CUS',
   PROJECT: 'PRJ',
@@ -17,7 +12,6 @@ export const CODE_PREFIX = {
 
 export type GeneratedCodeKind = keyof typeof CODE_PREFIX;
 
-/** Allocates the next number for a scope while holding the scope row lock. */
 export async function nextSequenceNumber(
   sequelize: Sequelize,
   sequenceKey: string,

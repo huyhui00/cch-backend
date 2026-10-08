@@ -125,7 +125,6 @@ export class UsersController {
     return { data: await this.authService.me(userId), message: 'ลบรูปโปรไฟล์เรียบร้อย' };
   }
 
-  /** ไม่ติด @RequirePermission — เหตุผลเดียวกับ /users/assignable */
   @Get(':id/avatar')
   @ApiOperation({
     summary: 'รูปโปรไฟล์ของพนักงาน',
@@ -144,10 +143,6 @@ export class UsersController {
     });
   }
 
-  /**
-   * ประกาศไว้ก่อน :id ทุกเส้น เพื่อไม่ให้คำว่า "me" ถูกจับเป็นค่าของ :id
-   * ในกรณีที่มีการเพิ่ม endpoint อื่นใต้ /users/:id ภายหลัง
-   */
   @Patch('me/password')
   @ApiOperation({
     summary: 'เปลี่ยนรหัสผ่านของตนเอง',

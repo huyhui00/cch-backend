@@ -13,10 +13,6 @@ export enum TaskStatus {
   DONE = 'DONE',
 }
 
-/**
- * ระดับความสำคัญของงานย่อย (ประชุมครั้งที่ 2 นาที 07:31)
- * ใช้ชุดค่าเดียวกับ ProjectPriority เพื่อให้หน้าจอกรองข้ามระดับได้
- */
 export enum TaskPriority {
   LOW = 'LOW',
   NORMAL = 'NORMAL',
@@ -24,7 +20,6 @@ export enum TaskPriority {
   URGENT = 'URGENT',
 }
 
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface TaskCreationAttributes {
   projectId: number;
   parentTaskId?: number | null;
@@ -93,7 +88,6 @@ export class Task extends AuditedModel<Task, TaskCreationAttributes> {
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'assigned_by_user_id' })
   assignedByUserId: number | null;
 
-  /** ใช้กับ notification rule แบบ TASK_OVERDUE */
   @Column({ type: DataType.DATEONLY, allowNull: true, field: 'due_date' })
   dueDate: string | null;
 

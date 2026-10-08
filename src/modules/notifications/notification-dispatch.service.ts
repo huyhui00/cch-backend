@@ -52,13 +52,11 @@ const OPEN_TICKET_STATUSES = [
 
 const MA_FOOTER = 'โทรยืนยันกับลูกค้าว่าจะต่อสัญญาหรือไม่';
 
-/** รายการหนึ่งที่เข้าเกณฑ์ ณ ตอนนี้ — จะถูกแจ้งถ้ายังไม่เคยแจ้ง `key` นี้ให้ผู้รับคนนั้น */
 interface DueCandidate {
   key: string;
   refType: string;
   refId: number;
   kind: DueKind;
-  /** วันกำหนด ใช้เรียง (ใกล้ครบ = ใกล้สุดก่อน · เลยกำหนด = เพิ่งเลยก่อน) */
   sortDate: string;
   item: string;
 }
@@ -87,13 +85,6 @@ function kindOf(date: string, today: string): DueKind {
   return date < today ? 'OVERDUE' : 'UPCOMING';
 }
 
-/**
- * แจ้งตามกำหนดของแต่ละรายการ (7 ต.ค.) — แจ้งเมื่อรายการเข้าช่วง "ใกล้ครบ" ครั้งหนึ่ง
- * และเมื่อ "เลยกำหนด" อีกครั้งหนึ่ง ไม่แจ้งซ้ำ (`notifications.dedupe_key`)
- *
- * รอบหนึ่งรวมรายการใหม่ของผู้รับคนเดียวกันเป็นข้อความ LINE เดียว · กระดิ่งได้หนึ่งแถวต่อรายการ (กดไปหน้ารายการได้)
- * ทุกผู้รับเห็นรายการชุดเดียวกันทั้งบริษัท ไม่กรองตามผู้รับผิดชอบหรือสิทธิ์ (ตัดสิน 7 ต.ค. รอถามพี่เลี้ยง)
- */
 @Injectable()
 export class NotificationDispatchService {
   private readonly logger = new Logger(NotificationDispatchService.name);
@@ -223,7 +214,6 @@ export class NotificationDispatchService {
     }
   }
 
-  /** รายการใหม่ของผู้รับคนหนึ่ง → หัวข้อในข้อความ LINE (หนึ่งกฎ = หนึ่งหัวข้อ) */
   private toSections(fresh: PendingEntry[]): DigestSection[] {
     const byRule = new Map<number, { rule: NotificationRule; candidates: DueCandidate[] }>();
     for (const { rule, candidate } of fresh) {
@@ -338,10 +328,6 @@ export class NotificationDispatchService {
     return [...byId.values()];
   }
 
-  /**
-   * รายการที่เข้าเกณฑ์ตอนนี้ของหัวข้อหนึ่ง — ใกล้ครบ (วันนี้ถึงอีก N วัน) และเลยกำหนดไม่เกิน
-   * `OVERDUE_LOOKBACK_DAYS` วัน · ประกัน/สัญญา MA มีแต่ใกล้หมด (หมดแล้วคือจบ)
-   */
   private async findCandidates(
     eventType: NotificationEventType,
     today: string,

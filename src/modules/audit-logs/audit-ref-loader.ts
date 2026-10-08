@@ -39,10 +39,6 @@ const text = (value: unknown): string | null =>
 const joined = (...values: unknown[]): string | null =>
   values.map(text).filter(Boolean).join(' ') || null;
 
-/**
- * วิธีหาป้ายชื่อของแต่ละตาราง — ใช้รหัสที่หน้าจอแสดงก่อน (TK69-0009) เพราะคนค้นด้วยรหัส (B-10)
- * ตารางที่ไม่อยู่ในนี้แสดงเป็น #id
- */
 const REF_SOURCES: Readonly<Record<string, RefSource>> = {
   users: { model: User, attributes: ['id', 'fullName'], label: (r) => text(r.fullName) },
   roles: { model: Role, attributes: ['id', 'name'], label: (r) => text(r.name) },
@@ -116,10 +112,6 @@ const REF_SOURCES: Readonly<Record<string, RefSource>> = {
   },
 };
 
-/**
- * รวบ id ที่ต้องใช้ทั้งหน้าแล้วถามทีละตาราง ตารางละครั้ง — ไม่ถามรายแถว
- * ค้นแบบ paranoid: false เพราะประวัติอ้างถึงแถวที่ถูกลบไปแล้วได้เสมอ
- */
 export async function loadAuditRefLabels(logs: AuditLog[]): Promise<AuditRefLabels> {
   const wanted = new Map<string, Set<number>>();
 

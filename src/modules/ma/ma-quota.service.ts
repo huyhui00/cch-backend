@@ -24,9 +24,7 @@ import { COVERING_CONTRACT_STATUSES } from './contract-status.util';
  * สลับด้วย `MA_QUOTA_RESET_MODE` ใน .env
  */
 export enum QuotaResetMode {
-  /** โควตารีเซ็ตทุกวันที่ 1 ของเดือนปฏิทิน */
   CALENDAR_MONTH = 'CALENDAR_MONTH',
-  /** โควตารีเซ็ตทุกวันครบรอบเดือนนับจากวันเริ่มสัญญา */
   CONTRACT_ANNIVERSARY = 'CONTRACT_ANNIVERSARY',
 }
 
@@ -41,23 +39,16 @@ export enum QuotaResetMode {
 export interface QuotaPeriod {
   periodYear: number;
   periodMonth: number;
-  /** วันแรกของรอบ (YYYY-MM-DD) */
   periodStart: string;
-  /** วันสุดท้ายของรอบ นับรวมอยู่ในรอบ (YYYY-MM-DD) */
   periodEnd: string;
 }
 
-/** ส่วนของรอบที่ถูกเก็บลง `ma_usages` — พอสำหรับการนับและคิดโควตา */
 export type QuotaPeriodKey = Pick<QuotaPeriod, 'periodYear' | 'periodMonth'>;
 
-/** ผลการตรวจโควตาของรอบหนึ่ง */
 export interface QuotaStatus extends QuotaPeriod {
   contractId: number;
-  /** โควตารวม = แผน + addon ที่มีผลกับรอบนี้ */
   quota: number;
-  /** ใช้ไปแล้วกี่ครั้งในรอบนี้ (ยังไม่รวมครั้งที่กำลังจะบันทึก) */
   used: number;
-  /** ครั้งถัดไปจะเกินโควตาหรือไม่ */
   willExceed: boolean;
 }
 
@@ -183,8 +174,6 @@ export class MaQuotaService {
     const start = contract.startDate;
     const [startYear, startMonth] = start.split('-').map(Number);
 
-    // เดาจากจำนวนเดือนที่ต่างกันก่อน แล้วค่อยขยับให้พอดีขอบ — การเดาพลาดได้
-    // ไม่เกินหนึ่งรอบเสมอ ลูปจึงวนอย่างมากครั้งเดียวในทางปฏิบัติ
     let index = (usedAt.getFullYear() - startYear) * 12 + (usedAt.getMonth() + 1 - startMonth);
 
     while (index > 0 && addMonths(start, index) > usedDate) {
@@ -194,8 +183,6 @@ export class MaQuotaService {
       index += 1;
     }
 
-    // ก่อนวันเริ่มสัญญา — ไม่ควรเกิดเพราะหักโควตาได้เฉพาะสัญญาที่คุ้มครองอยู่
-    // แต่ถ้าเกิดจริงให้ตกลงรอบแรก ดีกว่าคืนรอบติดลบที่เก็บลงคอลัมน์ไม่ได้
     if (index < 0) {
       index = 0;
     }
@@ -211,11 +198,6 @@ export class MaQuotaService {
     };
   }
 
-  /**
-   * โควตาที่ใช้ได้ในรอบหนึ่ง = โควตาของแผน + addon ที่มีผลกับรอบนั้น
-   *
-   * addon ที่ไม่ระบุ effective_year/month ถือว่ามีผลตลอดอายุสัญญา (ตามหมายเหตุใน model)
-   */
   async resolveQuota(
     contract: MaContract,
     period: QuotaPeriodKey,
@@ -237,7 +219,6 @@ export class MaQuotaService {
     return addons.reduce((sum, addon) => sum + addon.extraQuota, planQuota);
   }
 
-  /** จำนวนครั้งที่หักโควตาไปแล้วในรอบนั้น */
   async countUsed(
     contractId: number,
     period: QuotaPeriodKey,
@@ -253,7 +234,6 @@ export class MaQuotaService {
     });
   }
 
-  /** สรุปสถานะโควตาของรอบที่วันที่กำหนดตกอยู่ — ใช้โชว์บนหน้าจอก่อนกดบันทึก */
   async getQuotaStatus(
     contract: MaContract,
     usedAt: Date,
@@ -305,7 +285,6 @@ export class MaQuotaService {
     });
 
     if (existing) {
-      // แก้รอบที่ 2 ขึ้นไปของใบเดิม — ไม่หักซ้ำ
       return { usage: null, status: null };
     }
 
@@ -331,8 +310,6 @@ export class MaQuotaService {
         periodMonth: status.periodMonth,
         usedAt: options.usedAt,
         isOverQuota: status.willExceed,
-        // ยังไม่มีที่เก็บ "อัตราค่าบริการส่วนเกิน" ในระบบ ระบบจึงบอกได้แค่ว่าเกินโควตา
-        // ส่วนจำนวนเงินให้คนกรอกมาเอง ถ้าไม่กรอกก็เป็น 0 ไม่ใช่ไปเดาแทน
         extraCharge: options.extraCharge ?? '0',
         note: options.note ?? null,
         createdBy: actorId,
@@ -344,12 +321,6 @@ export class MaQuotaService {
     return { usage, status };
   }
 
-  /**
-   * สัญญาที่ ticket ใบนี้ควรไปหักโควตา
-   *
-   * ยึด `ticket.ma_contract_id` ที่ผูกไว้ตอนเปิดใบเป็นหลัก เพราะเป็นสิ่งที่คนตัดสินใจไว้แล้ว
-   * ถ้าไม่ได้ผูกไว้ค่อยไปหาสัญญาที่ครอบคลุมของโครงการนั้นให้
-   */
   private async resolveContractForTicket(
     ticket: Ticket,
     usedAt: Date,

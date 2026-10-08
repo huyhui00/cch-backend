@@ -44,7 +44,6 @@ const SORTABLE_FIELDS = new Set([
   'updatedAt',
 ]);
 
-/** include ที่ใช้ซ้ำทุกครั้งที่ต้องคืน role ของผู้ใช้ออกไปด้วย */
 const ROLES_INCLUDE = {
   model: Role,
   attributes: ['id', 'name', 'description'],
@@ -147,9 +146,6 @@ export class UsersService {
       Object.assign(where, { accountType: query.accountType });
     }
 
-    // กรองด้วย role แยกเป็นคนละ query แทนการ join แบบ required
-    // เพราะถ้า join ผลลัพธ์ roles ของแต่ละคนจะเหลือแค่ role ที่ใช้กรอง
-    // ทั้งที่หน้าจอต้องเห็นทุก role ที่คนนั้นถืออยู่ (CLAUDE.md 4.2)
     if (query.roleId !== undefined) {
       const links = await this.userRoleModel.findAll({
         attributes: ['userId'],
@@ -244,10 +240,6 @@ export class UsersService {
     return this.findDetailOrFail(id);
   }
 
-  /**
-   * ผูกบทบาททั้งชุด — 1 user ถือได้หลาย role พร้อมกัน สิทธิ์เป็น union (CLAUDE.md 4.2)
-   * ล้างของเดิมแล้วเขียนใหม่ในทรานแซกชันเดียว จะได้ไม่มีจังหวะที่ผู้ใช้ไม่มีบทบาทเลย
-   */
   async assignRoles(
     id: number,
     dto: AssignRolesDto,
@@ -290,8 +282,6 @@ export class UsersService {
 
     await user.update({
       status: dto.status,
-      // ตัด session ที่ค้างอยู่ทันที ไม่ต้องรอ refresh token หมดอายุเอง
-      // ส่วน access token ที่ยังไม่หมดอายุถูกกันไว้แล้วที่ JwtStrategy ซึ่งเช็คสถานะทุกครั้ง
       ...(dto.status === UserStatus.ACTIVE ? {} : { refreshTokenHash: null }),
       updatedBy: actor.id,
     });
@@ -299,7 +289,6 @@ export class UsersService {
     return this.findDetailOrFail(id);
   }
 
-  /** เปลี่ยนรหัสผ่านของตัวเองเท่านั้น ไม่ใช่ของคนอื่น */
   async changeOwnPassword(userId: number, dto: ChangePasswordDto): Promise<void> {
     const user = await this.userModel.findByPk(userId);
 
@@ -319,13 +308,11 @@ export class UsersService {
 
     await user.update({
       passwordHash: await hashPassword(dto.newPassword, this.saltRounds),
-      // เปลี่ยนรหัสผ่านแล้วต้องล็อกอินใหม่ทุกอุปกรณ์ เผื่อกรณีที่เปลี่ยนเพราะสงสัยว่ารหัสหลุด
       refreshTokenHash: null,
       updatedBy: user.id,
     });
   }
 
-  /** แก้ได้แค่ชื่อเล่น — ไม่ต้องมี user.update เพราะเป็นของตัวเอง */
   async updateOwnProfile(userId: number, dto: UpdateOwnProfileDto): Promise<void> {
     const user = await this.findSelfOrFail(userId);
 
@@ -334,7 +321,6 @@ export class UsersService {
     }
   }
 
-  /** อัปโหลดรูปโปรไฟล์ใหม่แทนรูปเดิม — รูปเดิมถูกลบทิ้ง (ต่างจากเอกสารที่เก็บไฟล์ไว้เป็นหลักฐาน) */
   async setOwnAvatar(userId: number, file: UploadedFileLike | undefined): Promise<void> {
     const extension = assertAvatarFile(file);
     const upload = file as UploadedFileLike;
@@ -363,7 +349,6 @@ export class UsersService {
     await this.deleteAvatarFile(user.id, previous);
   }
 
-  /** รูปโปรไฟล์ของพนักงานคนใดก็ได้ — เห็นชื่อกันอยู่แล้วทั้งระบบ (เหตุผลเดียวกับ /users/assignable) */
   async openAvatar(userId: number): Promise<StoredFileStream & { contentType: string }> {
     const user = await this.userModel.findByPk(userId, { paranoid: false });
 
@@ -375,7 +360,6 @@ export class UsersService {
     return { ...file, contentType: avatarContentType(user.avatarUrl) };
   }
 
-  /** ลบไม่สำเร็จไม่ทำให้คำขอพัง — รูปใหม่บันทึกไปแล้ว ไฟล์เก่าค้างในที่เก็บยอมรับได้ */
   private async deleteAvatarFile(userId: number, key: string | null): Promise<void> {
     if (!isOwnAvatarKey(userId, key)) {
       return;
@@ -423,8 +407,6 @@ export class UsersService {
     });
   }
 
-  // ---- helpers -------------------------------------------------------------
-
   private get saltRounds(): number {
     const rounds = Number(this.config.get('BCRYPT_SALT_ROUNDS'));
     return Number.isInteger(rounds) && rounds > 0 ? rounds : DEFAULT_SALT_ROUNDS;
@@ -450,12 +432,6 @@ export class UsersService {
     return toUserResponse(user);
   }
 
-  /**
-   * ใครสร้าง/เลื่อนระดับบัญชีระดับไหนได้บ้าง (CLAUDE.md 4.1)
-   *   SUPER_ADMIN  สร้างได้ทุกระดับ
-   *   ADMIN        สร้างได้ถึงระดับ ADMIN
-   *   USER         สร้างได้เฉพาะ USER ต่อให้มีสิทธิ์ user.create ก็ตาม
-   */
   private assertCanGrantAccountType(actor: AuthenticatedUser, target: AccountType): void {
     if (actor.accountType === AccountType.SUPER_ADMIN) {
       return;
@@ -470,7 +446,6 @@ export class UsersService {
     }
   }
 
-  /** บัญชี SUPER_ADMIN ถูกแก้ไขได้โดย SUPER_ADMIN เท่านั้น ADMIN แตะไม่ได้ */
   private assertCanManage(actor: AuthenticatedUser, target: User): void {
     if (
       target.accountType === AccountType.SUPER_ADMIN &&
@@ -539,10 +514,7 @@ export class UsersService {
     }
   }
 
-  /** ตรวจว่าบทบาทที่ส่งมามีอยู่จริงและเปิดใช้งานอยู่ทุกตัว */
   private async resolveRoleIds(ids: number[], targetAccountType: AccountType): Promise<number[]> {
-    // SUPER_ADMIN bypass การตรวจสิทธิ์ทั้งหมดอยู่แล้ว การผูกบทบาทจึงไม่มีผลใด ๆ
-    // ปฏิเสธไปเลยดีกว่าปล่อยให้ผูกได้แล้วเข้าใจผิดว่าจำกัดสิทธิ์ได้ (CLAUDE.md 4.1)
     if (targetAccountType === AccountType.SUPER_ADMIN && ids.length > 0) {
       throw new BadRequestException(
         'บัญชีระดับ SUPER_ADMIN ไม่ต้องผูกบทบาท เพราะมีสิทธิ์ทุกอย่างอยู่แล้ว',

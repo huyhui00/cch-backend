@@ -16,7 +16,6 @@ import { AuthProfileDto, LoginResponseDto, RefreshResponseDto } from './dto/auth
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 
-/** ข้อความเดียวกันทั้งกรณีไม่มีบัญชีและรหัสผ่านผิด เพื่อไม่ให้ไล่เดาว่ามี username ใดอยู่จริง */
 const INVALID_CREDENTIALS = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
 const INVALID_REFRESH_TOKEN = 'Refresh token ไม่ถูกต้องหรือหมดอายุแล้ว';
 const ACCOUNT_NOT_ACTIVE = 'บัญชีนี้ถูกระงับการใช้งาน';
@@ -36,11 +35,6 @@ export class AuthService {
     private readonly accessControl: AccessControlService,
   ) {}
 
-  /**
-   * ลำดับการตรวจสำคัญ: ตรวจรหัสผ่านให้ผ่านก่อนแล้วค่อยดูสถานะ
-   * ถ้าสลับลำดับ ข้อความ "บัญชีนี้ถูกระงับการใช้งาน" จะกลายเป็นเครื่องมือ
-   * ยืนยันว่า username นั้นมีอยู่จริงโดยไม่ต้องรู้รหัสผ่าน
-   */
   async login(dto: LoginDto): Promise<LoginResponseDto> {
     const user = await this.userModel.findOne({ where: { username: dto.username } });
 
@@ -54,7 +48,6 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
-    // เฉพาะ ACTIVE เท่านั้นที่เข้าระบบได้ (CLAUDE.md 4.3)
     if (user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException(ACCOUNT_NOT_ACTIVE);
     }
@@ -79,11 +72,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * หมุน refresh token ทุกครั้งที่เรียก — ใบเดิมใช้ไม่ได้อีกทันที
-   * ถ้าใบที่ส่งมาไม่ตรงกับ hash ที่เก็บไว้ แปลว่าเป็นใบเก่าที่ถูกหมุนไปแล้ว
-   * หรือเป็นใบที่หลุดมือไป ทั้งสองกรณีปฏิเสธเหมือนกัน
-   */
   async refresh(dto: RefreshTokenDto): Promise<RefreshResponseDto> {
     const payload = await this.verifyRefreshToken(dto.refreshToken);
     const user = await this.userModel.findByPk(payload.sub);
@@ -100,7 +88,6 @@ export class AuthService {
       throw new UnauthorizedException(ACCOUNT_NOT_ACTIVE);
     }
 
-    // เหตุผลเดียวกับใน login() — endpoint นี้ก็เป็น @Public()
     setCurrentUserId(user.id);
 
     const tokens = await this.issueTokens(user);
@@ -111,16 +98,6 @@ export class AuthService {
     return { ...tokens, tokenType: 'Bearer' };
   }
 
-  /**
-   * ออกจากระบบ — ล้าง refresh token ที่เก็บไว้ทิ้ง
-   *
-   * ผลคือ refresh token ใบที่ถืออยู่ใช้ไม่ได้อีก ต้องล็อกอินใหม่เท่านั้น
-   * ส่วน access token ที่ยังไม่หมดอายุจะใช้ได้ต่ออีกไม่เกินอายุที่เหลือ (ค่าเริ่มต้น 15 นาที)
-   * เพราะ JWT เพิกถอนกลางคันไม่ได้ตามธรรมชาติของมัน ถ้าต้องการตัดทันทีจริง ๆ
-   * ให้เปลี่ยนสถานะบัญชีเป็น SUSPENDED แทน ซึ่ง JwtStrategy เช็คทุก request อยู่แล้ว
-   *
-   * เรียกซ้ำหรือเรียกทั้งที่ไม่มี token เก็บไว้ก็ไม่ error — ถือว่าออกจากระบบสำเร็จเหมือนกัน
-   */
   async logout(userId: number): Promise<void> {
     const user = await this.userModel.findByPk(userId);
 
@@ -135,7 +112,6 @@ export class AuthService {
     await user.save();
   }
 
-  /** ข้อมูลผู้ใช้ที่ล็อกอินอยู่ พร้อม role และสิทธิ์ที่ union แล้ว */
   async me(userId: number): Promise<AuthProfileDto> {
     const user = await this.userModel.findByPk(userId);
 
@@ -204,8 +180,6 @@ export class AuthService {
   }
 
   private async issueTokens(user: User): Promise<TokenPair> {
-    // payload เก็บแค่ 3 ฟิลด์ตาม CLAUDE.md — ไม่ยัด permissions ลง token
-    // เพราะสิทธิ์เปลี่ยนได้ตลอด ต้อง query สด ๆ ตอน guard ทำงาน
     const payload: JwtPayload = {
       sub: user.id,
       username: user.username,
@@ -226,11 +200,6 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  /**
-   * jsonwebtoken รับ expiresIn เป็น literal type ของหน่วยเวลา (เช่น '15m', '7d')
-   * ส่วนค่าที่อ่านจาก .env เป็น string ธรรมดาเสมอ จึงต้อง cast ให้ตรงชนิด
-   * ค่าที่ผิดรูปแบบจะถูกจับตอน sign แล้วโยน error ออกมาตั้งแต่ครั้งแรกที่ล็อกอิน
-   */
   private expiresIn(key: string, fallback: string): SignOptions['expiresIn'] {
     return this.config.get<string>(key, fallback) as SignOptions['expiresIn'];
   }
@@ -241,7 +210,6 @@ export class AuthService {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
       });
     } catch {
-      // ไม่แยกแยะระหว่างหมดอายุ ลายเซ็นผิด หรือเซ็นด้วย access secret
       throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
     }
   }

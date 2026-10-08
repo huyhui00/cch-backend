@@ -3,13 +3,6 @@ import { IsInt, IsOptional, IsPositive, Matches, Max, Min } from 'class-validato
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/**
- * ช่วงเวลาที่ใช้กรองรายงาน
- *
- * กรองด้วย "วันที่เริ่มสัญญา" ของแต่ละรายการ ไม่ใช่วันที่บันทึกเข้าระบบ
- * เพราะข้อมูลย้อนหลังถูกคีย์เข้ามาทีหลัง (บริษัทเก็บเป็นกระดาษมา 4 ปี)
- * ถ้ากรองด้วย created_at ตัวเลขจะกองอยู่ที่วันที่คีย์ข้อมูล ไม่ใช่วันที่เกิดจริง
- */
 export class ReportPeriodDto {
   @ApiPropertyOptional({
     description: 'นับตั้งแต่วันที่ (YYYY-MM-DD) — ไม่ระบุ = ไม่จำกัดย้อนหลัง',
@@ -28,12 +21,6 @@ export class ReportPeriodDto {
   dateTo?: string;
 }
 
-/**
- * M10-01 มูลค่าตามสัญญาแยกรายลูกค้า และ M10-03 จัดอันดับ
- *
- * เป็นข้อมูลชุดเดียวกัน ต่างกันแค่จำนวนแถวที่เอา — จัดอันดับคือเอาเฉพาะหัวตาราง
- * จึงใช้ endpoint เดียวแล้วให้ `limit` เป็นตัวแยก ไม่ต้องมีสองเส้นที่คืนของเหมือนกัน
- */
 export class QueryContractValueDto extends ReportPeriodDto {
   @ApiPropertyOptional({
     description: 'เอากี่รายแรก — ไม่ระบุ = ทุกราย ใช้ limit=10 สำหรับหน้าจอจัดอันดับ',
@@ -48,7 +35,6 @@ export class QueryContractValueDto extends ReportPeriodDto {
   limit?: number;
 }
 
-/** M10-05 ต้นทุนการให้บริการ */
 export class QueryServiceCostDto extends ReportPeriodDto {
   @ApiPropertyOptional({ description: 'ดูเฉพาะลูกค้ารายเดียว', example: 1 })
   @IsOptional()
@@ -57,7 +43,6 @@ export class QueryServiceCostDto extends ReportPeriodDto {
   customerId?: number;
 }
 
-/** ตรวจสัญญา MA ที่ช่วงเวลาซ้อนทับกัน */
 export class QueryOverlapDto {
   @ApiPropertyOptional({
     description: 'ตรวจเฉพาะลูกค้ารายเดียว — ไม่ระบุ = ตรวจทุกราย',

@@ -52,14 +52,11 @@ import {
 
 const SORTABLE_FIELDS = new Set(['id', 'title', 'status', 'createdAt', 'updatedAt']);
 
-/** ค่าเริ่มต้นของช่วงคะแนนเมื่อผู้ใช้ไม่ระบุ — 1 ถึง 5 เป็นแบบที่คนไทยคุ้นที่สุด */
 const DEFAULT_RATING_MIN = 1;
 const DEFAULT_RATING_MAX = 5;
 
-/** สรุปคะแนนรายเดือนได้ไม่เกินนี้ต่อครั้ง — 10 ปีพอสำหรับบริษัทที่เปิดมา 4 ปี และกันคำขอที่ใส่ปีผิด */
 const MAX_SCORE_MONTHS = 120;
 
-/** เผื่อนาฬิกาเครื่องผู้ใช้คลาดเคลื่อน — กติกาเดียวกับบันทึกการติดต่อใน Phase 4 */
 const CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 /** สร้างใหม่ทุกครั้ง — Sequelize แก้ object ของ include ในที่ตอน normalize ห้ามใช้ร่วมกัน */
@@ -112,8 +109,6 @@ export class SurveysService {
     @InjectModel(Project) private readonly projectModel: typeof Project,
     @InjectConnection() private readonly sequelize: Sequelize,
   ) {}
-
-  // ---- แบบประเมิน ----------------------------------------------------------
 
   async findAll(query: QuerySurveysDto): Promise<PaginatedResult<SurveyResponseDto>> {
     const where: WhereOptions = {};
@@ -168,7 +163,6 @@ export class SurveysService {
         {
           title: dto.title,
           description: dto.description ?? null,
-          // เริ่มที่ DRAFT เสมอ — ต้องกดเปลี่ยนสถานะเองเมื่อคำถามพร้อมแล้ว
           status: SurveyStatus.DRAFT,
           validFrom: dto.validFrom ?? null,
           validTo: dto.validTo ?? null,
@@ -188,15 +182,6 @@ export class SurveysService {
     return this.findOne(created.id);
   }
 
-  /**
-   * แก้ไขแบบประเมิน
-   *
-   * **แก้คำถามได้เฉพาะตอนยังเป็น DRAFT** เพราะ `survey_answers.question_id` ชี้ไปที่คำถาม
-   * ถ้าแทนที่คำถามหลังเริ่มเก็บคำตอบแล้ว คำตอบเก่าจะชี้ไปที่แถวที่ถูกลบ กลายเป็น
-   * คำตอบของคำถามที่ไม่เคยถูกถาม แล้วรายงานสรุปจะอ่านไม่ได้ทั้งชุด
-   *
-   * ส่วนชื่อ คำอธิบาย และช่วงวันที่ แก้ได้ตลอดเพราะไม่กระทบความหมายของคำตอบ
-   */
   async update(id: number, dto: UpdateSurveyDto): Promise<SurveyResponseDto> {
     const actorId = getCurrentUserId();
     const survey = await this.findOrFail(id);
@@ -273,7 +258,6 @@ export class SurveysService {
     return this.findOne(id);
   }
 
-  /** ลบได้เฉพาะแบบประเมินที่ยังไม่เคยถูกส่งให้ลูกค้า */
   async remove(id: number): Promise<void> {
     const actorId = getCurrentUserId();
     const survey = await this.findOrFail(id);
@@ -299,8 +283,6 @@ export class SurveysService {
       await survey.destroy({ transaction });
     });
   }
-
-  // ---- การส่งให้ลูกค้า ------------------------------------------------------
 
   async findAssignments(
     surveyId: number,
@@ -384,8 +366,6 @@ export class SurveysService {
     return this.findAssignmentOrFail(assignment.id).then((row) => toAssignmentResponse(row, null));
   }
 
-  // ---- บันทึกคำตอบแทนลูกค้า -------------------------------------------------
-
   /**
    * บันทึกคำตอบที่ลูกค้าให้มา (Q1 — พนักงานคีย์แทน)
    *
@@ -399,7 +379,6 @@ export class SurveysService {
     const actorId = getCurrentUserId();
     const assignment = await this.findAssignmentOrFail(assignmentId);
 
-    // assignment_id เป็น UNIQUE — ดักไว้เองก่อนเพื่อให้ได้ข้อความไทยแทน error ของ MySQL
     const existing = await this.responseModel.findOne({ where: { assignmentId } });
 
     if (existing) {
@@ -491,14 +470,6 @@ export class SurveysService {
     return toResponseDetail(response);
   }
 
-  // ---- สรุปผล --------------------------------------------------------------
-
-  /**
-   * สรุปผลแบบประเมิน
-   *
-   * รวมในฝั่ง backend ไม่ให้ frontend ไปนับเอง เพราะสูตรคะแนนเฉลี่ยต้องเหมือนกัน
-   * ทุกที่ที่แสดง ถ้าแต่ละหน้าจอนับเอง วันหนึ่งตัวเลขจะไม่ตรงกันแล้วไม่มีใครรู้ว่าอันไหนถูก
-   */
   async summarize(surveyId: number): Promise<SurveySummaryDto> {
     const survey = await this.findOrFail(surveyId);
 
@@ -573,7 +544,6 @@ export class SurveysService {
     }
 
     if (dateTo) {
-      // รวมทั้งวันของ dateTo — ตัดที่เที่ยงคืนของวันถัดไป
       submittedAt[Op.lt] = this.startOfLocalDay(addDays(dateTo, 1));
     }
 
@@ -606,7 +576,6 @@ export class SurveysService {
       .map(([customerId, rows]) => ({
         customerId,
         customerName: rows[0].customer ? rows[0].customer.name : null,
-        // เรียงจากเก่าไปใหม่มาแล้ว แถวสุดท้ายจึงเป็นครั้งล่าสุด
         lastSubmittedAt: rows[rows.length - 1].submittedAt,
         ...this.scoreGroup(rows),
       }))
@@ -626,8 +595,6 @@ export class SurveysService {
       byMonth: this.monthSeries(byMonth, dateFrom, dateTo),
     };
   }
-
-  // ---- helpers -------------------------------------------------------------
 
   private scoreGroup(rows: SurveyResponse[]): {
     responseCount: number;
@@ -692,12 +659,10 @@ export class SurveysService {
     return series;
   }
 
-  /** เดือนตามเขตเวลาเครื่อง — ใช้หลักเดียวกับ toDateOnly() ใน date.util */
   private monthKey(date: Date): string {
     return toDateOnly(date).slice(0, 7);
   }
 
-  /** เที่ยงคืนตามเขตเวลาเครื่องของวันที่ระบุ */
   private startOfLocalDay(dateOnly: string): Date {
     const [year, month, day] = dateOnly.split('-').map(Number);
     return new Date(year, month - 1, day);
@@ -758,12 +723,6 @@ export class SurveysService {
     return { ...base, choiceCounts: counts };
   }
 
-  /**
-   * ตรวจคำตอบให้เข้ากับชนิดของคำถาม แล้วจัดรูปให้ตรงคอลัมน์ที่ต้องเก็บ
-   *
-   * นี่คือจุดที่ข้อมูลขยะถูกกันไว้ — ถ้าปล่อยให้ RATING เก็บข้อความ หรือ CHOICE
-   * เก็บค่าที่ไม่มีในตัวเลือก รายงานสรุปจะคำนวณไม่ได้และไม่มีใครรู้จนกว่าจะเปิดดู
-   */
   private validateAnswers(
     questions: SurveyQuestion[],
     answers: SurveyAnswerDto[],
@@ -811,7 +770,6 @@ export class SurveysService {
 
     return {
       answers: prepared,
-      // DECIMAL เก็บเป็น string ตลอดสาย ด้วยเหตุผลเดียวกับราคาใน Phase 8
       overallScore:
         ratings.length === 0
           ? null
@@ -885,7 +843,6 @@ export class SurveysService {
       };
     }
 
-    // MULTI_CHOICE
     const chosen = answer.answerChoices ?? [];
 
     if (chosen.length === 0) {
@@ -912,7 +869,6 @@ export class SurveysService {
     };
   }
 
-  /** ตรวจว่าคำถามแต่ละข้อมีของครบตามชนิดของตัวเอง — กันฟอร์มที่ตอบไม่ได้ตั้งแต่ตอนสร้าง */
   private assertQuestionShape(question: SurveyQuestionDto, index: number): void {
     const at = `คำถามข้อที่ ${index + 1}`;
     const needsOptions =
@@ -943,7 +899,6 @@ export class SurveysService {
     }
   }
 
-  /** ลบคำถามเดิมทั้งชุดแล้วเขียนใหม่ตามลำดับที่ส่งมา — อยู่ในทรานแซกชันของผู้เรียกเสมอ */
   private async replaceQuestions(
     surveyId: number,
     questions: SurveyQuestionDto[],
@@ -976,7 +931,6 @@ export class SurveysService {
           question.questionType === SurveyQuestionType.RATING
             ? (question.maxValue ?? DEFAULT_RATING_MAX)
             : null,
-        // ลำดับมาจากตำแหน่งในอาเรย์ ไม่รับจาก client — ค่าที่ส่งมาเองมีโอกาสซ้ำหรือข้ามเลข
         sortOrder: index,
         createdBy: actorId,
         updatedBy: actorId,
@@ -1012,7 +966,6 @@ export class SurveysService {
   }
 
   private assertDateRange(validFrom: string | null, validTo: string | null): void {
-    // เทียบสตริงได้ตรง ๆ เพราะ YYYY-MM-DD เรียงตามพจนานุกรมแล้วได้ลำดับเวลาที่ถูกต้อง
     if (validFrom !== null && validTo !== null && validTo < validFrom) {
       throw new BadRequestException('วันสิ้นสุดการใช้งานต้องไม่อยู่ก่อนวันเริ่มใช้งาน');
     }

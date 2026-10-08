@@ -26,7 +26,6 @@ import { SetRolePermissionsDto } from './dto/set-role-permissions.dto';
 /** ฟิลด์ที่ยอมให้เรียงลำดับได้ — กันค่าแปลกปลอมจาก query string sortBy หลุดเข้า ORDER BY */
 const SORTABLE_FIELDS = new Set(['id', 'name', 'createdAt', 'updatedAt']);
 
-/** include ที่ใช้ซ้ำทุกครั้งที่ต้องคืนสิทธิ์ของบทบาทออกไปด้วย */
 const PERMISSIONS_INCLUDE = {
   model: Permission,
   attributes: ['id', 'code', 'module', 'action', 'description'],
@@ -121,7 +120,6 @@ export class RolesService {
           name: dto.name,
           description: dto.description ?? null,
           isActive: dto.isActive ?? true,
-          // is_system สงวนไว้ให้ seeder เท่านั้น บทบาทที่สร้างผ่าน API ลบได้เสมอ
           isSystem: false,
           createdBy: actorId,
           updatedBy: actorId,
@@ -144,8 +142,6 @@ export class RolesService {
       await this.assertNameIsAvailable(dto.name, id);
     }
 
-    // null = ไม่ได้ส่ง permissionIds มา จึงไม่แตะสิทธิ์เดิม
-    // ต่างจาก [] ที่แปลว่าให้ถอดสิทธิ์ออกทั้งหมด
     const permissionIds =
       dto.permissionIds === undefined ? null : await this.resolvePermissionIds(dto.permissionIds);
 
@@ -168,10 +164,6 @@ export class RolesService {
     return this.findDetailOrFail(id);
   }
 
-  /**
-   * ติ๊กสิทธิ์รายเมนู — ค่าที่ส่งมาแทนที่ของเดิมทั้งชุด
-   * ล้างแล้วเขียนใหม่ในทรานแซกชันเดียว จะได้ไม่มีจังหวะที่บทบาทไม่มีสิทธิ์เลย
-   */
   async setPermissions(
     id: number,
     dto: SetRolePermissionsDto,
@@ -196,8 +188,6 @@ export class RolesService {
       throw new BadRequestException('บทบาทนี้เป็นบทบาทของระบบ ไม่สามารถลบได้');
     }
 
-    // ถ้ายังมีคนถืออยู่แล้วลบทิ้ง แถวใน user_roles จะชี้ไปยังบทบาทที่หายไป
-    // เพราะ soft delete ไม่ทำ cascade ให้ จึงบังคับให้ถอดคนออกก่อน
     const holders = await this.userRoleModel.count({ where: { roleId: id } });
 
     if (holders > 0) {
@@ -212,7 +202,6 @@ export class RolesService {
     });
   }
 
-  /** รายการสิทธิ์ทั้งหมด จัดกลุ่มตาม module มาให้พร้อมวาดหน้าติ๊กสิทธิ์ */
   async findAllPermissions(): Promise<PermissionGroupDto[]> {
     const permissions = await this.permissionModel.findAll({
       order: [
@@ -231,8 +220,6 @@ export class RolesService {
 
     return [...groups.values()];
   }
-
-  // ---- helpers -------------------------------------------------------------
 
   private async findOrFail(id: number): Promise<Role> {
     const role = await this.roleModel.findByPk(id);
@@ -256,10 +243,6 @@ export class RolesService {
     return toRoleDetail(role, userCount);
   }
 
-  /**
-   * ชื่อบทบาทต้องไม่ซ้ำ — ตรวจรวมบทบาทที่ถูก soft delete ไปแล้วด้วย (paranoid: false)
-   * เพราะ unique index ในฐานข้อมูลไม่สนใจ deleted_at ถ้าไม่ตรวจตรงนี้จะไปพังที่ระดับ DB
-   */
   private async assertNameIsAvailable(name: string, excludeId?: number): Promise<void> {
     const where: WhereOptions<Role> = excludeId ? { name, id: { [Op.ne]: excludeId } } : { name };
 
@@ -322,11 +305,6 @@ export class RolesService {
     );
   }
 
-  /**
-   * ดึงเฉพาะคอลัมน์ role_id มานับฝั่ง JS แทนการ GROUP BY
-   * user_roles มีขนาดเล็ก (จำนวนพนักงาน x บทบาทที่ถือ) และวิธีนี้ไม่ต้อง cast
-   * ผลลัพธ์ raw ที่ Sequelize คืนมาเป็น unknown ให้เสี่ยงพลาดชนิดข้อมูล
-   */
   private async countUsersByRole(roleIds: number[]): Promise<Map<number, number>> {
     const counts = new Map<number, number>();
 

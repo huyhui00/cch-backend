@@ -12,12 +12,6 @@ const trimToNull = ({ value }: { value: unknown }) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-/**
- * ช่องข้อความที่ส่งมาพร้อมไฟล์ (multipart/form-data) — ตัวไฟล์อยู่ในฟิลด์ `file` แยกต่างหาก
- *
- * ประชุม 11 ก.ย. (B-5): "ตั้งชื่อเอกสาร แนบไฟล์ แล้วก็รายละเอียด" ไม่ต้องแยกประเภท
- * ไม่ส่งชื่อมา = ใช้ชื่อไฟล์ ผู้ใช้จะได้ไม่ต้องพิมพ์ซ้ำเมื่อชื่อไฟล์บอกอยู่แล้ว
- */
 export class UploadDocumentDto {
   @ApiPropertyOptional({
     description: 'ชื่อเอกสาร เช่น "ใบเสนอราคา งวดที่ 1" — ไม่ส่งมาใช้ชื่อไฟล์',
@@ -36,7 +30,6 @@ export class UploadDocumentDto {
   note?: string | null;
 }
 
-/** แก้ได้เฉพาะชื่อและรายละเอียด — เปลี่ยนไฟล์ = อัปโหลดเป็นเอกสารใหม่ ไฟล์เดิมยังเก็บเป็นประวัติ */
 export class UpdateDocumentDto {
   @ApiPropertyOptional({ maxLength: 255 })
   @IsOptional()
@@ -53,10 +46,8 @@ export class UpdateDocumentDto {
   note?: string | null;
 }
 
-/** `search` ค้นจากชื่อเอกสารและชื่อไฟล์ */
 export class QueryDocumentsDto extends PaginationDto {}
 
-/** รายการเอกสารทั้งบริษัท — `search` ค้นชื่อเอกสาร ชื่อไฟล์ และชื่อ/รหัสโครงการ */
 export class QueryCompanyDocumentsDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'กรองเฉพาะเอกสารของโครงการนี้', example: 3 })
   @IsOptional()

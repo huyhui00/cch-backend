@@ -15,12 +15,10 @@ import { Warranty } from './warranty.model';
  */
 export enum TicketStatus {
   RECEIVED = 'RECEIVED',
-  /** ซัพพอร์ตส่งเข้าคิวกลางแล้ว รอแอดมินรับเรื่อง / จัดแจง (C-1) */
   WAITING_ADMIN = 'WAITING_ADMIN',
   ASSIGNED = 'ASSIGNED',
   IN_PROGRESS = 'IN_PROGRESS',
   RESOLVED = 'RESOLVED',
-  /** แอดมินตรวจผ่านแล้ว รอซัพพอร์ตบอกลูกค้า (C-1) */
   WAITING_SUPPORT = 'WAITING_SUPPORT',
   REOPENED = 'REOPENED',
   CLOSED = 'CLOSED',
@@ -62,7 +60,6 @@ export enum TicketPriority {
  * หน้าจอ "รอรับการแก้ไข" = WHERE status IN
  * ('RECEIVED','WAITING_ADMIN','ASSIGNED','REOPENED','IN_PROGRESS')
  */
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface TicketCreationAttributes {
   ticketNo?: string | null;
   customerId: number;
@@ -103,12 +100,10 @@ export class Ticket extends AuditedModel<Ticket, TicketCreationAttributes> {
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'project_id' })
   projectId: number | null;
 
-  /** ประกันที่ครอบคลุมใบนี้ ใช้ suggest billing_type ตอนเปิด ticket (CLAUDE.md 9.3) */
   @ForeignKey(() => Warranty)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'warranty_id' })
   warrantyId: number | null;
 
-  /** สัญญา MA ที่ใบนี้ไปหักโควตา */
   @ForeignKey(() => MaContract)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'ma_contract_id' })
   maContractId: number | null;
@@ -168,15 +163,10 @@ export class Ticket extends AuditedModel<Ticket, TicketCreationAttributes> {
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'received_by_user_id' })
   receivedByUserId: number | null;
 
-  /**
-   * แอดมินที่กดรับคิวจากซัพพอร์ต (C-1 คิวดึง)
-   * คนละคนกับ receivedByUserId (ซัพพอร์ตรับเรื่อง) และ assignedUserId (พนักงานแก้)
-   */
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'claimed_by_admin_user_id' })
   claimedByAdminUserId: number | null;
 
-  /** จำนวนรอบที่แก้ไปแล้ว เพิ่มขึ้นทุกครั้งที่สร้าง resolution (CLAUDE.md 9.1) */
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
@@ -194,7 +184,6 @@ export class Ticket extends AuditedModel<Ticket, TicketCreationAttributes> {
   @Column({ type: DataType.DATE, allowNull: true, field: 'closed_at' })
   closedAt: Date | null;
 
-  /** ใช้กับ notification rule แบบ TICKET_SLA */
   @Column({ type: DataType.DATE, allowNull: true, field: 'due_at' })
   dueAt: Date | null;
 
@@ -217,8 +206,6 @@ export class Ticket extends AuditedModel<Ticket, TicketCreationAttributes> {
   @BelongsTo(() => Contact)
   reportedByContact: Contact;
 
-  // มี FK ไป users สามตัวในตารางเดียวกัน จึงต้องระบุชื่อ FK ให้ชัดทุกตัว
-  // ถ้าปล่อยให้ Sequelize เดาเอง มันจะผูก association เข้ากับคอลัมน์เดียวกัน
   @BelongsTo(() => User, 'assignedUserId')
   assignedUser: User;
 

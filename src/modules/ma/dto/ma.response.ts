@@ -14,21 +14,10 @@ import {
 } from '../../../models';
 import { MA_CONTRACT_PRICE_DESCRIPTION } from './ma-contract.dto';
 
-/**
- * สถานะการคุ้มครองจริง — แยกจาก `status` ในฐาน เพราะ ACTIVE อาจยังไม่เริ่มหรือหมดช่วงไปแล้ว
- * (ยังไม่มี scheduler ปรับเป็น EXPIRED จน Phase 11)
- *
- * หน้าจอใช้ค่านี้โชว์ป้าย: ยังไม่เริ่ม / คุ้มครองอยู่ / หมดอายุแล้ว
- * อย่าใช้ `daysUntilExpiry` อย่างเดียวตัดสินว่าหมดอายุ เพราะสัญญายังไม่เริ่มก็มีค่าบวกได้
- */
 export enum MaContractCoverageState {
-  /** DRAFT / CANCELLED / RENEWED / EXPIRED ในฐาน — ไม่ได้คุ้มครอง */
   INACTIVE = 'INACTIVE',
-  /** ACTIVE แต่ยังไม่ถึง startDate */
   NOT_STARTED = 'NOT_STARTED',
-  /** ACTIVE และวันนี้ตกในช่วง startDate..endDate */
   IN_FORCE = 'IN_FORCE',
-  /** ACTIVE แต่เลย endDate แล้ว */
   ENDED = 'ENDED',
 }
 
@@ -136,7 +125,6 @@ export class MaAddonResponseDto {
   createdAt: Date;
 }
 
-/** สถานะโควตาของรอบหนึ่ง — รูปเดียวกับที่ POST /tickets/:id/resolutions พ่วงกลับมา */
 export class QuotaStatusResponseDto {
   @ApiProperty({ example: 12 })
   contractId: number;
@@ -301,9 +289,6 @@ export class MaContractResponseDto {
   updatedAt: Date;
 }
 
-/**
- * สรุปโควตา MA ของโปรเจคหนึ่ง — ประชุมทบทวน: ดูการใช้โควตาที่โปรเจค ไม่ยัดในหน้ารายการสัญญา
- */
 export class ProjectMaQuotaItemDto {
   @ApiProperty({ type: () => MaContractResponseDto })
   contract: MaContractResponseDto;
@@ -322,8 +307,6 @@ export class ProjectMaQuotaSummaryDto {
   @ApiProperty({ type: [ProjectMaQuotaItemDto] })
   items: ProjectMaQuotaItemDto[];
 }
-
-// ---- M6-08 ข้อมูลสำหรับพิมพ์ร่างสัญญา ----------------------------------------
 
 export class MaContractPrintCustomerDto {
   @ApiProperty({ example: 1 })
@@ -555,12 +538,6 @@ export function toMaAddonResponse(addon: MaAddon): MaAddonResponseDto {
   };
 }
 
-/**
- * สัญญายังคุ้มครองอยู่จริงหรือไม่
- *
- * cron ปรับ ACTIVE ที่เลยวันสิ้นสุดเป็น EXPIRED รายชั่วโมง ระหว่างรอบแถวจึงยังค้างเป็น ACTIVE ได้
- * ทุกที่ที่ตัดสินว่า "คุ้มครองอยู่ไหม" จึงต้องเทียบช่วงวันที่ซ้ำเสมอ
- */
 export function isContractCurrentlyActive(
   contract: MaContract,
   today = todayAsDateOnly(),
@@ -641,12 +618,6 @@ export function toMaContractResponse(
   return response;
 }
 
-/**
- * ประกอบข้อมูลพิมพ์ร่างสัญญา (M6-08)
- *
- * รับลูกค้า/โครงการ/แผนแยกเข้ามา แทนที่จะอ่านจาก `contract.customer` ตรง ๆ
- * เพื่อให้ service เป็นคนตัดสินว่าข้อมูลขาดแล้วต้องทำยังไง ฟังก์ชันนี้แค่จัดรูป
- */
 export function toMaContractPrint(input: {
   contract: MaContract;
   customer: Customer;
@@ -657,8 +628,6 @@ export function toMaContractPrint(input: {
 }): MaContractPrintDto {
   const { contract, customer, project, plan, addons } = input;
 
-  // ไม่มีผู้ติดต่อหลัก = null ไม่หยิบคนแรกมาแทน เพราะคนที่ถูกพิมพ์ลงสัญญาต้องเป็นคนที่
-  // ลูกค้าตั้งเป็นผู้ติดต่อหลักจริง ๆ ถ้าเดาให้ อาจพิมพ์ชื่อคนที่ไม่มีอำนาจลงนามลงไป
   const primary = (customer.contacts ?? []).find((contact) => contact.isPrimary) ?? null;
 
   const items = [...(plan.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);

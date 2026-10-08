@@ -106,7 +106,6 @@ export class FollowUpsService {
       Object.assign(where, { title: { [Op.like]: `%${query.search}%` } });
     }
 
-    // ช่วงวันที่ครบกำหนด — รวมทั้งสองขอบ
     const dueBounds: Record<symbol, string> = {};
 
     if (query.dueFrom !== undefined) {
@@ -144,7 +143,6 @@ export class FollowUpsService {
     const { rows, count } = await this.followUpModel.findAndCountAll({
       where,
       include: [customerInclude(), projectInclude(), assignedUserInclude()],
-      // ค่าเริ่มต้นเรียงวันครบกำหนดจากเก่าไปใหม่ — ของที่ค้างนานสุดต้องอยู่บนสุด
       order: [
         [sortBy, query.sortBy ? query.sortOrder : 'ASC'],
         ['id', 'ASC'],
@@ -157,7 +155,6 @@ export class FollowUpsService {
     return toPaginatedResult(rows.map(toFollowUpResponse), count, query);
   }
 
-  /** badge followUpsMineDue = total ของ GET /follow-ups?assignedUserId=<me>&dueByToday=true */
   async countMineDue(userId: number): Promise<number> {
     const query = Object.assign(new QueryFollowUpsDto(), {
       page: 1,
@@ -186,7 +183,6 @@ export class FollowUpsService {
       title: dto.title,
       detail: dto.detail ?? null,
       dueDate: dto.dueDate,
-      // เริ่มที่ PLANNED เสมอ แม้ลงวันย้อนหลัง — OVERDUE เป็นค่าที่คำนวณ ไม่ใช่ค่าที่ตั้ง
       status: FollowUpStatus.PLANNED,
       assignedUserId: dto.assignedUserId ?? null,
       createdBy: actorId,
@@ -196,12 +192,6 @@ export class FollowUpsService {
     return this.findOne(followUp.id);
   }
 
-  /**
-   * แก้ไขงานติดตาม
-   *
-   * สถานะเปลี่ยนไปไหนก็ได้ไม่บังคับลำดับ (เหตุผลเดียวกับสถานะงานใน Phase 5) —
-   * เป็น DONE แล้วระบบใส่ `completedAt` ให้ ถอยออกแล้วล้าง และเป็น DONE ซ้ำไม่ทับเวลาเดิม
-   */
   async update(id: number, dto: UpdateFollowUpDto): Promise<FollowUpResponseDto> {
     const actorId = getCurrentUserId();
     const followUp = await this.findOrFail(id);
@@ -220,7 +210,6 @@ export class FollowUpsService {
       throw new BadRequestException('งานติดตามต้องผูกโปรเจค ถอดโปรเจคออกไม่ได้');
     }
 
-    // ย้ายลูกค้าไม่ได้ — เปลี่ยนโปรเจคได้เฉพาะโปรเจคของลูกค้ารายเดิม
     if (dto.projectId) {
       const project = await this.findProjectOrFail(dto.projectId);
 
@@ -247,12 +236,6 @@ export class FollowUpsService {
     return this.findOne(id);
   }
 
-  /**
-   * ปิดงานติดตาม — ทางลัดของ `PATCH /:id` ที่ส่ง `status: DONE`
-   *
-   * แยก endpoint เพราะผูกกับสิทธิ์ `followup.complete` คนละตัวกับ `followup.update`
-   * ทีมที่อยากให้พนักงานปิดงานของตัวเองได้แต่ไม่ให้แก้เนื้อหางาน จึงกั้นได้จริง
-   */
   async complete(id: number, dto: CompleteFollowUpDto): Promise<CompletedFollowUpResponseDto> {
     const actorId = getCurrentUserId();
     const followUp = await this.findOrFail(id);
@@ -268,7 +251,6 @@ export class FollowUpsService {
     }
 
     if (dto.nextDueDate !== undefined) {
-      // กดปิดซ้ำ (ดับเบิลคลิก / ยิงซ้ำ) ต้องไม่ได้งานครั้งถัดไปสองใบ
       if (followUp.status === FollowUpStatus.DONE) {
         throw new ConflictException(
           'งานติดตามนี้ปิดไปแล้ว — ถ้าต้องนัดครั้งถัดไปให้สร้างงานติดตามใหม่',
@@ -328,12 +310,6 @@ export class FollowUpsService {
     };
   }
 
-  /**
-   * ลบงานติดตาม (soft delete)
-   *
-   * มีไว้สำหรับงานที่สร้างผิดจริง ๆ — งานที่ตัดสินใจว่าไม่ทำแล้วให้เปลี่ยนสถานะเป็น
-   * CANCELLED แทน เพราะยังเป็นข้อมูลที่บอกได้ว่าเคยตั้งใจจะตามลูกค้ารายนี้
-   */
   async remove(id: number): Promise<void> {
     const actorId = getCurrentUserId();
     const followUp = await this.findOrFail(id);
@@ -343,9 +319,6 @@ export class FollowUpsService {
     await followUp.destroy();
   }
 
-  // ---- helpers -------------------------------------------------------------
-
-  /** ผู้รับผิดชอบเดิมที่ลาออก/ถูกระงับไปแล้ว ไม่ส่งต่อให้งานครั้งถัดไป — ปล่อยว่างให้มอบหมายใหม่ */
   private async carryOverAssignee(userId: number | null): Promise<number | null> {
     if (userId === null) {
       return null;
@@ -355,13 +328,6 @@ export class FollowUpsService {
     return user?.status === UserStatus.ACTIVE ? userId : null;
   }
 
-  /**
-   * ค่า `completed_at` ที่ควรเป็นหลังเปลี่ยนสถานะ
-   *
-   * เป็น DONE ครั้งแรก = ใส่เวลาให้ / เป็น DONE อยู่แล้ว = ไม่ทับของเดิม
-   * ถอยออกจาก DONE = ล้างทิ้ง เพราะงานที่ยังไม่จบไม่ควรมีเวลาที่จบ
-   * กติกาเดียวกับ `tasks.completed_at` (Phase 5) และ `deliveries.accepted_at` (Phase 6)
-   */
   private completedAtFor(
     followUp: FollowUp,
     nextStatus: FollowUpStatus,
@@ -416,7 +382,6 @@ export class FollowUpsService {
     return project;
   }
 
-  /** มอบหมายให้พนักงานที่ลาออกหรือถูกระงับไม่ได้ — กติกาเดียวกับการมอบหมายงานใน Phase 5 */
   private async assertUserIsAssignable(userId: number): Promise<void> {
     const user = await this.userModel.findByPk(userId, { attributes: ['id', 'status'] });
 

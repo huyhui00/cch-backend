@@ -31,8 +31,6 @@ function assertSecretsAreSet(config: ConfigService): void {
   imports: [
     SequelizeModule.forFeature([User, Permission]),
     PassportModule.register({ defaultStrategy: 'jwt', session: false }),
-    // ไม่ตั้ง secret ที่ระดับ module เพราะ access กับ refresh ใช้คนละใบ
-    // AuthService จึงระบุ secret ให้ทีละครั้งตอน sign / verify
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

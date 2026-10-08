@@ -9,13 +9,6 @@ import { MaPlansController } from './ma-plans.controller';
 import { MaPlansService } from './ma-plans.service';
 import { MaQuotaService } from './ma-quota.service';
 
-/**
- * โมดูล MA — แผน สัญญา ของเสริม และตรรกะโควตา (Phase 8)
- *
- * `MaQuotaService` ถูกสร้างมาก่อนตั้งแต่ Phase 7 เพราะการบันทึกผลการแก้ปัญหา
- * ต้องหักโควตาในทรานแซกชันเดียวกัน (CLAUDE.md 9.1) จึง export ออกไปให้ TicketsModule
- * ส่วน `MaContractsService` และ `MaPlansService` เป็นของ Phase 8 ล้วน ไม่มีใครนอกโมดูลใช้
- */
 @Module({
   imports: [
     SequelizeModule.forFeature([

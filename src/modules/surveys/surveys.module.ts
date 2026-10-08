@@ -15,15 +15,6 @@ import {
 import { SurveyAssignmentsController, SurveysController } from './surveys.controller';
 import { SurveysService } from './surveys.service';
 
-/**
- * M8 — แบบประเมินความพึงพอใจ
- *
- * รวม 5 ตารางไว้ในโมดูลเดียวเพราะผูกกันแน่นและไม่มีความหมายแยกจากกัน
- * (แบบประเมิน → คำถาม → การส่งให้ลูกค้า → คำตอบ → คำตอบรายข้อ)
- *
- * Customer / Contact / Project / User ถูก register ไว้เพื่อตรวจข้อมูลอ้างอิง
- * และดึงชื่อมาแสดงเท่านั้น ไม่ได้ inject service ของโมดูลอื่นเข้ามา
- */
 @Module({
   imports: [
     SequelizeModule.forFeature([

@@ -63,7 +63,6 @@ export class Document extends AuditedModel<Document, DocumentCreationAttributes>
   @Column({ type: DataType.DATEONLY, allowNull: true, field: 'issued_date' })
   issuedDate: string | null;
 
-  /** object key ใน R2 ไม่ใช่ URL สาธารณะ */
   @Column({ type: DataType.STRING(500), allowNull: true, field: 'file_url' })
   fileUrl: string | null;
 

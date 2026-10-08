@@ -14,7 +14,6 @@ export enum CommunicationChannel {
   OTHER = 'OTHER',
 }
 
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface CommunicationLogCreationAttributes {
   customerId: number;
   contactId?: number | null;
@@ -51,7 +50,6 @@ export class CommunicationLog extends AuditedModel<
   })
   channel: CommunicationChannel;
 
-  /** เวลาที่คุยกันจริง ไม่ใช่เวลาที่มาบันทึก (created_at คือเวลาที่บันทึก) */
   @Column({ type: DataType.DATE, allowNull: false, field: 'occurred_at' })
   occurredAt: Date;
 
@@ -61,7 +59,6 @@ export class CommunicationLog extends AuditedModel<
   @Column({ type: DataType.TEXT, allowNull: true })
   content: string | null;
 
-  /** พนักงานที่เป็นคนคุย ซึ่งอาจไม่ใช่คนเดียวกับ created_by ที่มาบันทึกให้ */
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'handled_by_user_id' })
   handledByUserId: number | null;

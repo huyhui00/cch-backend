@@ -16,7 +16,6 @@ export const CurrentUser = createParamDecorator(
     const request = context.switchToHttp().getRequest<{ user?: AuthenticatedUser }>();
     const user = request.user;
 
-    // เกิดได้เฉพาะตอนเผลอใช้ decorator นี้บน endpoint ที่ติด @Public()
     if (!user) {
       throw new UnauthorizedException('กรุณาเข้าสู่ระบบก่อนใช้งาน');
     }

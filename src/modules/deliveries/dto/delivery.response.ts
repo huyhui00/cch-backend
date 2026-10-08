@@ -126,10 +126,6 @@ function toUserSummary(
   return user ? { id: user.id, username: user.username, fullName: user.fullName } : null;
 }
 
-/**
- * ออกประกันจากใบส่งมอบนี้ได้ไหม (ตกลง 11 ก.ย.) — ต้องเป็นครั้งสุดท้ายและลูกค้ายอมรับแล้ว
- * ใช้ตัวเดียวกันทั้งตอนออกประกันจริงและ flag ที่คืนให้หน้าจอ สูตรจะได้ไม่หลุดจากกัน
- */
 export function canIssueWarranty(
   delivery: Pick<Delivery, 'acceptanceStatus' | 'isFinal'>,
 ): boolean {
@@ -141,7 +137,6 @@ export function toDeliveryResponse(
   extras: {
     warranties?: Warranty[];
     attachments?: Attachment[];
-    /** วันที่ใช้ตัดสินว่าประกันยังคุ้มครองอยู่ — ส่งเข้ามาให้ทุกแถวในชุดเดียวกันใช้วันเดียวกัน */
     onDate: string;
   },
 ): DeliveryResponseDto {

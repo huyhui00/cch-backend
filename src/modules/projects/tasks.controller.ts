@@ -55,10 +55,6 @@ import {
 } from './dto/task-submission.dto';
 import { TasksService } from './tasks.service';
 
-/**
- * การทำงานกับงานที่ข้ามโครงการ — ผู้ใช้ทำจากหน้าจอรวม ไม่ได้เข้าไปทีละโครงการ
- * ส่วน CRUD ของงานอยู่ใต้ /api/projects/:projectId/tasks
- */
 @ApiTags('tasks')
 @ApiBearerAuth('access-token')
 @Controller('tasks')

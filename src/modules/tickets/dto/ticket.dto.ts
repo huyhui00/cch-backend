@@ -41,7 +41,6 @@ const trimToNull = ({ value }: { value: unknown }) => {
  *         `reportedChannel` และ `reportedAt` ที่เป็นเวลาที่ลูกค้าแจ้งจริง
  */
 export class CreateTicketDto {
-  /** รับไว้เพื่อให้โค้ดเก่าคอมไพล์ได้ แต่ ValidationPipe จะปฏิเสธฟิลด์นี้ */
   @ApiHideProperty()
   ticketNo?: unknown;
 
@@ -148,7 +147,6 @@ export class CreateTicketDto {
   dueAt?: string | null;
 }
 
-/** ข้อมูลที่ใช้ตรวจหลักฐาน Warranty/MA ก่อนเปิดใบแจ้งปัญหา */
 export class BillingSuggestionQueryDto {
   @ApiProperty({ description: 'โครงการที่เกิดปัญหา', example: 1 })
   @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
@@ -258,7 +256,6 @@ export class UpdateTicketDto {
   ticketNo?: string | null;
 }
 
-/** มอบหมายผู้รับผิดชอบแก้ไข */
 export class AssignTicketDto {
   @ApiProperty({
     nullable: true,
@@ -296,7 +293,6 @@ export class ReopenTicketDto {
   reason?: string | null;
 }
 
-/** แอดมินตรวจผ่าน ส่งกลับซัพพอร์ต */
 export class ReturnToSupportDto {
   @ApiPropertyOptional({
     description: 'หมายเหตุถึงซัพพอร์ต (เช่น สิ่งที่ต้องบอกลูกค้า) จะถูกต่อท้ายรายละเอียดของใบ',
@@ -310,7 +306,6 @@ export class ReturnToSupportDto {
   note?: string | null;
 }
 
-/** แอดมินตรวจไม่ผ่าน ตีกลับให้ผู้แก้ */
 export class RejectReviewDto {
   @ApiProperty({
     description: 'เหตุผลที่ไม่ผ่าน — ผู้แก้เห็นในแจ้งเตือน และถูกต่อท้ายรายละเอียดของใบ',
@@ -324,7 +319,6 @@ export class RejectReviewDto {
   reason: string;
 }
 
-/** ปิดงาน */
 export class CloseTicketDto {
   @ApiPropertyOptional({
     description: 'หมายเหตุตอนปิดงาน จะถูกต่อท้ายรายละเอียดของใบเดิม',
@@ -344,7 +338,6 @@ export class CloseTicketDto {
   extraCharge?: string | null;
 }
 
-/** `search` ที่สืบมาจาก PaginationDto ค้นจากหัวข้อ รายละเอียด และเลขที่ใบ */
 export class QueryTicketsDto extends PaginationDto {
   @ApiPropertyOptional({ enum: TicketStatus, description: 'กรองตามสถานะ' })
   @IsOptional()
@@ -385,7 +378,6 @@ export class QueryTicketsDto extends PaginationDto {
   billingType?: TicketBillingType;
 }
 
-/** หน้าจอ "รอรับการแก้ไข" — ไม่มีตัวกรอง status เพราะชุดสถานะถูกกำหนดตายตัวแล้ว */
 export class QueryPendingTicketsDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'กรองเฉพาะปัญหาของลูกค้ารายนี้', example: 1 })
   @IsOptional()
@@ -405,7 +397,6 @@ export class QueryPendingTicketsDto extends PaginationDto {
   priority?: TicketPriority;
 }
 
-/** คิวซัพพอร์ต — แท็บบังคับ */
 export class QuerySupportQueueDto extends PaginationDto {
   @ApiProperty({
     enum: SupportQueueTab,
@@ -415,7 +406,6 @@ export class QuerySupportQueueDto extends PaginationDto {
   tab!: SupportQueueTab;
 }
 
-/** คิวแอดมิน — แท็บบังคับ */
 export class QueryAdminQueueDto extends PaginationDto {
   @ApiProperty({
     enum: AdminQueueTab,

@@ -76,7 +76,6 @@ export class TaskSubmission extends AuditedModel<TaskSubmission, TaskSubmissionC
   @Column({ type: DataType.TEXT, allowNull: true, field: 'review_note' })
   reviewNote: string | null;
 
-  /** ไฟล์ที่ผู้ตรวจแนบตอนส่งกลับแก้ — แยกจากไฟล์รายงานของผู้ส่ง */
   @Column({ type: DataType.STRING(500), allowNull: true, field: 'review_file_url' })
   reviewFileUrl: string | null;
 

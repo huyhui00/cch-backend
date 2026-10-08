@@ -74,7 +74,6 @@ export class MaPlansService {
     const { rows, count } = await this.planModel.findAndCountAll({
       where,
       include: [itemsInclude()],
-      // เรียงด้วย id เป็นตัวตัดสินรอง เพราะ sortOrder ซ้ำกันได้และมักเป็น 0 กันหมด
       order: [
         [sortBy, sortBy === 'sortOrder' ? 'ASC' : query.sortOrder],
         ['id', 'ASC'],
@@ -94,7 +93,6 @@ export class MaPlansService {
   async create(dto: CreateMaPlanDto): Promise<MaPlanResponseDto> {
     const actorId = getCurrentUserId();
 
-    // รหัสไม่บังคับแล้ว (ตกลง 10 ก.ย.) — ตรวจซ้ำเฉพาะตอนใส่มา ส่วน NULL ซ้ำกันได้
     if (dto.code) {
       await this.assertCodeIsAvailable(dto.code);
     }
@@ -126,19 +124,10 @@ export class MaPlansService {
     return this.findOne(created.id);
   }
 
-  /**
-   * แก้ไขแผน
-   *
-   * ส่ง `items` มา = แทนที่รายการย่อยทั้งชุด ไม่ใช่เพิ่มต่อท้าย เพราะหน้าจอแก้แผน
-   * เป็นฟอร์มเดียวที่ผู้ใช้เพิ่ม ลบ เรียงใหม่ แล้วกดบันทึกครั้งเดียว การเทียบทีละแถว
-   * ว่าอันไหนใหม่/เก่า/ถูกลบ ต้องให้ client ส่ง id มาด้วย ซึ่งเปิดช่องให้ส่ง id
-   * ของแผนอื่นเข้ามาได้ — แทนที่ทั้งชุดปลอดภัยกว่าและตรงกับพฤติกรรมของหน้าจอ
-   */
   async update(id: number, dto: UpdateMaPlanDto): Promise<MaPlanResponseDto> {
     const actorId = getCurrentUserId();
     const plan = await this.findOrFail(id);
 
-    // ส่ง null มา = ล้างรหัสออก ไม่ต้องตรวจซ้ำ
     if (dto.code && dto.code !== plan.code) {
       await this.assertCodeIsAvailable(dto.code, id);
     }
@@ -169,13 +158,6 @@ export class MaPlansService {
     return this.findOne(id);
   }
 
-  /**
-   * ลบแผน — ทำได้เฉพาะแผนที่ยังไม่เคยถูกใช้ในสัญญาใด
-   *
-   * แผนที่มีสัญญาอ้างอยู่ลบไม่ได้ เพราะสัญญาเก่าจะกลายเป็นสัญญาที่ไม่มีเนื้อหา
-   * ให้ปิดการใช้งานด้วย `isActive = false` แทน — แผนจะหายจากตัวเลือกตอนทำสัญญาใหม่
-   * แต่สัญญาเดิมยังอ่านเนื้อหาได้ตามปกติ
-   */
   async remove(id: number): Promise<void> {
     const actorId = getCurrentUserId();
     const plan = await this.findOrFail(id);
@@ -198,7 +180,6 @@ export class MaPlansService {
     });
   }
 
-  /** ลบของเดิมทั้งชุดแล้วเขียนใหม่ตามลำดับที่ส่งมา — อยู่ในทรานแซกชันของผู้เรียกเสมอ */
   private async replaceItems(
     planId: number,
     items: MaPlanItemDto[],

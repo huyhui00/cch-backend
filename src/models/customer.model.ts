@@ -14,7 +14,6 @@ export enum CustomerStatus {
   CHURNED = 'CHURNED',
 }
 
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface CustomerCreationAttributes {
   code?: string | null;
   name: string;
@@ -89,12 +88,10 @@ export class Customer extends AuditedModel<Customer, CustomerCreationAttributes>
   @Column({ type: DataType.STRING(100), allowNull: true })
   source: string | null;
 
-  /** พนักงานที่ดูแลลูกค้ารายนี้ */
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'owner_user_id' })
   ownerUserId: number | null;
 
-  /** ใช้กับ notification rule แบบ CUSTOMER_IDLE */
   @Column({ type: DataType.DATE, allowNull: true, field: 'last_contacted_at' })
   lastContactedAt: Date | null;
 

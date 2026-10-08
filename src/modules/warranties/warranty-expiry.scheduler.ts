@@ -4,10 +4,6 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 
 import { WarrantiesService } from './warranties.service';
 
-/**
- * เปลี่ยนประกัน ACTIVE ที่เลยวันสิ้นสุดเป็น EXPIRED — รายชั่วโมง และตอนเปิดเซิร์ฟเวอร์
- * ปิดด้วย SCHEDULER_ENABLED=false เหมือน MaContractExpiryScheduler
- */
 @Injectable()
 export class WarrantyExpiryScheduler implements OnApplicationBootstrap {
   private readonly logger = new Logger(WarrantyExpiryScheduler.name);

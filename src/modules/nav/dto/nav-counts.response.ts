@@ -22,10 +22,6 @@ export class SupportQueueCountsDto {
   RETURNED: number;
 }
 
-/**
- * ตัวเลข badge ของเมนู — แต่ละช่องเท่ากับ total ของหน้ารายการที่เมนูนั้นเปิด
- * null = ผู้ใช้ไม่มีสิทธิ์เข้าหน้านั้น (ไม่ใช่ 0)
- */
 export class NavCountsDto {
   @ApiProperty({
     type: AdminQueueCountsDto,

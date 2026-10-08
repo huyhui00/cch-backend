@@ -4,13 +4,6 @@ import { AuditedModel } from './base.model';
 import { SurveyQuestion } from './survey-question.model';
 import { SurveyResponse } from './survey-response.model';
 
-/**
- * คำตอบราย 1 คำถาม เก็บแยกคอลัมน์ตามชนิดของคำถาม
- *   RATING       -> answer_number
- *   TEXT         -> answer_text
- *   CHOICE       -> answer_text
- *   MULTI_CHOICE -> answer_json
- */
 export interface SurveyAnswerCreationAttributes {
   responseId: number;
   questionId: number;

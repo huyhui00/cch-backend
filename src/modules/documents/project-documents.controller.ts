@@ -34,7 +34,6 @@ import { DocumentResponseDto } from './dto/document.response';
 
 const ALLOWED_LIST = [...ALLOWED_EXTENSIONS].join(' ');
 
-/** เอกสารของโครงการ — แสดงและเพิ่มจากหน้ารายละเอียดโครงการ (ประชุม 11 ก.ย. — B-5) */
 @ApiTags('documents')
 @ApiBearerAuth('access-token')
 @Controller('projects/:projectId/documents')

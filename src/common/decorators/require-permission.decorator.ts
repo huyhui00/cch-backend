@@ -18,17 +18,5 @@ export const SUPER_ADMIN_ONLY_PERMISSIONS: ReadonlySet<string> = new Set<string>
   'permission.view',
 ]);
 
-/**
- * ระบุสิทธิ์ที่ต้องมีเพื่อเรียก endpoint นี้
- *
- *   @RequirePermission('customer.view')
- *   @RequirePermission('ticket.resolve', 'ticket.close')   // มีอย่างใดอย่างหนึ่งก็พอ
- *
- * ใส่หลายค่าได้ ความหมายคือ OR — ผู้ใช้มีสิทธิ์ตัวใดตัวหนึ่งก็ผ่าน
- * ถ้าต้องการเงื่อนไข AND ให้แยกเป็นการตรวจใน service แทน อย่าใส่รวมกันตรงนี้
- *
- * ใช้กับ class ก็ได้ ถ้าทั้ง controller ใช้สิทธิ์เดียวกัน แต่ค่าที่ประกาศ
- * ที่ระดับ method จะทับค่าที่ระดับ class เสมอ
- */
 export const RequirePermission = (...permissions: string[]) =>
   SetMetadata(PERMISSION_KEY, permissions);

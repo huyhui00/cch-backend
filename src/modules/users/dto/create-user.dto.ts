@@ -17,17 +17,10 @@ import {
 
 import { AccountType } from '../../../models';
 
-/** ความยาวขั้นต่ำของรหัสผ่านผู้ใช้ทั่วไป (บัญชี SUPER_ADMIN บังคับ 12 ตั้งแต่ตอน seed) */
 export const MIN_PASSWORD_LENGTH = 8;
 
-/** bcrypt ตัด input ทิ้งที่ 72 ไบต์ ตัดตั้งแต่ชั้น validation จะได้ไม่เข้าใจผิดกันภายหลัง */
 export const MAX_PASSWORD_LENGTH = 72;
 
-/**
- * ผู้ใช้ถือ role ได้อันเดียว (ประชุม 11 ก.ย. — CLAUDE.md 4.2)
- * คนที่ทำหลายหน้าที่ให้สร้าง role ใหม่ที่ติ๊กสิทธิ์รวมไว้ ตาราง user_roles ยังเป็น M:N
- * ถ้าวันหนึ่งกลับไปใช้หลาย role แค่เปลี่ยนค่านี้
- */
 export const MAX_ROLES_PER_USER = 1;
 
 export const ROLE_LIMIT_MESSAGE =
@@ -156,13 +149,6 @@ export class CreateUserDto {
   roleIds?: number[];
 }
 
-/**
- * แก้ไขข้อมูลผู้ใช้ — ไม่รวม username, password และ roleIds
- *   username  เปลี่ยนไม่ได้ เพราะเป็นตัวอ้างอิงใน audit log ย้อนหลัง
- *   password  เปลี่ยนเองผ่าน PATCH /api/users/me/password
- *             ผู้ดูแลตั้งให้ใหม่ผ่าน POST /api/users/:id/reset-password
- *   roleIds   ผูก/ถอดผ่าน PUT /api/users/:id/roles เท่านั้น
- */
 export class UpdateUserDto extends PartialType(
   OmitType(CreateUserDto, ['username', 'password', 'roleIds'] as const),
 ) {}

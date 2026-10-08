@@ -53,10 +53,6 @@ export class Warranty extends AuditedModel<Warranty, WarrantyCreationAttributes>
   @Column({ type: DataType.STRING(50), allowNull: true, field: 'warranty_no' })
   warrantyNo: string | null;
 
-  /**
-   * สัญญา MA ที่ประกันใบนี้มาคู่กัน (B-13) — **อ้างอิงอย่างเดียว ไม่มีการคิดรวม**
-   * พี่เลี้ยง: "ไม่ใช่คิดรวมนะ เราดึงสัญญามาเพิ่มในประกันด้วย" เพื่อให้รู้ว่าประกันนี้รวมแผนไหน
-   */
   @ForeignKey(() => MaContract)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'ma_contract_id' })
   maContractId: number | null;

@@ -11,12 +11,6 @@ import {
 } from '../../../models';
 import { TicketHistoryEventDto } from './ticket-history';
 
-/**
- * สถานะที่ถือว่า "ยังไม่จบ" — หน้าจอรอรับการแก้ไข (CLAUDE.md 9.1)
- *
- * ประกาศไว้ที่เดียวแล้วใช้ร่วมกันทั้ง query ของ /pending และค่า `isPending`
- * ในแต่ละแถว ถ้าแยกกันเขียนสองที่ วันหนึ่งจะได้รายการที่ตัวเองบอกว่าไม่ pending
- */
 export const PENDING_TICKET_STATUSES: readonly TicketStatus[] = [
   TicketStatus.RECEIVED,
   TicketStatus.WAITING_ADMIN,
@@ -25,33 +19,21 @@ export const PENDING_TICKET_STATUSES: readonly TicketStatus[] = [
   TicketStatus.IN_PROGRESS,
 ];
 
-/**
- * ใบที่ยังค้างอยู่กับผู้แก้ — แท็บ "กำลังทำ" ของหน้าใบของฉัน และ badge ของเมนูนั้น
- * RESOLVED ขึ้นไปส่งกลับแอดมินแล้ว ไม่ใช่งานที่ผู้แก้ต้องทำต่อ
- */
 export const ASSIGNEE_OPEN_TICKET_STATUSES: readonly TicketStatus[] = [
   TicketStatus.ASSIGNED,
   TicketStatus.IN_PROGRESS,
   TicketStatus.REOPENED,
 ];
 
-/** แท็บคิวซัพพอร์ต */
 export enum SupportQueueTab {
-  /** รับเรื่องแล้ว รอส่งหัวหน้า */
   AWAITING_SEND = 'AWAITING_SEND',
-  /** แอดมินตรวจผ่านแล้ว รอบอกลูกค้า */
   RETURNED = 'RETURNED',
 }
 
-/** แท็บคิวแอดมิน */
 export enum AdminQueueTab {
-  /** รอแอดมินกดรับเรื่อง */
   AWAITING_CLAIM = 'AWAITING_CLAIM',
-  /** รับคิวแล้ว รอจัดแจงพนักงาน */
   CLAIMED = 'CLAIMED',
-  /** พนักงานแก้เสร็จ (RESOLVED) รอตรวจผ่าน */
   AWAITING_REVIEW = 'AWAITING_REVIEW',
-  /** ส่งกลับซัพพอร์ตแล้ว รอบอกลูกค้า */
   WITH_SUPPORT = 'WITH_SUPPORT',
 }
 
@@ -90,7 +72,6 @@ export class TicketContactSummaryDto {
   name: string;
 }
 
-/** ขั้นใน stepper ของหนึ่งรอบแก้ (B-11) */
 export class ResolutionStepDto {
   @ApiProperty({ example: 'STARTED', description: 'STARTED | RECORDED' })
   code: 'STARTED' | 'RECORDED';
@@ -105,7 +86,6 @@ export class ResolutionStepDto {
   result?: ResolutionResult | null;
 }
 
-/** ไฟล์แนบแบบย่อในรายการรอบ */
 export class ResolutionAttachmentDto {
   @ApiProperty({ example: 12 })
   id: number;
@@ -281,20 +261,6 @@ export class BillingSuggestionDto {
   reason: string;
 }
 
-/** สรุปโควตา MA ของรอบที่การแก้ครั้งนี้ตกอยู่ */
-/**
- * สถานะโควตาที่พ่วงกลับไปตอนบันทึกผลการแก้ปัญหา
- *
- * ฟิลด์ตรงกับ `QuotaStatusResponseDto` ของ `GET /api/ma-contracts/:id/quota`
- * ทุกตัว **ยกเว้นตัวสุดท้าย** ที่ตั้งใจใช้คนละชื่อ เพราะความหมายต่างกันจริง ๆ
- * ตามบริบท — อย่า "แก้ให้เหมือนกัน" โดยไม่อ่านคำอธิบายข้างล่างก่อน
- *
- *   ที่นี่                `isOverQuota` = **ครั้งนี้** ที่เพิ่งหักไป เกินโควตาหรือไม่
- *   ฝั่ง ma-contracts     `isExhausted` = โควตาเต็มแล้วหรือยัง ครั้ง**ถัดไป**จะเกิน
- *
- * ทั้งสองค่าคำนวณจาก `willExceed` ตัวเดียวกัน (ยอดก่อนหัก >= โควตา) ต่างกันที่
- * ฝั่งนี้หักไปแล้วหนึ่งครั้ง ประโยคที่ถูกต้องจึงเป็นอดีต ส่วนอีกฝั่งยังไม่หัก เป็นอนาคต
- */
 export class QuotaSummaryDto {
   @ApiProperty({ example: 2 })
   contractId: number;
@@ -466,7 +432,6 @@ export class TicketResponseDto {
   updatedAt: Date;
 }
 
-/** ผลของการบันทึกการแก้หนึ่งรอบ พร้อมสถานะโควตาที่กระทบ */
 export class ResolutionCreatedDto {
   @ApiProperty({ type: TicketResponseDto })
   ticket: TicketResponseDto;
@@ -598,10 +563,6 @@ export function toTicketResponse(
   };
 }
 
-/**
- * B-12 — ข้อมูลสำหรับพิมพ์ใบยืนยันการแก้ไขให้ลูกค้าเซ็น
- * คืน JSON ไม่ใช่ไฟล์ (หลักเดียวกับพิมพ์ร่างสัญญา MA) · FE จัดหน้ากระดาษเอง
- */
 export class TicketConfirmationPrintDto {
   @ApiProperty({ example: 'ใบยืนยันการแก้ไขปัญหา' })
   documentTitle: string;

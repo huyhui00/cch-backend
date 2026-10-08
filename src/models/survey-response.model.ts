@@ -6,7 +6,6 @@ import { SurveyAnswer } from './survey-answer.model';
 import { SurveyAssignment } from './survey-assignment.model';
 import { Survey } from './survey.model';
 
-/** 1 assignment ตอบได้ครั้งเดียว — assignment_id เป็น UNIQUE */
 export interface SurveyResponseCreationAttributes {
   assignmentId: number;
   surveyId: number;
@@ -35,7 +34,6 @@ export class SurveyResponse extends AuditedModel<SurveyResponse, SurveyResponseC
   @Column({ type: DataType.DATE, allowNull: false, field: 'submitted_at' })
   submittedAt: Date;
 
-  /** คะแนนรวมที่คำนวณจากคำถามแบบ RATING ไว้ทำรายงาน */
   @Column({ type: DataType.DECIMAL(5, 2), allowNull: true, field: 'overall_score' })
   overallScore: string | null;
 

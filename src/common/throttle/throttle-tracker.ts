@@ -35,7 +35,6 @@ export function createUserOrIpTracker(accessSecret: string): ThrottlerGetTracker
   };
 }
 
-/** ถังเดียวต่อผู้ใช้/IP รวมทุกเส้น (ค่าเริ่มต้นของไลบรารีแยกถังต่อเส้น) */
 export const sharedBucketKey: ThrottlerGenerateKeyFunction = (_context, tracker, name) =>
   `${name}:${tracker}`;
 

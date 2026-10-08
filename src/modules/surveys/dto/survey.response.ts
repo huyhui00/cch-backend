@@ -264,8 +264,6 @@ export class SurveySummaryDto {
   questions: QuestionSummaryDto[];
 }
 
-// ---- M8-06 สรุปคะแนนแยกตามลูกค้าและตามช่วงเวลา -----------------------------------
-
 export class ScoreGroupDto {
   @ApiProperty({ description: 'จำนวนคำตอบในกลุ่มนี้', example: 4 })
   responseCount: number;
@@ -336,7 +334,6 @@ export class SurveyScoreBreakdownDto {
   byMonth: MonthScoreDto[];
 }
 
-/** ตัวเลือกถูกเก็บเป็น JSON — ต้องกันค่าที่ไม่ใช่อาเรย์ของข้อความก่อนส่งออก */
 export function toOptionList(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) {
     return null;
@@ -358,13 +355,6 @@ export function toSurveyQuestionResponse(question: SurveyQuestion): SurveyQuesti
   };
 }
 
-/**
- * ใช้ได้จริงตอนนี้ไหม
- *
- * เหตุผลเดียวกับ `isCurrentlyActive` ของประกัน (Phase 6) สัญญา MA (Phase 8)
- * และ `isOverdue` ของงานติดตาม (M7) — `status` เชื่ออย่างเดียวไม่ได้ เพราะยังไม่มี
- * scheduler มาปิดแบบประเมินที่เลย `valid_to` ให้จนกว่าจะถึง Phase 11
- */
 export function isSurveyCurrentlyUsable(survey: Survey, today: string): boolean {
   if (survey.status !== SurveyStatus.ACTIVE) {
     return false;
@@ -421,7 +411,6 @@ export function toAssignmentResponse(
   };
 }
 
-/** DECIMAL ถูกคืนมาเป็น string เสมอ — แปลงเป็นตัวเลขตรงจุดเดียวก่อนส่งออก */
 function toNumberOrNull(value: string | null): number | null {
   return value === null ? null : Number(value);
 }

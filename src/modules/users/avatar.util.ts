@@ -5,7 +5,6 @@ import { BadRequestException } from '@nestjs/common';
 import { LOCAL_KEY_PREFIX } from '../files/storage.service';
 import type { UploadedFileLike } from '../files/upload.util';
 
-/** ค่าคงที่ด้วยเหตุผลเดียวกับ MAX_UPLOAD_MB — ตัวเลือกของ FileInterceptor ถูกประเมินก่อนอ่าน .env */
 export const AVATAR_MAX_MB = 2;
 
 export const AVATAR_INTERCEPTOR_OPTIONS = {
@@ -20,7 +19,6 @@ const AVATAR_TYPES: ReadonlyMap<string, { extensions: readonly string[]; content
     ['image/webp', { extensions: ['.webp'], contentType: 'image/webp' }],
   ]);
 
-/** ตรวจทั้ง mimetype และนามสกุลให้ตรงกัน — คืนนามสกุลที่ใช้ตั้งชื่อไฟล์ในที่เก็บ */
 export function assertAvatarFile(file: UploadedFileLike | undefined): string {
   if (!file) {
     throw new BadRequestException('กรุณาแนบรูปภาพ (ฟิลด์ file)');
@@ -69,11 +67,6 @@ export function avatarContentType(key: string): string {
   return 'application/octet-stream';
 }
 
-/**
- * ค่า avatarUrl ที่ส่งออกไป — รูปที่อัปโหลดผ่านระบบคืนเป็น path ของ API (ดึงพร้อม Authorization header)
- * ไม่คืน key ของที่เก็บ (กฎ Phase 9) · ค่าเก่าที่คนพิมพ์เป็น URL เองคืนตามเดิม
- * `?v=` เปลี่ยนทุกครั้งที่อัปโหลดรูปใหม่ — หน้าจอที่ cache blob ตาม URL จะได้รู้ว่าต้องโหลดใหม่
- */
 export function avatarUrlFor(user: { id: number; avatarUrl: string | null }): string | null {
   if (!user.avatarUrl) {
     return null;

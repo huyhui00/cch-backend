@@ -22,10 +22,6 @@ import {
   ROLE_LIMIT_MESSAGE,
 } from './create-user.dto';
 
-/**
- * ผูก role ส่ง array ว่าง = ถอด role ออก
- * ถือได้อันเดียว (CLAUDE.md 4.2) แต่ยังรับเป็น array เพื่อไม่เปลี่ยนสัญญากับ frontend
- */
 export class AssignRolesDto {
   @ApiProperty({
     type: [Number],
@@ -74,10 +70,6 @@ export class ChangePasswordDto {
 
 export const MAX_NICKNAME_LENGTH = 50;
 
-/**
- * ผู้ใช้แก้โปรไฟล์ของตัวเอง — แก้ได้แค่ชื่อเล่น
- * ฟิลด์อื่น (role / status / username / accountType) ถูก forbidNonWhitelisted ปฏิเสธเป็น 400
- */
 export class UpdateOwnProfileDto {
   @ApiPropertyOptional({
     nullable: true,
@@ -96,10 +88,6 @@ export class UpdateOwnProfileDto {
   nickname?: string | null;
 }
 
-/**
- * ผู้ดูแลตั้งรหัสใหม่ให้พนักงานที่ลืม — ไม่ต้องรู้รหัสเดิม
- * ไม่มีลิงก์สาธารณะและไม่ส่งรหัสออกนอกระบบ (ไม่มีอีเมล)
- */
 export class ResetPasswordDto {
   @ApiProperty({
     description: 'รหัสผ่านใหม่ที่ผู้ดูแลตั้งให้ ยาว 8-72 ตัวอักษร',

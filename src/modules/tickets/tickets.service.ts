@@ -63,11 +63,6 @@ import {
   toTicketResponse,
 } from './dto/ticket.response';
 
-/**
- * สถานะที่การมอบหมายจะพาไป ASSIGNED — ผู้รับผิดชอบต้องกดเริ่มงานเอง
- * WAITING_ADMIN = แอดมินรับคิวแล้ว (ต้องมี claimedByAdminUserId) · REOPENED = ปัญหาเดิมกลับมา
- * ไม่มอบจาก RECEIVED ตรง ๆ — ต้องส่งหัวหน้าก่อน (C-1)
- */
 export const CLOSED_TICKET_RESOLUTION_MESSAGE =
   'ปัญหานี้ปิดงานแล้ว ถ้าอาการเดิมกลับมาให้กด "ปัญหาเดิมกลับมา" เพื่อเปิดใบนี้ก่อน ' +
   'แล้วจึงบันทึกการแก้ไขรอบถัดไป';
@@ -93,7 +88,6 @@ const SORTABLE_FIELDS = new Set([
   'createdAt',
 ]);
 
-/** เรียงด้วยชื่อที่ join มาจาก include ของรายการ (belongsTo ทั้งหมด จึงไม่แตก subquery) */
 const JOINED_SORTS = new Map<string, (dir: string) => OrderItem>([
   ['customerName', (dir) => ['customer', 'name', dir]],
   ['projectName', (dir) => ['project', 'name', dir]],
@@ -249,14 +243,6 @@ export class TicketsService {
     );
   }
 
-  /**
-   * หน้าจอ "รอรับการแก้ไข" (CLAUDE.md 9.1)
-   *
-   * ชุดสถานะถูกกำหนดตายตัวที่ PENDING_TICKET_STATUSES ไม่เปิดให้กรองด้วย status
-   * เพราะถ้าเปิด หน้าจอจะเรียกด้วยสถานะ CLOSED ได้ ซึ่งขัดกับความหมายของหน้าจอนี้
-   *
-   * เรียงงานด่วนขึ้นก่อน แล้วค้างนานสุดขึ้นก่อนในระดับความสำคัญเดียวกัน
-   */
   async findPending(query: QueryPendingTicketsDto): Promise<PaginatedResult<TicketResponseDto>> {
     const where: WhereOptions<Ticket> = {
       status: { [Op.in]: PENDING_TICKET_STATUSES },
@@ -298,7 +284,6 @@ export class TicketsService {
     );
   }
 
-  /** คิวซัพพอร์ต — รอส่งหัวหน้า / แอดมินส่งกลับมา (C-1) */
   async findSupportQueue(query: QuerySupportQueueDto): Promise<PaginatedResult<TicketResponseDto>> {
     const where: WhereOptions<Ticket> = this.supportQueueWhere(query.tab);
 
@@ -326,7 +311,6 @@ export class TicketsService {
     );
   }
 
-  /** คิวแอดมิน — รับเรื่อง / จัดแจง / ตรวจผ่าน (C-1) */
   async findAdminQueue(query: QueryAdminQueueDto): Promise<PaginatedResult<TicketResponseDto>> {
     const where: WhereOptions<Ticket> = this.adminQueueWhere(query.tab);
 
@@ -354,10 +338,6 @@ export class TicketsService {
     );
   }
 
-  /**
-   * ตัวเลข badge ของคิว — where ตัวเดียวกับหน้ารายการ ไม่มีคำค้น
-   * include ของรายการเป็น required: false ทั้งหมด count() จึงเท่ากับ total ของหน้ารายการ
-   */
   async countAdminQueue(): Promise<Record<AdminQueueTab, number>> {
     const tabs = Object.values(AdminQueueTab);
     const counts = await Promise.all(
@@ -380,7 +360,6 @@ export class TicketsService {
     >;
   }
 
-  /** ใบที่มอบหมายให้ผู้ใช้นี้และยังค้างอยู่กับเขา — แท็บ "กำลังทำ" ของหน้าใบของฉัน */
   countOpenAssignedTo(userId: number): Promise<number> {
     return this.ticketModel.count({
       where: {
@@ -390,7 +369,6 @@ export class TicketsService {
     });
   }
 
-  /** รายละเอียดปัญหา พร้อมทุกรอบที่ลงมือแก้ + ขั้น stepper + ไฟล์แนบรายรอบ (B-11) */
   async findOne(id: number): Promise<TicketResponseDto> {
     const ticket = await this.ticketModel.findByPk(id, { include: listIncludes() });
 
@@ -408,7 +386,6 @@ export class TicketsService {
     return toTicketResponse(ticket, resolutions, attachmentsByResolutionId, history);
   }
 
-  /** ลำดับเหตุการณ์ของสายงาน — อ่านจาก audit_logs ของใบนี้ (index table_name, record_id, created_at) */
   private async findHistory(ticketId: number): Promise<TicketHistoryEventDto[]> {
     const rows = await this.auditLogModel.findAll({
       where: {
@@ -435,10 +412,6 @@ export class TicketsService {
     return buildTicketHistory(rows, new Map(users.map((user) => [user.id, user.fullName])));
   }
 
-  /**
-   * B-12 — ข้อมูลพิมพ์ใบยืนยันการแก้ไขให้ลูกค้าเซ็นมือ
-   * คืน JSON ไม่สร้าง PDF · แนบสแกนทีหลังด้วย POST /api/attachments (TICKET_RESOLUTION)
-   */
   async getConfirmationPrint(id: number, round?: number): Promise<TicketConfirmationPrintDto> {
     const ticket = await this.ticketModel.findByPk(id, {
       include: [
@@ -639,7 +612,6 @@ export class TicketsService {
     const actorId = getCurrentUserId();
     const ticket = await this.findOrFail(id);
 
-    // ย้ายข้ามลูกค้าไม่ได้ — โครงการใหม่ต้องเป็นของลูกค้าเจ้าของใบเดิมเท่านั้น
     if (dto.projectId) {
       await this.assertProjectBelongsToCustomer(dto.projectId, ticket.customerId);
     }
@@ -731,10 +703,6 @@ export class TicketsService {
     return result;
   }
 
-  /**
-   * ซัพพอร์ตส่งเข้าคิวกลางให้แอดมิน — ไม่เลือกคน (C-1)
-   * จาก RECEIVED / REOPENED → WAITING_ADMIN · ล้าง claim และผู้แก้เดิม
-   */
   async sendToAdmin(id: number): Promise<TicketResponseDto> {
     const actorId = getCurrentUserId();
     const ticket = await this.findOrFail(id);
@@ -755,9 +723,6 @@ export class TicketsService {
     return result;
   }
 
-  /**
-   * แอดมินกดรับคิว — คนแรกที่กดเป็น claimedByAdminUserId (C-1)
-   */
   async claim(id: number): Promise<TicketResponseDto> {
     const actorId = getCurrentUserId();
     const ticket = await this.findOrFail(id);
@@ -778,10 +743,6 @@ export class TicketsService {
     return this.findOne(id);
   }
 
-  /**
-   * แอดมินตรวจผ่าน → ส่งกลับซัพพอร์ตให้บอกลูกค้า (C-1)
-   * จาก RESOLVED → WAITING_SUPPORT
-   */
   async returnToSupport(id: number, dto: ReturnToSupportDto = {}): Promise<TicketResponseDto> {
     const actorId = getCurrentUserId();
     const ticket = await this.findOrFail(id);
@@ -833,10 +794,6 @@ export class TicketsService {
     return result;
   }
 
-  /**
-   * ซัพพอร์ตบอกลูกค้าแล้ว → ปิดใบ (C-1)
-   * จาก WAITING_SUPPORT → CLOSED
-   */
   async customerNotified(id: number, dto: CloseTicketDto): Promise<TicketResponseDto> {
     const actorId = getCurrentUserId();
     const ticket = await this.findOrFail(id);
@@ -856,7 +813,6 @@ export class TicketsService {
     return this.findOne(id);
   }
 
-  /** ผู้รับผิดชอบเป็นคนเริ่มงานเอง หลังหัวหน้าส่งงานแล้ว */
   async start(id: number): Promise<TicketResponseDto> {
     const actorId = getCurrentUserId();
     const ticket = await this.findOrFail(id);
@@ -874,16 +830,6 @@ export class TicketsService {
     return this.findOne(id);
   }
 
-  /**
-   * บันทึกผลการแก้หนึ่งรอบ — จุดที่ซับซ้อนที่สุดของทั้งระบบ (CLAUDE.md 9.1)
-   *
-   * ทุกอย่างอยู่ในทรานแซกชันเดียว ถ้าขั้นไหนล้ม ต้องไม่เหลือร่องรอยครึ่ง ๆ กลาง ๆ
-   * เช่นมีรอบการแก้แต่ยอด resolution_count ไม่ขยับ หรือหักโควตาไปแล้วแต่ไม่มีรอบการแก้
-   *
-   * ใบถูกล็อกด้วย SELECT ... FOR UPDATE ตั้งแต่ต้น เพราะเลข round มาจากการนับ
-   * ถ้าสองคนกดพร้อมกันโดยไม่ล็อก ทั้งคู่จะนับได้เลขเดียวกัน แล้วไปชน unique index
-   * (ticket_id, round) จนคนหลังได้ error ภาษาอังกฤษจาก MySQL
-   */
   async addResolution(id: number, dto: CreateResolutionDto): Promise<ResolutionCreatedDto> {
     const actorId = getCurrentUserId();
 
@@ -923,7 +869,6 @@ export class TicketsService {
           result: dto.result,
           detail: dto.detail,
           rootCause: dto.rootCause ?? null,
-          // ไม่ระบุคนแก้ = คนที่กดบันทึกคือคนแก้
           resolvedByUserId: dto.resolvedByUserId ?? actorId,
           startedAt: dto.startedAt ? new Date(dto.startedAt) : null,
           resolvedAt,
@@ -939,7 +884,6 @@ export class TicketsService {
           status: TicketStatus.RESOLVED,
           resolutionCount: round,
           resolvedAt,
-          // เวลาตอบกลับครั้งแรกบันทึกครั้งเดียว ใช้วัด SLA ย้อนหลังได้ (Phase 11)
           ...(ticket.firstResponseAt === null ? { firstResponseAt: resolvedAt } : {}),
           ...(dto.extraCharge !== undefined ? { extraCharge: dto.extraCharge ?? null } : {}),
           updatedBy: actorId,
@@ -947,7 +891,6 @@ export class TicketsService {
         { transaction },
       );
 
-      // หักโควตา MA — service จัดการเองว่าใบนี้เคยหักไปแล้วหรือยัง
       const { status } = await this.maQuotaService.recordUsageForTicket(ticket, {
         resolutionId: resolution.id,
         usedAt: resolvedAt,
@@ -967,7 +910,6 @@ export class TicketsService {
               periodStart: status.periodStart,
               periodEnd: status.periodEnd,
               quota: status.quota,
-              // status.used คือยอดก่อนหักครั้งนี้ — บวกกลับให้เป็นยอดหลังหักที่คนอ่านคาดหวัง
               used: status.used + 1,
               remaining: status.quota - (status.used + 1),
               isOverQuota: status.willExceed,
@@ -1046,8 +988,6 @@ export class TicketsService {
 
     return this.findOne(id);
   }
-
-  // ---- helpers -------------------------------------------------------------
 
   private supportQueueWhere(tab: SupportQueueTab): WhereOptions<Ticket> {
     return tab === SupportQueueTab.AWAITING_SEND
@@ -1144,13 +1084,6 @@ export class TicketsService {
     }
   }
 
-  /**
-   * ระบบเห็นอะไรบ้างตอนเปิดใบ — ใช้ *เสนอ* ประเภทการคิดเงิน (CLAUDE.md 9.3)
-   *
-   * ลำดับความสำคัญ: ประกันมาก่อนสัญญา MA เพราะประกันคือสิ่งที่ลูกค้าได้มาแล้ว
-   * โดยไม่ต้องจ่ายเพิ่ม การไปหักโควตา MA ทั้งที่ยังอยู่ในประกันเท่ากับให้ลูกค้า
-   * เสียของที่ซื้อไว้โดยไม่จำเป็น
-   */
   async suggestBilling(projectId: number | null, onDate: Date): Promise<BillingSuggestionDto> {
     if (projectId === null) {
       return {
@@ -1281,7 +1214,6 @@ export class TicketsService {
     });
   }
 
-  /** ไฟล์แนบของรอบแก้ — ใช้ในรายละเอียด (B-11) และใบพิมพ์ (B-12) */
   private async findResolutionAttachmentsMap(
     resolutionIds: number[],
   ): Promise<Map<number, ReturnType<typeof toResolutionAttachment>[]>> {
@@ -1332,7 +1264,6 @@ export class TicketsService {
     }
   }
 
-  /** กันการผูกปัญหาเข้ากับโครงการของลูกค้าคนอื่น ซึ่งทำให้ประวัติปนข้ามราย */
   private async assertProjectBelongsToCustomer(
     projectId: number,
     customerId: number,
@@ -1379,10 +1310,6 @@ export class TicketsService {
     }
   }
 
-  /**
-   * ต่างจาก assertUserExists — การ *มอบหมายงานใหม่* ต้องเป็นคนที่ยังทำงานอยู่
-   * เหมือนกับการมอบหมาย task ใน Phase 5 มอบงานให้คนที่ลาออกไปแล้วไม่มีความหมาย
-   */
   private async assertUserIsAssignable(userId: number): Promise<void> {
     const user = await this.userModel.findByPk(userId, {
       attributes: ['id', 'username', 'fullName', 'accountType', 'status'],
@@ -1407,7 +1334,6 @@ export class TicketsService {
     }
   }
 
-  /** เลขที่ใบต้องไม่ซ้ำ — ตรวจรวมรายการที่ถูก soft delete ไปแล้ว */
   private async assertTicketNoIsAvailable(ticketNo: string): Promise<void> {
     const existing = await this.ticketModel.findOne({ where: { ticketNo }, paranoid: false });
 

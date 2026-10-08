@@ -34,7 +34,6 @@ const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? val
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/** คะแนนสูงสุดที่เกินนี้ไม่มีใครใช้จริง และทำให้หน้าจอวาดปุ่มไม่ไหว */
 const MAX_RATING_SCALE = 10;
 
 export class SurveyQuestionDto {
@@ -149,15 +148,6 @@ export class CreateSurveyDto {
   questions?: SurveyQuestionDto[];
 }
 
-/**
- * แก้ไขแบบประเมิน
- *
- * ส่ง `questions` มา = แทนที่ทั้งชุด (เหมือน `items` ของแผน MA)
- * **แต่ทำได้เฉพาะตอนยังเป็น DRAFT** เพราะคำตอบที่เก็บมาอ้างถึง `question_id`
- * ถ้าเปลี่ยนคำถามหลังเริ่มเก็บคำตอบแล้ว คำตอบเก่าจะกลายเป็นคำตอบของคำถามที่ไม่เคยถูกถาม
- *
- * `status` ไม่ได้อยู่ที่นี่ — เปลี่ยนผ่าน `PATCH /:id/status` ซึ่งตรวจเงื่อนไขก่อน
- */
 export class UpdateSurveyDto {
   @ApiPropertyOptional({ maxLength: 255 })
   @IsOptional()
@@ -328,7 +318,6 @@ export class QueryAssignmentsDto extends PaginationDto {
   customerId?: number;
 }
 
-/** M8-06 ช่วงเวลาของสรุปคะแนน — กรองด้วยวันที่ลูกค้าตอบ (submitted_at) ไม่ใช่วันที่คีย์เข้าระบบ */
 export class QueryScoreBreakdownDto {
   @ApiPropertyOptional({ description: 'นับตั้งแต่วันที่ (YYYY-MM-DD)', example: '2026-01-01' })
   @IsOptional()

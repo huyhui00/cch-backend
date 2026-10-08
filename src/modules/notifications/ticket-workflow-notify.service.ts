@@ -15,7 +15,6 @@ import {
   UserStatus,
 } from '../../models';
 
-/** ข้อมูลใบที่พอสร้างข้อความแจ้งเตือนได้ — ไม่ผูกกับ response DTO ของ tickets */
 export interface TicketNotifyRef {
   id: number;
   ticketNo: string | null;
@@ -101,7 +100,6 @@ export class TicketWorkflowNotifyService {
     });
   }
 
-  /** แจ้งพนักงานที่ถูกมอบหมาย — ไม่แจ้งตอนถอนการมอบหมาย */
   async notifyAssigned(ticket: TicketNotifyRef, actorUserId: number | null): Promise<void> {
     await this.safeRun('TICKET_ASSIGNED', async () => {
       if (!ticket.assignedUserId) {
@@ -119,7 +117,6 @@ export class TicketWorkflowNotifyService {
     });
   }
 
-  /** แอดมินตรวจไม่ผ่าน — แจ้งผู้แก้พร้อมเหตุผล */
   async notifyReviewRejected(
     ticket: TicketNotifyRef,
     actorUserId: number | null,
@@ -154,10 +151,6 @@ export class TicketWorkflowNotifyService {
     }
   }
 
-  /**
-   * ผู้ที่จัดแจง/ตรวจใบได้ = SUPER_ADMIN + ADMIN + USER ที่ถือ ticket.assign
-   * ตรงกับคนที่เข้าคิวแอดมินได้จริง
-   */
   async findTicketAssignUserIds(): Promise<number[]> {
     const ids = new Set<number>();
 
@@ -230,8 +223,6 @@ export class TicketWorkflowNotifyService {
         continue;
       }
 
-      // กันซ้ำเฉพาะตอนแจ้งเตือนเดิมยังไม่ถูกอ่าน — ไม่ใช่ "วันละครั้ง" แบบ cron
-      // เพราะใบวนขั้นเดิมได้หลายรอบในวันเดียว (ตีกลับ → ส่งตรวจใหม่) และแต่ละรอบต้องมีคนรู้
       const exists = await this.notificationModel.findOne({
         where: {
           eventType: input.eventType,

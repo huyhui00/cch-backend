@@ -3,7 +3,6 @@ import { ApiProperty } from '@nestjs/swagger';
 import { daysUntil, todayAsDateOnly } from '../../../common/utils/date.util';
 import { FollowUp, FollowUpStatus } from '../../../models';
 
-/** สถานะที่ถือว่างานยัง "ค้างอยู่" — ใช้ทั้งตอนคิด isOverdue และตอนกรอง ?overdue= */
 export const OPEN_FOLLOW_UP_STATUSES: readonly FollowUpStatus[] = [
   FollowUpStatus.PLANNED,
   FollowUpStatus.OVERDUE,
@@ -111,7 +110,6 @@ export class FollowUpResponseDto {
   updatedAt: Date;
 }
 
-/** ผลของ PATCH /follow-ups/:id/complete — งานที่ปิด + งานครั้งถัดไปถ้าส่ง nextDueDate มา */
 export class CompletedFollowUpResponseDto extends FollowUpResponseDto {
   @ApiProperty({
     type: () => FollowUpResponseDto,

@@ -19,7 +19,6 @@ import {
   toNotificationRuleResponse,
 } from './dto/notification.response';
 
-/** DAILY_DIGEST เป็นชนิดของแถวสรุปรูปแบบเดิม ไม่ใช่หัวข้อ — ทำเป็นกฎจะไม่มีอะไรให้ตรวจ */
 function assertRuleEventType(eventType: NotificationEventType): void {
   if (eventType === NotificationEventType.DAILY_DIGEST) {
     throw new BadRequestException('สรุปประจำวันไม่ใช่หัวข้อแจ้งเตือน เลือกชนิดเหตุการณ์อื่น');

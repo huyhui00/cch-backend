@@ -12,11 +12,6 @@ import {
 import { Permission } from './permission.model';
 import { Role } from './role.model';
 
-/**
- * Junction table — composite primary key (role_id, permission_id)
- * ไม่เปิด paranoid ด้วยเหตุผลเดียวกับ user_roles
- */
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface RolePermissionCreationAttributes {
   roleId: number;
   permissionId: number;

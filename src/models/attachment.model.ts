@@ -52,7 +52,6 @@ export class Attachment extends AuditedModel<Attachment, AttachmentCreationAttri
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'ref_id' })
   refId: number;
 
-  /** object key ใน R2 ไม่ใช่ URL สาธารณะ */
   @Column({ type: DataType.STRING(500), allowNull: false, field: 'file_url' })
   fileUrl: string;
 

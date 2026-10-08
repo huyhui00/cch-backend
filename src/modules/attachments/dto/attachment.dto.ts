@@ -4,7 +4,6 @@ import { IsIn, IsInt, IsOptional, IsPositive, IsString, MaxLength } from 'class-
 
 import { ATTACHMENT_REF_TYPES, type AttachmentRefType } from '../../../models';
 
-/** ประเภทปลายทางที่เปิดให้อัปโหลดในเฟสนี้ (เอกสารโปรเจคใช้ /documents อยู่แล้ว) */
 export const UPLOADABLE_ATTACHMENT_REF_TYPES = [
   'TICKET',
   'TICKET_RESOLUTION',
@@ -23,7 +22,6 @@ function toInt({ value }: { value: unknown }): unknown {
   return value;
 }
 
-/** query รายการไฟล์แนบของต้นทางหนึ่งรายการ */
 export class QueryAttachmentsDto {
   @ApiProperty({
     enum: ATTACHMENT_REF_TYPES,
@@ -40,10 +38,6 @@ export class QueryAttachmentsDto {
   refId: number;
 }
 
-/**
- * อัปโหลดไฟล์แนบ — ส่งเป็น multipart/form-data
- * ฟิลด์ file บังคับ ส่วน refType/refId ส่งใน body คู่กับไฟล์ได้ (string จาก form)
- */
 export class UploadAttachmentDto {
   @ApiProperty({
     enum: UPLOADABLE_ATTACHMENT_REF_TYPES,

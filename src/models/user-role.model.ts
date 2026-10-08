@@ -17,7 +17,6 @@ import { User } from './user.model';
  * ไม่เปิด paranoid เพราะการถอด role คือการถอดจริง
  * ร่องรอยการเปลี่ยนแปลงถูกเก็บใน audit_logs อยู่แล้ว (BR-09)
  */
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface UserRoleCreationAttributes {
   userId: number;
   roleId: number;

@@ -117,10 +117,6 @@ export class UpdateTaskStatusDto {
   status: TaskStatus;
 }
 
-/**
- * ใช้กับการลากจัดลำดับบนหน้าจอ
- * ส่งตำแหน่งปลายทางที่ต้องการ (เริ่มที่ 0) ระบบจะเรียงพี่น้องใหม่ให้ทั้งกลุ่มเป็น 0, 1, 2, ...
- */
 export class UpdateTaskOrderDto {
   @ApiProperty({
     description:
@@ -177,7 +173,6 @@ export class QueryOverdueTasksDto extends PaginationDto {
 export const DEFAULT_DUE_SOON_DAYS = 7;
 export const MAX_DUE_SOON_DAYS = 90;
 
-/** M2-06 งานใกล้ครบกำหนด — ใช้ตัวกรองชุดเดียวกับงานเกินกำหนด เพิ่มแค่จำนวนวัน */
 export class QueryDueSoonTasksDto extends QueryOverdueTasksDto {
   @ApiPropertyOptional({
     description:
@@ -195,7 +190,6 @@ export class QueryDueSoonTasksDto extends QueryOverdueTasksDto {
   withinDays: number = DEFAULT_DUE_SOON_DAYS;
 }
 
-/** M2-07 รายการงานทั้งบริษัท — ข้ามโครงการ ใช้เจาะดูจากหน้าจอภาพรวม */
 export class QueryCompanyTasksDto extends QueryOverdueTasksDto {
   @ApiPropertyOptional({
     enum: TaskStatus,
@@ -211,7 +205,6 @@ export class QueryCompanyTasksDto extends QueryOverdueTasksDto {
   priority?: TaskPriority;
 }
 
-/** M2-07 สรุปภาพรวมงานทั้งบริษัท */
 export class QueryTaskBoardDto {
   @ApiPropertyOptional({ description: 'สรุปเฉพาะโครงการนี้ — ไม่ระบุ = ทั้งบริษัท', example: 1 })
   @IsOptional()

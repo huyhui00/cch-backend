@@ -11,14 +11,6 @@ import {
   parseClockTime,
 } from './notification-digest';
 
-/**
- * เช็คกำหนดส่งทุก 5 นาที แล้วแจ้งรายการที่เพิ่งเข้าช่วงใกล้ครบหรือเพิ่งเลยกำหนด
- * (แต่ละรายการแจ้งครั้งเดียวต่อขั้น — NotificationDispatchService กันไว้ด้วย dedupe_key)
- *
- * ส่งเฉพาะช่วง `NOTIFY_START_TIME`–`NOTIFY_END_TIME` (ค่าเริ่มต้น 08:30–18:00) วันจันทร์–ศุกร์
- * นอกช่วงรายการรอไปส่งรอบแรกของช่วงถัดไป · เสาร์–อาทิตย์เปิดด้วย `NOTIFY_WEEKENDS=true`
- * ปิดได้ด้วย SCHEDULER_ENABLED=false
- */
 @Injectable()
 export class NotificationSchedulerService {
   private readonly logger = new Logger(NotificationSchedulerService.name);

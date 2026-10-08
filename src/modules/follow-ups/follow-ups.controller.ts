@@ -22,13 +22,6 @@ import {
 import { CompletedFollowUpResponseDto, FollowUpResponseDto } from './dto/follow-up.response';
 import { FollowUpsService } from './follow-ups.service';
 
-/**
- * M7 — งานติดตามลูกค้า
- *
- * ตอบ pain point ที่ผู้บริหารบ่นหนักที่สุด: "ลืมติดตามลูกค้า เลยไปเป็นเดือนสองเดือน"
- * หน้าจอหลักที่ใช้เส้นพวกนี้คือ "งานติดตามของฉัน" (`?assignedUserId=`)
- * และ "งานที่เลยกำหนด" (`?overdue=true`)
- */
 @ApiTags('follow-ups')
 @ApiBearerAuth('access-token')
 @Controller('follow-ups')

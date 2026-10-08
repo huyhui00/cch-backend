@@ -32,7 +32,6 @@ const REDACTED_FIELDS: ReadonlySet<string> = new Set([
 
 const REDACTED_PLACEHOLDER = '[REDACTED]';
 
-/** ค่าที่ Sequelize ส่งเข้า hook มาพร้อมกับ instance */
 interface HookOptions {
   transaction?: Transaction | null;
   where?: unknown;
@@ -40,23 +39,6 @@ interface HookOptions {
   individualHooks?: boolean;
 }
 
-/**
- * บันทึก audit log ครั้งเดียวที่ระดับ global hook ของ Sequelize (CLAUDE.md 6.4)
- *
- * ไม่มี service ไหนต้องเรียกอะไรเพิ่มเลย ทุก model ที่ผูกกับ connection นี้ถูกดักครบ
- * รวมถึง model ที่จะเพิ่มใน phase ถัด ๆ ไปด้วย ไม่ต้องมาแก้ไฟล์นี้อีก
- *
- * ---------------------------------------------------------------------------
- * ผู้กระทำมาจากไหน — hook ไม่รู้จัก HTTP request เลย
- * ---------------------------------------------------------------------------
- * Sequelize hook ถูกเรียกลึกอยู่ในชั้น ORM ไม่มีทางเข้าถึง req ได้ และจะส่ง userId
- * ผ่านพารามิเตอร์ก็ไม่ได้ เพราะนั่นเท่ากับต้องไปแก้ทุก service ซึ่งขัดกับ CLAUDE.md 6.4
- *
- * ทางออกคือ AsyncLocalStorage ใน common/context/request-context.ts
- * middleware เปิด context ครอบไว้ตั้งแต่ต้น request แล้วทุกอย่างที่ทำงานต่อจากนั้น
- * ไม่ว่าจะลึกกี่ชั้นหรือผ่าน await กี่ครั้ง ก็อ่าน context เดียวกันได้ผ่าน
- * getRequestContext() โดยไม่ต้องมีใครส่งค่าให้
- */
 @Injectable()
 export class AuditHookService implements OnModuleInit {
   private readonly logger = new Logger(AuditHookService.name);
@@ -66,10 +48,6 @@ export class AuditHookService implements OnModuleInit {
     @InjectModel(AuditLog) private readonly auditLogModel: typeof AuditLog,
   ) {}
 
-  /**
-   * ผูก hook ที่ระดับ connection ครั้งเดียวตอน boot
-   * hook ที่ผูกตรงนี้มีผลกับทุก model ที่ลงทะเบียนไว้กับ Sequelize instance นี้
-   */
   onModuleInit(): void {
     this.sequelize.addHook('afterCreate', (instance: Model, options: HookOptions) =>
       this.recordSingle(AuditAction.CREATE, instance, options),
@@ -101,8 +79,6 @@ export class AuditHookService implements OnModuleInit {
     this.logger.log('ผูก audit hook ที่ระดับ global เรียบร้อย');
   }
 
-  // ---- hook รายแถว --------------------------------------------------------
-
   private async recordSingle(
     action: AuditAction,
     instance: Model,
@@ -116,7 +92,6 @@ export class AuditHookService implements OnModuleInit {
 
     const { oldValue, newValue } = this.buildDiff(action, instance);
 
-    // แก้ไขแล้วไม่มีฟิลด์ไหนเปลี่ยนจริง ไม่ต้องเปลืองแถวใน audit log
     if (action === AuditAction.UPDATE && newValue === null) {
       return;
     }
@@ -138,8 +113,6 @@ export class AuditHookService implements OnModuleInit {
       return { oldValue: snapshot(), newValue: null };
     }
 
-    // UPDATE — เก็บเฉพาะฟิลด์ที่เปลี่ยนจริง ไม่เก็บทั้งแถว
-    // ทำให้อ่าน log รู้เรื่องทันทีว่าอะไรถูกแก้ และ JSON ไม่บวมโดยไม่จำเป็น
     const changedFields = instance.changed();
 
     if (!changedFields || changedFields.length === 0) {
@@ -151,7 +124,6 @@ export class AuditHookService implements OnModuleInit {
 
     for (const field of changedFields) {
       if (REDACTED_FIELDS.has(field)) {
-        // ยังบันทึกว่าฟิลด์นี้ถูกแก้ แต่ไม่บันทึกค่า — สำคัญกับการสืบสวนว่าใครเปลี่ยนรหัสผ่านใคร
         oldValue[field] = REDACTED_PLACEHOLDER;
         newValue[field] = REDACTED_PLACEHOLDER;
         continue;
@@ -164,10 +136,7 @@ export class AuditHookService implements OnModuleInit {
     return { oldValue, newValue };
   }
 
-  // ---- hook แบบหลายแถว ----------------------------------------------------
-
   private async recordBulkCreate(instances: Model[], options: HookOptions): Promise<void> {
-    // ถ้าเปิด individualHooks ไว้ hook รายแถวจะทำงานไปแล้ว บันทึกซ้ำไม่ได้
     if (options.individualHooks || instances.length === 0) {
       return;
     }
@@ -178,7 +147,6 @@ export class AuditHookService implements OnModuleInit {
       return;
     }
 
-    // bulkCreate ให้ instance ครบทุกแถว จึงบันทึกแยกรายแถวได้เหมือน create ปกติ
     for (const instance of instances) {
       await this.write(
         AuditAction.BULK_CREATE,
@@ -191,14 +159,6 @@ export class AuditHookService implements OnModuleInit {
     }
   }
 
-  /**
-   * update / destroy ที่สั่งด้วย where โดยไม่ผ่าน instance
-   *
-   * ข้อจำกัดที่ต้องรู้: Sequelize ไม่ส่งข้อมูลรายแถวมาให้ในกรณีนี้ จึงบันทึกได้แค่
-   * ระดับคำสั่ง (แก้ตารางไหน ด้วยเงื่อนไขอะไร เป็นค่าอะไร) ไม่มีค่าเดิมรายแถว
-   * ถ้าตารางไหนต้องการ audit ละเอียดกว่านี้ ให้ service นั้นส่ง individualHooks: true
-   * ไปกับคำสั่ง แล้ว hook รายแถวจะทำงานแทน
-   */
   private async recordBulkStatement(action: AuditAction, options: HookOptions): Promise<void> {
     const tableName = resolveTableNameFromOptions(options);
 
@@ -215,8 +175,6 @@ export class AuditHookService implements OnModuleInit {
       options,
     );
   }
-
-  // ---- การเขียนจริง -------------------------------------------------------
 
   /**
    * เขียนใน transaction เดียวกับ action ต้นทาง
@@ -247,13 +205,10 @@ export class AuditHookService implements OnModuleInit {
         ipAddress: context?.ipAddress ?? null,
         userAgent: context?.userAgent ?? null,
       },
-      // options.transaction เป็น null ได้ตามชนิดของ Sequelize แต่ create() รับแค่ undefined
       { transaction: options.transaction ?? undefined },
     );
   }
 }
-
-// ---- helpers --------------------------------------------------------------
 
 /**
  * getTableName() คืน string เมื่อไม่ได้ใช้ schema แต่คืน object เมื่อใช้
@@ -273,7 +228,6 @@ function resolveTableNameFromOptions(options: HookOptions): string | null {
   return model ? toTableName(model) : null;
 }
 
-/** ตารางเชื่อม (user_roles, role_permissions) ใช้ composite key จึงไม่มีคอลัมน์ id */
 function resolveRecordId(instance: Model): number | null {
   const id: unknown = instance.get('id');
   return typeof id === 'number' ? id : null;
@@ -289,7 +243,6 @@ function sanitize(values: Record<string, unknown>): Record<string, unknown> {
   return result;
 }
 
-/** คอลัมน์ JSON ของ MySQL รับ Date ตรง ๆ ไม่ได้ ต้องแปลงเป็น ISO string ก่อน */
 function normalize(value: unknown): unknown {
   if (value instanceof Date) {
     return value.toISOString();

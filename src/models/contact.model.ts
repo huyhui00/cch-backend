@@ -3,7 +3,6 @@ import { BelongsTo, Column, DataType, ForeignKey, Table } from 'sequelize-typesc
 import { AuditedModel } from './base.model';
 import { Customer } from './customer.model';
 
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface ContactCreationAttributes {
   customerId: number;
   name: string;

@@ -59,7 +59,6 @@ export const WARRANTY_EXPIRED_NOT_SETTABLE_MESSAGE =
   'สถานะหมดอายุตั้งเองไม่ได้ — ระบบเปลี่ยนให้เองเมื่อเลยวันสิ้นสุดประกัน ' +
   'ถ้าต้องการยกเลิกประกันให้เลือกยกเลิก (VOID)';
 
-/** ส่งมอบวันนี้ ประกันเริ่มนับพรุ่งนี้เป็นวันที่ 1 ไม่ว่าจะส่งเวลาไหน */
 export function warrantyStartDateFor(deliveredAt: Date): string {
   return addDays(toDateOnly(deliveredAt), 1);
 }
@@ -72,10 +71,6 @@ export function warrantyEndDateFor(startDate: string, durationMonth: number): st
   return addDays(addMonths(startDate, durationMonth), -1);
 }
 
-/**
- * EXPIRED ระบบตัดสินจากวันสิ้นสุด — กติกาเดียวกับสัญญา MA
- * VOID เป็นการตัดสินของคน ไม่ถูกเปลี่ยนตามวันที่
- */
 export function deriveWarrantyStatus(
   status: WarrantyStatus,
   endDate: string,
@@ -180,7 +175,6 @@ export class WarrantiesService {
     const actorId = getCurrentUserId();
     const delivery = await this.findDeliveryOrFail(deliveryId);
 
-    // สองเงื่อนไขเดียวกับ canIssueWarranty() ที่หน้าจอใช้เปิดปุ่ม — แยกข้อความเพื่อบอกว่าขาดอะไร
     if (delivery.acceptanceStatus !== AcceptanceStatus.ACCEPTED) {
       throw new ConflictException(WARRANTY_REQUIRES_ACCEPTANCE_MESSAGE);
     }
@@ -207,7 +201,6 @@ export class WarrantiesService {
           durationMonth: dto.durationMonth,
           startDate,
           endDate,
-          // คีย์ประกันเก่าจากกระดาษที่หมดไปแล้ว บันทึกเป็น EXPIRED ทันที
           status: deriveWarrantyStatus(WarrantyStatus.ACTIVE, endDate, todayAsDateOnly()),
           scopeNote: dto.scopeNote ?? null,
           createdBy: actorId,
@@ -237,12 +230,6 @@ export class WarrantiesService {
     return toWarrantyResponse(warranty, todayAsDateOnly(), attachments);
   }
 
-  /**
-   * ข้อมูลใบรับประกันสำหรับพิมพ์ — คืน JSON หน้าจอจัดหน้ากระดาษเอง
-   *
-   * ไม่กั้นตามสถานะ: พิมพ์ใบที่หมดแล้วหรือยกเลิกแล้วเข้าแฟ้มได้ หน้าจอใช้ status ทำลายน้ำเอง
-   * include ประกาศใหม่ในนี้ทั้งหมด ไม่ใช้ร่วมกับ findOne() (Sequelize แก้ object ของ include ในที่)
-   */
   async getPrintData(id: number): Promise<WarrantyPrintDto> {
     const warranty = await this.warrantyModel.findByPk(id, {
       include: [
@@ -262,7 +249,6 @@ export class WarrantiesService {
               model: Customer,
               required: false,
               paranoid: false,
-              // ผู้ติดต่อที่ถูกลบไปแล้วไม่ควรไปโผล่ในเอกสารใหม่ จึงไม่ปิด paranoid ของชั้นนี้
               include: [{ model: Contact, required: false }],
             },
           ],
@@ -285,10 +271,6 @@ export class WarrantiesService {
     return toWarrantyPrint({ warranty, customer, onDate: todayAsDateOnly() });
   }
 
-  /**
-   * ACTIVE ที่เลยวันสิ้นสุด → EXPIRED — เรียกจาก WarrantyExpiryScheduler
-   * individualHooks เหตุผลเดียวกับ MaContractsService.expireEndedContracts()
-   */
   async expireEndedWarranties(today: string = todayAsDateOnly()): Promise<number> {
     const [affected] = await this.warrantyModel.update(
       { status: WarrantyStatus.EXPIRED },
@@ -333,10 +315,6 @@ export class WarrantiesService {
     return toPaginatedResult(await this.toListResponses(rows, todayAsDateOnly()), count, query);
   }
 
-  /**
-   * รายการประกันทั้งบริษัท (ไม่ผูกโครงการใน URL) — ตัวกรองชุดเดียวกับรายการของโครงการ
-   * บวก search / projectId / customerId · หน้าจอยังต้องอ่าน isCurrentlyActive ไม่ใช่ status
-   */
   async findAll(query: QueryCompanyWarrantiesDto): Promise<PaginatedResult<WarrantyResponseDto>> {
     const where: WhereOptions<Warranty> = {};
 
@@ -373,7 +351,6 @@ export class WarrantiesService {
     return toPaginatedResult(await this.toListResponses(rows, todayAsDateOnly()), count, query);
   }
 
-  /** รายการประกัน + จำนวนเอกสารแนบของแต่ละใบ นับรวบทั้งหน้าด้วย query เดียว */
   private async toListResponses(rows: Warranty[], onDate: string): Promise<WarrantyResponseDto[]> {
     const counts = new Map<number, number>();
 
@@ -393,10 +370,6 @@ export class WarrantiesService {
     );
   }
 
-  /**
-   * หา id โครงการที่ชื่อ/รหัสหรือชื่อลูกค้าตรงก่อน แล้วค่อยกรองด้วย IN — ไม่ใช้ `$project.name$`
-   * ใน query หลักเพราะ findAndCountAll ที่มี limit + include อาจถูกห่อเป็น subquery (กฎ Phase 7)
-   */
   private async searchCondition(search: string): Promise<WhereOptions<Warranty>> {
     const like = { [Op.like]: '%' + search + '%' };
 
@@ -416,15 +389,6 @@ export class WarrantiesService {
     return { [Op.or]: conditions };
   }
 
-  /**
-   * หน้าจอ "ประกันใกล้หมด" — ตัวป้อนให้ notification rule แบบ WARRANTY_EXPIRING (Phase 11)
-   *
-   * ไม่รวมประกันที่หมดอายุไปแล้ว เพราะหน้าจอนี้มีไว้ให้ไล่ต่อสัญญาทัน
-   * ของที่สายไปแล้วต้องไปดูที่รายการประกันของโครงการแทน
-   *
-   * กรองด้วย status != VOID ไม่ใช่ status == ACTIVE เพราะ cron ปรับสถานะรายชั่วโมง
-   * ค่าที่บันทึกอาจยังไม่ตรงกับวันที่ ตัดสินจากช่วงวันที่เป็นหลัก
-   */
   async findExpiring(
     query: QueryExpiringWarrantiesDto,
   ): Promise<PaginatedResult<WarrantyResponseDto>> {
@@ -438,7 +402,6 @@ export class WarrantiesService {
       },
       include: [deliveryInclude(), projectInclude(query.customerId), maContractInclude()],
       distinct: true,
-      // ใกล้หมดที่สุดขึ้นก่อนเสมอ ไม่สนใจ sortOrder ที่ส่งมา เพราะหน้าจอนี้มีความหมายเดียว
       order: [
         ['endDate', 'ASC'],
         ['id', 'ASC'],
@@ -450,7 +413,6 @@ export class WarrantiesService {
     return toPaginatedResult(await this.toListResponses(rows, today), count, query);
   }
 
-  /** badge warrantiesExpiringSoon = total ของ GET /warranties/expiring?days=<days> */
   async countExpiring(days: number): Promise<number> {
     const query = Object.assign(new QueryExpiringWarrantiesDto(), { page: 1, limit: 1, days });
     return (await this.findExpiring(query)).total;
@@ -478,7 +440,6 @@ export class WarrantiesService {
         : warranty.endDate;
     const status = deriveWarrantyStatus(dto.status ?? warranty.status, endDate, todayAsDateOnly());
 
-    // ส่ง null มา = ถอดการผูกออก (ผูกผิดฉบับ) ไม่ส่งมาเลย = คงค่าเดิม
     if (dto.maContractId !== undefined && dto.maContractId !== null) {
       await this.assertMaContractMatchesProject(dto.maContractId, warranty.projectId);
     }
@@ -493,8 +454,6 @@ export class WarrantiesService {
 
     return this.findOne(id);
   }
-
-  // ---- ตัวช่วยที่ Phase 7 (Tickets) จะเรียกใช้ -------------------------------
 
   /**
    * โครงการนี้ยังอยู่ในระยะประกันไหม ณ วันที่กำหนด
@@ -528,8 +487,6 @@ export class WarrantiesService {
     return this.warrantyModel.findOne({
       where: {
         projectId,
-        // VOID คือยกเลิกด้วยมือ ตัดทิ้งเสมอ ส่วน EXPIRED ยังต้องเทียบวันที่อยู่ดี
-        // เพราะไม่มีอะไรรับประกันว่าค่านั้นถูกปรับให้ตรงกับความจริงแล้ว
         status: { [Op.ne]: WarrantyStatus.VOID },
         startDate: { [Op.lte]: onDate },
         endDate: { [Op.gte]: onDate },
@@ -583,8 +540,6 @@ export class WarrantiesService {
 
     return shifted;
   }
-
-  // ---- helpers -------------------------------------------------------------
 
   private async findOrFail(id: number): Promise<Warranty> {
     const warranty = await this.warrantyModel.findByPk(id);

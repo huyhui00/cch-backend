@@ -42,11 +42,9 @@ export class SurveyQuestion extends AuditedModel<SurveyQuestion, SurveyQuestionC
   @Column({ type: DataType.BOOLEAN, allowNull: false, defaultValue: true, field: 'is_required' })
   isRequired: boolean;
 
-  /** ตัวเลือกสำหรับ CHOICE / MULTI_CHOICE */
   @Column({ type: DataType.JSON, allowNull: true })
   options: unknown;
 
-  /** ช่วงคะแนนสำหรับ RATING */
   @Column({ type: DataType.INTEGER, allowNull: true, field: 'min_value' })
   minValue: number | null;
 

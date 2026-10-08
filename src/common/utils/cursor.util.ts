@@ -1,10 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Op, type WhereOptions } from 'sequelize';
 
-/**
- * ตำแหน่งของแถวสุดท้ายที่ client เห็นแล้ว ใช้กับรายการที่เรียงใหม่ไปเก่า (created_at DESC, id DESC)
- * ต้องมี id คู่กับเวลาเสมอ — created_at เก็บละเอียดแค่วินาที แถวเดียวกันในวินาทีเดียวมีได้หลายสิบแถว
- */
 export interface CursorPosition {
   createdAt: Date;
   id: number;
@@ -15,7 +11,6 @@ export interface CursorRow {
   id: number;
 }
 
-/** รูปแบบ data เมื่อขอด้วย cursor — ไม่นับ total เพราะ COUNT คือส่วนที่ช้าที่สุดเมื่อข้อมูลเยอะ */
 export interface CursorPaginatedResult<T> {
   items: T[];
   total: null;
@@ -41,7 +36,6 @@ export function decodeCursor(raw: string): CursorPosition {
   return { createdAt: new Date(Number(match[1])), id: Number(match[2]) };
 }
 
-/** เงื่อนไข "เก่ากว่าตำแหน่งนี้" ตามลำดับ created_at DESC, id DESC */
 export function olderThan(position: CursorPosition): WhereOptions {
   return {
     [Op.or]: [
@@ -51,7 +45,6 @@ export function olderThan(position: CursorPosition): WhereOptions {
   };
 }
 
-/** ตัดแถวส่วนเกินที่ขอมา limit + 1 เพื่อรู้ว่ายังมีต่อไหม โดยไม่ต้อง COUNT */
 export function toCursorResult<TRow extends CursorRow, TItem>(
   rows: TRow[],
   limit: number,

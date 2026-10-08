@@ -38,7 +38,6 @@ export class MaPlan extends AuditedModel<MaPlan, MaPlanCreationAttributes> {
   @Column({ type: DataType.TEXT, allowNull: true })
   description: string | null;
 
-  /** โควตาแก้บั๊กต่อเดือน — ฐานของการนับใน ma_usages (CLAUDE.md 9.2) */
   @Column({
     type: DataType.INTEGER,
     allowNull: false,

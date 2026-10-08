@@ -2,7 +2,6 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 import * as bcrypt from 'bcrypt';
 
-/** ค่า default ถ้า .env ไม่ได้ตั้ง BCRYPT_SALT_ROUNDS */
 export const DEFAULT_SALT_ROUNDS = 10;
 
 export function hashPassword(plain: string, rounds: number = DEFAULT_SALT_ROUNDS): Promise<string> {
@@ -26,10 +25,6 @@ export function hashRefreshToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-/**
- * เทียบค่า hex สองค่าแบบไม่ให้เวลาที่ใช้เทียบบอกใบ้ว่าตรงกันกี่ตัว
- * คืน false ทันทีถ้าความยาวไม่เท่ากัน (timingSafeEqual โยน error ถ้า buffer คนละขนาด)
- */
 export function safeCompareHex(a: string, b: string): boolean {
   if (a.length !== b.length) {
     return false;

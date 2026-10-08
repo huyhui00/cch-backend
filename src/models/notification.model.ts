@@ -11,7 +11,6 @@ export enum NotificationStatus {
   READ = 'READ',
 }
 
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface NotificationCreationAttributes {
   ruleId?: number | null;
   targetUserId: number;
@@ -59,17 +58,12 @@ export class Notification extends AuditedModel<Notification, NotificationCreatio
   @Column({ type: DataType.TEXT, allowNull: true })
   message: string | null;
 
-  /** ลิงก์กลับไปหาต้นเรื่อง เช่น ('TICKET', 42) */
   @Column({ type: DataType.STRING(50), allowNull: true, field: 'ref_type' })
   refType: string | null;
 
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'ref_id' })
   refId: number | null;
 
-  /**
-   * แจ้งกำหนดส่ง: `ชนิด:refType:refId:ขั้น:วันกำหนด` — คนเดิม key เดิม = แจ้งไปแล้ว ไม่แจ้งซ้ำ
-   * วันกำหนดอยู่ใน key เพราะเลื่อนกำหนดแล้วต้องแจ้งใหม่ · แถวอื่น (สายงานใบปัญหา) เป็น null
-   */
   @Column({ type: DataType.STRING(191), allowNull: true, field: 'dedupe_key' })
   dedupeKey: string | null;
 

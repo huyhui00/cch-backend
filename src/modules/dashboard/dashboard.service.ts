@@ -29,7 +29,6 @@ const METRIC_KEYS: MetricKey[] = [
   'communicationsLogged',
 ];
 
-/** สิทธิ์ของหน้ารายการเรื่องนั้น — ไม่มีสิทธิ์ = ช่องเป็น null เหมือน nav/counts */
 const METRIC_PERMISSIONS: Record<MetricKey, string> = {
   projectsDelivered: 'project.view',
   tasksCompleted: 'task.view',
@@ -118,7 +117,6 @@ export class DashboardService {
     return metrics;
   }
 
-  /** วันที่ (YYYY-MM-DD ตามเขตเวลาเครื่อง) ของแต่ละรายการในช่วง — หนึ่งแถวต่อหนึ่งครั้ง */
   private async loadDates(
     key: MetricKey,
     userId: number,
@@ -172,7 +170,6 @@ export class DashboardService {
     }
   }
 
-  /** เที่ยงคืนตามเขตเวลาเครื่องของวันที่ระบุ */
   private startOfLocalDay(dateOnly: string): Date {
     const [year, month, day] = dateOnly.split('-').map(Number);
     return new Date(year, month - 1, day);

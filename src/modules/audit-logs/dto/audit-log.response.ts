@@ -17,7 +17,6 @@ export class AuditChangeDto {
   to: string | null;
 }
 
-/** ผู้กระทำ — เก็บชื่อไว้แสดงบนหน้าจอโดยไม่ต้องยิงถามตาราง users ซ้ำ */
 export class AuditActorDto {
   @ApiProperty({ example: 1 })
   id: number;

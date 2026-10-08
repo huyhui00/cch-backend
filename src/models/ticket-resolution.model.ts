@@ -19,7 +19,6 @@ export enum ResolutionResult {
  * (ticket_id, round) เป็น UNIQUE ไม่ใช่แค่ index ธรรมดา
  * เพื่อกันการกดบันทึกซ้อนกันสองครั้งพร้อมกันแล้วได้ round ชนกัน
  */
-/** ฟิลด์ที่ส่งได้ตอน create — `round` service คำนวณให้ ไม่ได้รับมาจากผู้ใช้ */
 export interface TicketResolutionCreationAttributes {
   ticketId: number;
   round: number;
@@ -43,7 +42,6 @@ export class TicketResolution extends AuditedModel<
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false, field: 'ticket_id' })
   ticketId: number;
 
-  /** รอบที่เท่าไหร่ เริ่มที่ 1 */
   @Column({ type: DataType.INTEGER, allowNull: false })
   round: number;
 

@@ -167,7 +167,6 @@ export class AttachmentsService {
     };
   }
 
-  /** ใช้จากโมดูลอื่นที่อยากพ่วงรายการไฟล์ในรายละเอียด */
   async listByRef(refType: AttachmentRefType, refId: number): Promise<Attachment[]> {
     return this.attachmentModel.findAll({
       where: { refType, refId },

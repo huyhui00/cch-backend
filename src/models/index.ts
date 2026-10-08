@@ -63,44 +63,31 @@ export * from './user-role.model';
 export * from './user.model';
 export * from './warranty.model';
 
-/**
- * ทั้ง 30 ตารางตาม CLAUDE.md ข้อ 7 เรียงตามกลุ่ม A–F
- * ส่งเข้า SequelizeModule.forFeature() หรือ addModels() ได้เลย
- *
- * หมายเหตุ: อย่าใส่ AuditedModel เข้าไปในรายการนี้ มันเป็น abstract base class
- * ไม่ใช่ตาราง ถ้าเผลอ register จะได้ตารางผีชื่อ audited_models
- */
 export const ALL_MODELS = [
-  // A. Auth & RBAC
   User,
   Role,
   Permission,
   UserRole,
   RolePermission,
   AuditLog,
-  // B. Customer & CRM
   Customer,
   Contact,
   CommunicationLog,
   FollowUp,
-  // C. Project & Delivery
   Project,
   Task,
   TaskSubmission,
   Delivery,
   Warranty,
   Document,
-  // D. MA
   MaPlan,
   MaPlanItem,
   MaContract,
   MaAddon,
   MaUsage,
-  // E. Ticket
   Ticket,
   TicketResolution,
   Attachment,
-  // F. Survey & Notify
   Survey,
   SurveyQuestion,
   SurveyAssignment,

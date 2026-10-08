@@ -104,15 +104,6 @@ export class CreateFollowUpDto {
   assignedUserId?: number | null;
 }
 
-/**
- * แก้ไขงานติดตาม
- *
- * ย้ายลูกค้าไม่ได้ (ไม่มี `customerId`) ด้วยเหตุผลเดียวกับที่ย้ายโครงการข้ามลูกค้าไม่ได้
- * ใน Phase 5 — งานติดตามที่ทำไปแล้วจะพาประวัติไปโผล่ผิดลูกค้า
- * ผูกผิดรายให้ยกเลิกแล้วสร้างใหม่ — เปลี่ยน `projectId` ได้เฉพาะโปรเจคของลูกค้ารายเดิม
- *
- * `completedAt` ไม่ได้รับจาก client — ระบบใส่ให้เองตอนสถานะเป็น DONE
- */
 export class UpdateFollowUpDto {
   @ApiPropertyOptional({
     description: 'เปลี่ยนโปรเจคได้เฉพาะโปรเจคของลูกค้ารายเดิม — ถอดออก (null) ไม่ได้',
@@ -167,12 +158,6 @@ export class UpdateFollowUpDto {
   resultNote?: string | null;
 }
 
-/**
- * ปิดงานติดตาม — ทางลัดของ `PATCH /:id` ที่ส่ง `status: DONE`
- *
- * มีแยกเพราะเป็นการกระทำที่ผูกกับสิทธิ์ `followup.complete` ต่างหาก
- * ทีมที่ให้พนักงานปิดงานของตัวเองได้แต่ไม่ให้แก้เนื้อหางาน จึงกั้นได้จริง
- */
 export class CompleteFollowUpDto {
   @ApiPropertyOptional({
     description: 'ผลของการติดตาม — ควรกรอกเสมอ เพราะเป็นหลักฐานว่าติดตามแล้วได้อะไร',

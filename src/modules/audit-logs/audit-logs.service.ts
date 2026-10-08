@@ -31,20 +31,12 @@ export type AuditLogPage =
   | (PaginatedResult<AuditLogResponseDto> & { nextCursor: string | null; hasMore: boolean })
   | CursorPaginatedResult<AuditLogResponseDto>;
 
-/**
- * แถว users UPDATE ที่เปลี่ยนแค่เวลาเข้าสู่ระบบกับ token = ล็อกอิน / ต่ออายุ / ออกจากระบบ
- * COALESCE กันแถวที่ new_value เป็น NULL หลุดหายไปด้วย (NOT NULL = NULL)
- */
 const SESSION_EVENT_EXCLUSION = literal(
   "NOT (`AuditLog`.`table_name` = 'users' AND `AuditLog`.`action` = 'UPDATE' AND " +
     "COALESCE(JSON_LENGTH(JSON_REMOVE(`AuditLog`.`new_value`, '$.lastLoginAt', '$.refreshTokenHash', " +
     "'$.updatedAt', '$.updatedBy')), 1) = 0)",
 );
 
-/**
- * audit_logs เป็น append-only — service นี้จึงมีแต่การอ่าน
- * ไม่มีเมธอดสร้าง แก้ไข หรือลบ เพราะการเขียนเกิดที่ global hook ที่เดียว (CLAUDE.md 6.4)
- */
 @Injectable()
 export class AuditLogsService {
   constructor(@InjectModel(AuditLog) private readonly auditLogModel: typeof AuditLog) {}
@@ -131,7 +123,6 @@ export class AuditLogsService {
     const { rows, count } = await this.auditLogModel.findAndCountAll({
       where,
       include,
-      // id เป็นตัวตัดสินรอง — created_at ละเอียดแค่วินาที แถวที่เวลาเท่ากันจะสลับที่กันข้ามหน้าได้
       order: newestFirst
         ? NEWEST_FIRST
         : [

@@ -1,10 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ArrayUnique, IsArray, IsInt, IsPositive } from 'class-validator';
 
-/**
- * แทนที่สิทธิ์ทั้งชุดของบทบาท ไม่ใช่การเพิ่มทีละรายการ
- * ส่ง array ว่างมา = ถอดสิทธิ์ทั้งหมดออก
- */
 export class SetRolePermissionsDto {
   @ApiProperty({
     type: [Number],

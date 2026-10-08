@@ -20,7 +20,6 @@ export enum ProjectPriority {
   URGENT = 'URGENT',
 }
 
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface ProjectCreationAttributes {
   customerId: number;
   code?: string | null;
@@ -54,7 +53,6 @@ export class Project extends AuditedModel<Project, ProjectCreationAttributes> {
   @Column({ type: DataType.TEXT, allowNull: true })
   description: string | null;
 
-  /** SOFTWARE / HARDWARE / IOT ฯลฯ — ยังไม่ได้กำหนดเป็น enum ใน CLAUDE.md ข้อ 8 */
   @Column({ type: DataType.STRING(100), allowNull: true, field: 'project_type' })
   projectType: string | null;
 

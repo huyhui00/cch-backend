@@ -166,11 +166,6 @@ export class ProjectsService {
     );
   }
 
-  /**
-   * ตัวเลือกโครงการสำหรับดรอปดาวน์/ตัวกรอง — ไม่แบ่งหน้า คืนครบทุกสถานะ
-   * ส่ง search + limit เมื่อโครงการเยอะจนโหลดทั้งหมดไม่ไหว (ไม่ส่ง = ทั้งหมดเหมือนเดิม)
-   * (project.view เห็นทุกโครงการอยู่แล้ว ไม่มีการจำกัดรายคน)
-   */
   async findOptions(query: QueryProjectOptionsDto = {}): Promise<ProjectOptionDto[]> {
     const like = query.search ? '%' + query.search + '%' : null;
 
@@ -194,7 +189,6 @@ export class ProjectsService {
     }));
   }
 
-  /** รายละเอียดโครงการ พร้อมสรุปจำนวน task และเปอร์เซ็นต์ความคืบหน้า */
   async findOne(id: number): Promise<ProjectResponseDto> {
     const project = await this.projectModel.findByPk(id, {
       include: [customerInclude(), managerInclude()],
@@ -232,15 +226,6 @@ export class ProjectsService {
     };
   }
 
-  /**
-   * สร้างโครงการ — ลูกค้าเดิม (`customerId`) หรือลูกค้าใหม่ (`newCustomer`) อย่างใดอย่างหนึ่ง
-   *
-   * ลูกค้าใหม่ถูกบันทึกในทรานแซกชันเดียวกับโครงการ (ประชุม 11 ก.ย. — B-3) ถ้าขั้นใดพัง
-   * จะไม่เหลือลูกค้าลอยอยู่ในระบบโดยไม่มีโครงการ ซึ่งผู้ใช้จะกดบันทึกซ้ำแล้วได้ลูกค้าซ้ำ
-   * กติกาการสร้างลูกค้าใช้ของ `CustomersService.createRecord()` ตัวเดียวกับ `POST /api/customers`
-   *
-   * ตรวจทุกอย่างก่อนเปิดทรานแซกชัน — ของที่ปฏิเสธได้ต้องปฏิเสธก่อนเขียนอะไรลงฐานข้อมูล
-   */
   async create(dto: CreateProjectDto, actor: AuthenticatedUser): Promise<ProjectResponseDto> {
     const actorId = getCurrentUserId();
     const { newCustomer } = dto;
@@ -307,8 +292,6 @@ export class ProjectsService {
     const actorId = getCurrentUserId();
     const project = await this.findOrFail(id);
 
-    // ย้ายโครงการข้ามลูกค้าไม่ได้ — ticket และสัญญา MA ผูกกับลูกค้าเดิมไปแล้ว
-    // ถ้าปล่อยให้ย้าย ประวัติจะกระจัดกระจายข้ามลูกค้าโดยไม่มีร่องรอย
     if (dto.customerId !== undefined && dto.customerId !== project.customerId) {
       throw new BadRequestException(
         'ย้ายโครงการไปลูกค้ารายอื่นไม่ได้ ถ้าบันทึกผิดรายให้สร้างโครงการใหม่',
@@ -342,8 +325,6 @@ export class ProjectsService {
     return this.findOne(id);
   }
 
-  // ---- ใช้ร่วมกับ TasksService --------------------------------------------
-
   async findOrFail(id: number): Promise<Project> {
     const project = await this.projectModel.findByPk(id);
 
@@ -354,26 +335,11 @@ export class ProjectsService {
     return project;
   }
 
-  /**
-   * ความคืบหน้า = (task ที่ DONE / task ทั้งหมด) x 100
-   *
-   * นับ task ทุกชั้นแบบแบน ทั้งงานแม่และงานย่อยมีน้ำหนักเท่ากัน ไม่ได้ถ่วงน้ำหนัก
-   * ตามชั่วโมงที่ประเมินไว้ เพราะ estimated_hours เป็นค่าที่ไม่ได้กรอกกันทุกงาน
-   * ถ้าถ่วงน้ำหนักแล้วบางงานไม่มีค่า ตัวเลขจะเพี้ยนโดยไม่มีใครรู้ตัว
-   *
-   * โครงการที่ยังไม่มี task เลยได้ 0% ไม่ใช่ 100% — หน้าจอดูจาก totalTasks
-   * ประกอบได้ว่าเป็นเพราะยังไม่ได้แตกงาน ไม่ใช่เพราะยังไม่ได้ทำ
-   */
   async calculateProgress(projectId: number): Promise<ProjectProgressDto> {
     const progress = await this.calculateProgressMany([projectId]);
     return progress.get(projectId) as ProjectProgressDto;
   }
 
-  /**
-   * ความคืบหน้าของหลายโครงการใน query เดียว — ใช้กับหน้ารายการ ไม่ให้ต้องยิงรายละเอียดทีละโครงการ
-   * รวมกลุ่มตาม (โครงการ, สถานะ, วันครบกำหนด) แล้วตัดสินเกินกำหนดด้วย isTaskOverdue() ตัวเดียวกับทั้งระบบ
-   * จำนวนแถวที่ได้จึงขึ้นกับจำนวนวันครบกำหนดที่ต่างกัน ไม่ใช่จำนวนงาน
-   */
   async calculateProgressMany(projectIds: number[]): Promise<Map<number, ProjectProgressDto>> {
     const counters = new Map(
       projectIds.map((id) => [
@@ -428,8 +394,6 @@ export class ProjectsService {
     return result;
   }
 
-  // ---- helpers -------------------------------------------------------------
-
   private async assertCustomerExists(customerId: number): Promise<void> {
     const customer = await this.customerModel.findByPk(customerId, { attributes: ['id'] });
 
@@ -438,10 +402,6 @@ export class ProjectsService {
     }
   }
 
-  /**
-   * รหัสโครงการต้องไม่ซ้ำ — ตรวจรวมรายการที่ถูก soft delete ไปแล้วด้วย
-   * เพราะ unique index ในฐานข้อมูลไม่สนใจ deleted_at
-   */
   private async assertCodeIsAvailable(code: string, excludeId?: number): Promise<void> {
     const where: WhereOptions<Project> = excludeId
       ? { code, id: { [Op.ne]: excludeId } }

@@ -16,7 +16,6 @@ export enum DashboardGroupBy {
   MONTH = 'MONTH',
 }
 
-/** ช่วงยาวสุด 120 เดือน — หลักเดียวกับสรุปคะแนนแบบประเมิน กันคำขอที่พิมพ์ปีผิด */
 export const MAX_RANGE_MONTHS = 120;
 /** แบ่งรายวันได้ไม่เกินหนึ่งปี ไม่งั้นกราฟมีหลายพันแท่ง */
 export const MAX_DAY_BUCKETS = 366;
@@ -44,7 +43,6 @@ function daysBetween(from: string, to: string): number {
   return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000);
 }
 
-/** วันแรกของช่วงที่ครอบวันที่นี้ (สัปดาห์เริ่มวันจันทร์) */
 export function bucketStartOf(dateOnly: string, groupBy: DashboardGroupBy): string {
   if (groupBy === DashboardGroupBy.DAY) {
     return dateOnly;
@@ -145,10 +143,6 @@ export function resolveDashboardRange(
   return { period, dateFrom, dateTo, groupBy };
 }
 
-/**
- * ช่วงย่อยต่อเนื่องครอบทั้งช่วง ช่วงแรก/สุดท้ายถูกตัดให้อยู่ใน dateFrom..dateTo
- * (เลือก 10–20 ก.ย. แบ่งรายเดือน ได้ช่วงเดียวคือ 10–20 ก.ย. ไม่ใช่ทั้งเดือน)
- */
 export function buildBuckets(range: DashboardRange): DashboardBucket[] {
   const buckets: DashboardBucket[] = [];
   let start = bucketStartOf(range.dateFrom, range.groupBy);

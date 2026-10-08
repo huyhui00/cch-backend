@@ -84,7 +84,6 @@ export class CreateCommunicationLogDto {
   handledByUserId?: number | null;
 }
 
-/** ย้ายบันทึกข้ามลูกค้าไม่ได้ — ถ้าบันทึกผิดรายให้ลบแล้วสร้างใหม่ ร่องรอยอยู่ใน audit log */
 export class UpdateCommunicationLogDto extends PartialType(
   OmitType(CreateCommunicationLogDto, ['customerId'] as const),
 ) {}

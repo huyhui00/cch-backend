@@ -13,7 +13,6 @@ const trimToNull = ({ value }: { value: unknown }) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-/** ระยะประกันที่ยาวเกินนี้แทบจะเป็นการพิมพ์ผิดเสมอ (10 ปี) */
 const MAX_DURATION_MONTH = 120;
 
 /**
@@ -123,10 +122,6 @@ export class QueryWarrantiesDto extends PaginationDto {
   deliveryId?: number;
 }
 
-/**
- * รายการประกันทั้งบริษัท — หน้า "ประกัน" ที่ไม่ได้เข้าจากโครงการใดโครงการหนึ่ง
- * `search` (จาก PaginationDto) ค้นเลขที่ประกัน ชื่อ/รหัสโครงการ และชื่อลูกค้า
- */
 export class QueryCompanyWarrantiesDto extends QueryWarrantiesDto {
   @ApiPropertyOptional({ description: 'กรองเฉพาะประกันของโครงการนี้', example: 1 })
   @IsOptional()
@@ -141,7 +136,6 @@ export class QueryCompanyWarrantiesDto extends QueryWarrantiesDto {
   customerId?: number;
 }
 
-/** หน้าจอ "ประกันใกล้หมด" — ตัวป้อนให้ notification rule แบบ WARRANTY_EXPIRING ใน Phase 11 */
 export class QueryExpiringWarrantiesDto extends PaginationDto {
   @ApiPropertyOptional({
     description:

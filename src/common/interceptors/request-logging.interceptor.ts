@@ -5,16 +5,10 @@ import { type Observable, tap } from 'rxjs';
 import { getElapsedMs } from '../context/request-context';
 import type { AuthenticatedUser } from '../types/auth.types';
 
-/**
- * เส้นทางที่ไม่ต้อง log — health check ถูกยิงถี่มากจาก infrastructure
- * ถ้าปล่อยไว้จะกลบบรรทัดที่มีประโยชน์จนหาอะไรไม่เจอ
- */
 const SKIPPED_PATHS: ReadonlySet<string> = new Set(['/api/health']);
 
-/** ความยาวสูงสุดของ URL ที่จะพิมพ์ กัน query string ยาว ๆ ดันบรรทัดจนอ่านไม่ออก */
 const MAX_URL_LENGTH = 120;
 
-/** ความกว้างคงที่ของคอลัมน์ URL เพื่อให้ status กับเวลาเรียงตรงกันทุกบรรทัด อ่านกวาดตาได้ */
 export const URL_COLUMN_WIDTH = 44;
 
 /**
@@ -55,7 +49,6 @@ export class RequestLoggingInterceptor implements NestInterceptor {
         const method = request.method.padEnd(6);
         const url = truncate(request.originalUrl, MAX_URL_LENGTH).padEnd(URL_COLUMN_WIDTH);
         const elapsed = String(getElapsedMs() ?? 0).padStart(5);
-        // guard เป็นคนแนบ request.user ไว้ให้ ถ้าเป็น endpoint สาธารณะจะไม่มี
         const actor = request.user ? request.user.username : 'ไม่ระบุตัวตน';
 
         this.logger.log(`${method} ${url} ${response.statusCode} ${elapsed}ms  ${actor}`);

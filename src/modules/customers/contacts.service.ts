@@ -48,7 +48,6 @@ export class ContactsService {
 
     const { rows, count } = await this.contactModel.findAndCountAll({
       where,
-      // ผู้ติดต่อหลักขึ้นก่อนเสมอ แล้วค่อยเรียงตามที่ผู้ใช้ขอ
       order: [
         ['isPrimary', 'DESC'],
         [sortBy, query.sortOrder],
@@ -61,7 +60,6 @@ export class ContactsService {
   }
 
   async create(dto: CreateContactDto, actorId: number): Promise<ContactResponseDto> {
-    // โยน 404 ถ้าไม่มีลูกค้ารายนี้ ดีกว่าปล่อยให้ FK พังแล้วได้ข้อความที่อ่านไม่รู้เรื่อง
     await this.customersService.findOrFail(dto.customerId);
 
     const contactId = await this.sequelize.transaction(async (transaction) => {
@@ -142,8 +140,6 @@ export class ContactsService {
     await contact.destroy();
   }
 
-  // ---- helpers -------------------------------------------------------------
-
   private async findOneOrFail(id: number): Promise<Contact> {
     const contact = await this.contactModel.findByPk(id);
 
@@ -154,11 +150,6 @@ export class ContactsService {
     return contact;
   }
 
-  /**
-   * ผู้ติดต่อหลักมีได้คนเดียวต่อลูกค้า 1 ราย
-   * ตั้งคนใหม่เป็นหลัก = ถอดคนเดิมออกอัตโนมัติ ทำในทรานแซกชันเดียวกับการตั้งคนใหม่
-   * จะได้ไม่มีจังหวะที่มีผู้ติดต่อหลักสองคนพร้อมกัน
-   */
   private async demoteOtherPrimaries(
     customerId: number,
     exceptContactId: number | null,

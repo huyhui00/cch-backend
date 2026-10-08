@@ -2,23 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { MaContractStatus, ProjectStatus } from '../../../models';
 
-/**
- * คำเตือนที่ต้องติดไปกับทุกตัวเลขเงินในโมดูลนี้
- *
- * ระบบนี้ไม่ใช่ระบบบัญชี (SC-3, OS-03 — บริษัทมีโปรแกรมบัญชีแยกอยู่แล้ว)
- * ตัวเลขทุกตัวมาจาก `projects.contract_value`, `ma_contracts.price` และ
- * `ma_addons.price` ซึ่งเป็น **มูลค่าที่ตกลงกันไว้ในสัญญา** ระบบไม่มีข้อมูลเลยว่า
- * ลูกค้าจ่ายแล้วหรือยัง จ่ายครบไหม หรือค้างเท่าไหร่
- *
- * ถ้าหน้าจอไปเขียนว่า "รายได้" ผู้บริหารจะอ่านว่าเป็นเงินที่ได้รับจริง แล้วเอาไปเทียบ
- * กับโปรแกรมบัญชีไม่ตรง — ข้อความนี้จึงถูกส่งกลับไปทุก endpoint ให้ frontend
- * เอาไปแสดงกำกับตัวเลข
- */
 export const CONTRACT_VALUE_DISCLAIMER =
   'ตัวเลขทั้งหมดเป็นมูลค่าตามสัญญา ไม่ใช่เงินที่ได้รับจริง — ' +
   'ระบบนี้ไม่ใช่ระบบบัญชีและไม่มีข้อมูลการรับชำระเงิน';
 
-/** ความครบถ้วนของข้อมูลที่รายงานตัวหนึ่งพึ่งพา */
 export class DataCompletenessDto {
   @ApiProperty({ description: 'จำนวนรายการทั้งหมดที่เข้าเงื่อนไขรายงาน', example: 20 })
   total: number;
@@ -332,8 +319,6 @@ export class ContractOverlapReportDto {
   items: CustomerOverlapDto[];
 }
 
-// ---- M1-05 / M1-06 ---------------------------------------------------------
-
 export class OverviewProjectDto {
   @ApiProperty({ example: 3 })
   id: number;
@@ -440,12 +425,6 @@ export class OverviewFollowUpDto {
   isOverdue: boolean;
 }
 
-/**
- * M1-06 — มูลค่ารวมตามสัญญาตลอดอายุการใช้บริการของลูกค้า
- *
- * **ไม่ใช่เงินสดที่ลูกค้าจ่ายจริง** ดู `CONTRACT_VALUE_DISCLAIMER`
- * รายการที่สถานะ CANCELLED ถูกตัดออกจากมูลค่าหลัก แต่ยกมาแสดงแยกเพื่อให้ตรวจย้อนหลังได้
- */
 export class CustomerLifetimeValueDto {
   @ApiProperty({ description: CONTRACT_VALUE_DISCLAIMER })
   disclaimer: string;
@@ -490,7 +469,6 @@ export class CustomerLifetimeValueDto {
   overlappingContractCount: number;
 }
 
-/** M1-05 — มุมมองลูกค้า 360 องศา */
 export class CustomerOverviewDto {
   @ApiProperty({ example: 1 })
   customerId: number;

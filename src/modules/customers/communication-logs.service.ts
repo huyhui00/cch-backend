@@ -121,14 +121,11 @@ export class CommunicationLogsService {
       occurredAt,
       subject: dto.subject ?? null,
       content: dto.content ?? null,
-      // ถ้าไม่ระบุว่าใครเป็นคนคุย ถือว่าคนที่บันทึกเป็นคนคุยเอง
       handledByUserId: dto.handledByUserId ?? actorId,
       createdBy: actorId,
       updatedBy: actorId,
     });
 
-    // อัปเดตวันที่ติดต่อล่าสุดของลูกค้า — เป็นตัวป้อนให้หน้าจอ "ลูกค้าที่ถูกลืม"
-    // และ notification rule แบบ CUSTOMER_IDLE ใน Phase 11
     await this.customersService.touchLastContactedAt(dto.customerId, occurredAt);
 
     return this.findOne(log.id);
@@ -190,13 +187,7 @@ export class CommunicationLogsService {
 
     await log.update({ deletedBy: actorId });
     await log.destroy();
-
-    // ไม่ย้อน lastContactedAt กลับให้โดยอัตโนมัติ เพราะการคำนวณใหม่ต้องไล่หา
-    // บันทึกที่ใหม่รองลงมา ซึ่งอาจถูกลบไปด้วยเช่นกัน ปล่อยให้ค่าคงเดิมปลอดภัยกว่า
-    // ในแง่ธุรกิจ — ผิดพลาดไปทางเตือนช้า ดีกว่าเตือนพร่ำเพรื่อจนคนเลิกสนใจ
   }
-
-  // ---- helpers -------------------------------------------------------------
 
   private async findOrFail(id: number): Promise<CommunicationLog> {
     const log = await this.logModel.findByPk(id);
@@ -208,7 +199,6 @@ export class CommunicationLogsService {
     return log;
   }
 
-  /** กันบันทึกที่ระบุผู้ติดต่อของลูกค้าคนอื่น ซึ่งทำให้ประวัติปนกันข้ามราย */
   private async assertContactBelongsToCustomer(
     contactId: number,
     customerId: number,

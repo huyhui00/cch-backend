@@ -30,7 +30,6 @@ export interface DescribableAuditLog {
   newValue: unknown;
 }
 
-/** ชื่อที่หาได้จากฐานข้อมูล — ตาราง → id → ป้ายชื่อ (รหัส / ชื่อ / หัวข้อ) */
 export type AuditRefLabels = ReadonlyMap<string, ReadonlyMap<number, string>>;
 
 export const AUDIT_TABLE_LABELS: Readonly<Record<string, string>> = {
@@ -66,10 +65,6 @@ export const AUDIT_TABLE_LABELS: Readonly<Record<string, string>> = {
   notifications: 'การแจ้งเตือน',
 };
 
-/**
- * ฟิลด์ที่ไม่แสดงในรายการเปลี่ยนแปลง — มีทุกแถวจึงไม่บอกอะไร หรือเป็นของภายในระบบ
- * ผู้กระทำและเวลามีคอลัมน์ของตัวเองอยู่แล้ว · `where` คือเงื่อนไขของคำสั่งแบบหลายแถว ไม่ใช่ฟิลด์
- */
 const HIDDEN_FIELDS: ReadonlySet<string> = new Set([
   'id',
   'createdAt',
@@ -83,7 +78,6 @@ const HIDDEN_FIELDS: ReadonlySet<string> = new Set([
 ]);
 
 const FIELD_LABELS: Readonly<Record<string, string>> = {
-  // ทั่วไป
   status: 'สถานะ',
   title: 'หัวข้อ',
   name: 'ชื่อ',
@@ -100,7 +94,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   dueAt: 'กำหนดส่ง',
   completedAt: 'เวลาที่เสร็จ',
   price: 'ราคา',
-  // คน
   userId: 'ผู้ใช้',
   assignedUserId: 'ผู้รับผิดชอบ',
   assignedByUserId: 'ผู้มอบหมาย',
@@ -116,7 +109,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   reviewedByUserId: 'ผู้ตรวจ',
   filledByUserId: 'ผู้คีย์คำตอบ',
   targetUserId: 'ผู้รับแจ้งเตือน',
-  // ความสัมพันธ์
   customerId: 'ลูกค้า',
   projectId: 'โปรเจกต์',
   contactId: 'ผู้ติดต่อ',
@@ -139,7 +131,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   assignmentId: 'การส่งแบบประเมิน',
   resolutionId: 'รอบการแก้ไข',
   ruleId: 'กฎการแจ้งเตือน',
-  // ผู้ใช้
   username: 'ชื่อผู้ใช้',
   fullName: 'ชื่อ-นามสกุล',
   nickname: 'ชื่อเล่น',
@@ -152,7 +143,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   lineUserId: 'LINE ของพนักงาน',
   lastLoginAt: 'เข้าสู่ระบบล่าสุด',
   passwordHash: 'รหัสผ่าน',
-  // ลูกค้า / ผู้ติดต่อ / การติดต่อ
   taxId: 'เลขผู้เสียภาษี',
   address: 'ที่อยู่',
   province: 'จังหวัด',
@@ -170,7 +160,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   content: 'เนื้อหา',
   occurredAt: 'เวลาที่ติดต่อ',
   resultNote: 'ผลการติดตาม',
-  // โปรเจกต์ / งาน
   projectType: 'ประเภทโปรเจกต์',
   contractValue: 'มูลค่าสัญญา',
   functionCount: 'จำนวนฟังก์ชัน',
@@ -182,7 +171,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   reviewNote: 'ความเห็นผู้ตรวจ',
   reviewedAt: 'เวลาที่ตรวจ',
   reviewFileName: 'ไฟล์ของผู้ตรวจ',
-  // ส่งมอบ / ประกัน / เอกสาร / ไฟล์
   deliveryNo: 'เลขที่ใบส่งมอบ',
   version: 'เวอร์ชัน',
   deliveredAt: 'วันส่งมอบ',
@@ -199,7 +187,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   fileUrl: 'ไฟล์',
   refType: 'แนบกับ',
   refId: 'รหัสอ้างอิง',
-  // MA
   contractNo: 'เลขที่สัญญา',
   billingCycle: 'รอบวางบิล',
   signedDate: 'วันที่เซ็น',
@@ -216,7 +203,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   periodMonth: 'เดือนของรอบ',
   isOverQuota: 'เกินโควตา',
   extraCharge: 'ค่าบริการเพิ่ม',
-  // ใบแจ้งปัญหา
   ticketNo: 'เลขที่ใบ',
   billingType: 'ประเภทการคิดเงิน',
   reportedChannel: 'ช่องทางที่แจ้ง',
@@ -230,7 +216,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   rootCause: 'สาเหตุ',
   startedAt: 'เวลาที่เริ่ม',
   hoursSpent: 'ชั่วโมงที่ใช้',
-  // แบบประเมิน
   validFrom: 'เริ่มใช้',
   validTo: 'ใช้ได้ถึง',
   questionText: 'คำถาม',
@@ -247,7 +232,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   answerText: 'คำตอบ',
   answerNumber: 'คะแนน',
   answerJson: 'คำตอบ',
-  // แจ้งเตือน
   eventType: 'ชนิดเหตุการณ์',
   message: 'ข้อความ',
   scheduledAt: 'กำหนดส่ง',
@@ -271,7 +255,6 @@ const CHANNEL: Record<string, string> = {
   OTHER: 'อื่นๆ',
 };
 
-/** สถานะแยกตามตาราง เพราะค่าเดียวกัน (ACTIVE, CLOSED) มีความหมายต่างกันคนละตาราง */
 const STATUS_BY_TABLE: Readonly<Record<string, Record<string, string>>> = {
   users: { ACTIVE: 'ปฏิบัติงาน', SUSPENDED: 'พักงาน', RESIGNED: 'สิ้นสุดการปฏิบัติงาน' },
   customers: {
@@ -385,7 +368,6 @@ const ENUM_BY_FIELD: Readonly<Record<string, Record<string, string>>> = {
   },
 };
 
-/** ฟิลด์ที่ชี้ไปหาแถวของตารางอื่น — แสดงเป็นชื่อแทนตัวเลข id */
 export const FOREIGN_KEY_TABLES: Readonly<Record<string, string>> = {
   customerId: 'customers',
   projectId: 'projects',
@@ -408,7 +390,6 @@ export const FOREIGN_KEY_TABLES: Readonly<Record<string, string>> = {
 
 const MONEY_FIELDS: ReadonlySet<string> = new Set(['price', 'contractValue', 'extraCharge']);
 
-/** เก็บ key ของที่เก็บไฟล์ ซึ่งไม่ควรหลุดไปหน้าจอ (กฎ Phase 9) — บอกแค่ว่ามีไฟล์ */
 const FILE_KEY_FIELDS: ReadonlySet<string> = new Set([
   'fileUrl',
   'signedFileUrl',
@@ -444,7 +425,6 @@ export function isUserReferenceField(field: string): boolean {
   return field === 'userId' || field.endsWith('UserId');
 }
 
-/** ตารางที่ฟิลด์นี้ชี้ไปหา — null ถ้าไม่ใช่ foreign key ที่รู้จัก */
 export function referencedTableOf(field: string): string | null {
   if (isUserReferenceField(field)) {
     return 'users';
@@ -463,8 +443,6 @@ export function describeAuditLog(log: DescribableAuditLog, refs: AuditRefLabels)
   return { tableLabel, summary, changes };
 }
 
-// ---- รายการเปลี่ยนแปลง -----------------------------------------------------
-
 function buildChanges(
   log: DescribableAuditLog,
   oldValues: Record<string, unknown>,
@@ -482,7 +460,6 @@ function buildChanges(
     const before = oldValues[field];
     const after = newValues[field];
 
-    // snapshot ตอนลบบางตารางพ่วง association มาด้วย (project, customer) ไม่ใช่ฟิลด์ของแถว
     if (isPlainObject(before) || isPlainObject(after)) {
       continue;
     }
@@ -570,8 +547,6 @@ function formatDate(value: string): string | null {
   return null;
 }
 
-// ---- ประโยคสรุป -------------------------------------------------------------
-
 function buildSummary(
   log: DescribableAuditLog,
   tableLabel: string,
@@ -599,10 +574,6 @@ function buildSummary(
   }
 }
 
-/**
- * ป้ายชื่อของแถวที่ถูกกระทำ ขึ้นต้นด้วยช่องว่างเพื่อต่อท้ายประโยคได้เลย
- * หาจากฐานข้อมูลก่อน ไม่เจอ (ถูกลบจริง) ค่อยหยิบจาก snapshot ที่เก็บไว้ใน log
- */
 function recordRef(
   log: DescribableAuditLog,
   oldValues: Record<string, unknown>,
@@ -752,7 +723,6 @@ function summarizeUpdate(
   return 'แก้ไข' + tableLabel + ref + ': ' + listLabels(changes);
 }
 
-/** ประโยคเฉพาะของขั้นตอนงานที่คนในบริษัทเรียกกันเป็นชื่อ ไม่ใช่ "เปลี่ยนสถานะ" */
 function specialUpdate(
   tableName: string,
   ref: string,
@@ -831,10 +801,6 @@ function summarizeDelete(tableName: string, tableLabel: string, ref: string): st
   return 'ลบ' + tableLabel + ref;
 }
 
-/**
- * คำสั่งแบบหลายแถวไม่มีค่าเดิมรายแถวและเงื่อนไขที่เก็บไว้มักอ่านไม่ออก
- * (Sequelize ตัด operator ทิ้งตอนแปลงเป็น JSON) จึงบอกได้แค่ว่าตั้งค่าอะไร
- */
 function summarizeBulkUpdate(
   tableName: string,
   tableLabel: string,
@@ -875,8 +841,6 @@ function summarizeBulkDelete(tableName: string, tableLabel: string): string {
   }
 }
 
-// ---- helpers ---------------------------------------------------------------
-
 function listLabels(changes: AuditChange[]): string {
   const labels = [...new Set(changes.map((c) => c.label))];
   const shown = labels.slice(0, MAX_LABELS_IN_SUMMARY).join(', ');
@@ -893,7 +857,6 @@ function lookup(refs: AuditRefLabels, table: string, value: unknown): string | n
   return id !== null ? (refs.get(table)?.get(id) ?? null) : null;
 }
 
-/** BIGINT บางแถวถูกเก็บเป็นข้อความ — รับทั้งสองแบบ */
 export function toId(value: unknown): number | null {
   if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
     return value;

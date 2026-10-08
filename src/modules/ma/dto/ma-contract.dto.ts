@@ -36,13 +36,6 @@ const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? val
  */
 const MONEY_PATTERN = /^\d{1,13}(\.\d{1,2})?$/;
 
-/**
- * ความหมายของ `price` — ใช้ร่วมกันทั้งฝั่งรับและฝั่งคืน ข้อความจะได้ไม่หลุดจากกัน
- *
- * ตกลงกับพี่เลี้ยง 10 ก.ย. 2026: price = มูลค่ารวมตลอดอายุสัญญา ไม่ใช่ราคาต่อรอบบิล
- * รายงาน M10 รวมค่านี้ตรง ๆ โดยไม่ดู billing_cycle ถ้ากรอกเป็นราคาต่อเดือน
- * มูลค่าตามสัญญาจะต่ำกว่าจริงตามจำนวนเดือน
- */
 export const MA_CONTRACT_PRICE_DESCRIPTION =
   'มูลค่ารวมตลอดอายุสัญญา (วันเริ่มถึงวันสิ้นสุด) **ไม่ใช่ราคาต่อเดือนหรือต่อรอบบิล** — ' +
   "เช่น สัญญาเดือนต่อเดือน 500 บาท ส่ง '500.00' · สัญญา 1 ปีแบ่งจ่ายเดือนละ 500 ส่ง '6000.00' " +
@@ -52,7 +45,6 @@ export const MA_CONTRACT_PRICE_DESCRIPTION =
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export class CreateMaContractDto {
-  /** รับไว้เพื่อให้โค้ดเก่าคอมไพล์ได้ แต่ ValidationPipe จะปฏิเสธฟิลด์นี้ */
   @ApiHideProperty()
   contractNo?: unknown;
 
@@ -139,13 +131,6 @@ export class CreateMaContractDto {
   note?: string | null;
 }
 
-/**
- * แก้ไขสัญญา
- *
- * ย้ายโครงการไม่ได้ (ไม่มี `projectId`) ด้วยเหตุผลเดียวกับที่ย้ายโครงการข้ามลูกค้าไม่ได้
- * ใน Phase 5 — สัญญาที่หักโควตาไปแล้วจะพาประวัติการใช้งานไปโผล่ผิดโครงการ
- * ถ้าผูกผิดโครงการจริง ให้ยกเลิกฉบับนั้น (CANCELLED) แล้วทำฉบับใหม่
- */
 export class UpdateMaContractDto {
   @ApiPropertyOptional({ description: 'เปลี่ยนแผนที่ใช้ได้ถ้ายังไม่มีการหักโควตา', example: 2 })
   @IsOptional()
@@ -215,12 +200,6 @@ export class UpdateMaContractDto {
   note?: string | null;
 }
 
-/**
- * ต่อสัญญา — สร้างฉบับใหม่แล้วปิดฉบับเดิมเป็น RENEWED ในทรานแซกชันเดียว
- *
- * ไม่ต้องส่ง projectId / planId เพราะคัดลอกจากฉบับเดิม ถ้าจะเปลี่ยนแผนตอนต่อสัญญา
- * ให้ส่ง planId มาทับได้ ส่วนราคาส่งใหม่เสมอเพราะการต่อสัญญาคือจุดที่ราคาเปลี่ยน
- */
 export class RenewMaContractDto {
   @ApiProperty({ description: 'วันเริ่มของสัญญาฉบับใหม่', example: '2027-10-01' })
   @Matches(DATE_ONLY_PATTERN, { message: 'วันเริ่มสัญญาต้องอยู่ในรูปแบบ YYYY-MM-DD' })
@@ -362,7 +341,6 @@ export class CreateMaAddonDto {
   note?: string | null;
 }
 
-/** ดูสถานะโควตาของรอบที่วันที่กำหนดตกอยู่ — ไม่ระบุ = รอบปัจจุบัน */
 export class QueryQuotaDto {
   @ApiPropertyOptional({
     description: 'ดูโควตาของรอบที่วันที่นี้ตกอยู่ (ISO 8601) — ไม่ระบุ = วันนี้',

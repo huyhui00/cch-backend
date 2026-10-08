@@ -58,7 +58,6 @@ export class PermissionsGuard implements CanActivate {
       throw new UnauthorizedException('กรุณาเข้าสู่ระบบก่อนใช้งาน');
     }
 
-    // 1. SUPER_ADMIN ผ่านทุกอย่างโดยไม่มีข้อยกเว้น
     if (user.accountType === AccountType.SUPER_ADMIN) {
       return true;
     }
@@ -69,15 +68,10 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('เฉพาะผู้ดูแลระบบสูงสุดเท่านั้นที่จัดการส่วนนี้ได้');
     }
 
-    // 3. ข้อจำกัดระดับบัญชีที่ endpoint ระบุไว้เอง (@RequireAccountType)
     if (requiredAccountTypes.length > 0 && !requiredAccountTypes.includes(user.accountType)) {
       throw new ForbiddenException('เฉพาะผู้ดูแลระบบเท่านั้นที่เข้าถึงส่วนนี้ได้');
     }
 
-    // 4. ADMIN เข้าได้ทุกเมนูโดยไม่ต้องผูก Role (CLAUDE.md 4.1)
-    //    เพราะ ADMIN คือฝ่ายที่ "มอบ" Role ให้คนอื่น ไม่ใช่ฝ่ายที่รอรับ Role
-    //    ข้อจำกัดของ ADMIN ถูกบังคับไว้แล้วที่ข้อ 2 (แก้ Role ไม่ได้) และที่ UsersService
-    //    (สร้างหรือเลื่อนใครเป็น SUPER_ADMIN ไม่ได้ รวมถึงตัวเอง)
     if (user.accountType === AccountType.ADMIN) {
       return true;
     }
@@ -86,7 +80,6 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    // 5. USER — สิทธิ์ที่ใช้ได้คือ union ของทุก Role ที่ได้รับมอบหมาย (CLAUDE.md 4.2)
     const granted = await this.accessControl.findPermissionCodes(user.id);
 
     if (!requiredPermissions.some((code) => granted.has(code))) {

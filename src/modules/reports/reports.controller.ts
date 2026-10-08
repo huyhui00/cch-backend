@@ -18,13 +18,6 @@ import {
 } from './dto/report.response';
 import { ReportsService } from './reports.service';
 
-/**
- * M10 — รายงานและการวิเคราะห์
- *
- * **ทุกตัวเลขเงินคือ "มูลค่าตามสัญญา" ไม่ใช่ "เงินที่ได้รับจริง"** ระบบนี้ไม่ใช่ระบบบัญชี
- * และไม่มีระบบรับชำระเงิน (SC-3, OS-03, OS-06) ทุก response จึงแนบ `disclaimer`
- * กลับไปให้หน้าจอแสดงกำกับตัวเลขเสมอ
- */
 @ApiTags('reports')
 @ApiBearerAuth('access-token')
 @Controller('reports')
@@ -104,15 +97,6 @@ export class ReportsController {
   }
 }
 
-/**
- * M1-05 มุมมองลูกค้า 360 องศา + M1-06 มูลค่ารวมตลอดอายุการใช้บริการ
- *
- * แยก controller เพราะ path อยู่ใต้ `/api/customers/:id` แต่ตรรกะเป็นการรวมข้อมูล
- * ข้ามโมดูลซึ่งเป็นงานของ reports — รูปแบบเดียวกับ `project-deliveries.controller.ts`
- * ที่ประกาศ path ของโมดูลอื่นแต่โค้ดอยู่ในโมดูลเจ้าของตรรกะ
- *
- * **ไม่แตะ endpoint เดิมของ customers เลย** เป็นเส้นใหม่ล้วน
- */
 @ApiTags('reports')
 @ApiBearerAuth('access-token')
 @Controller('customers')

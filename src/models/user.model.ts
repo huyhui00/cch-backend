@@ -11,18 +11,12 @@ export enum AccountType {
   USER = 'USER',
 }
 
-/** สถานะพนักงาน — แยกจาก account_type อย่างสิ้นเชิง (CLAUDE.md 4.3) */
 export enum UserStatus {
   ACTIVE = 'ACTIVE',
   SUSPENDED = 'SUSPENDED',
   RESIGNED = 'RESIGNED',
 }
 
-/**
- * ฟิลด์ที่ส่งได้ตอน create — ที่เหลือ (id, timestamps) Sequelize เติมให้เอง
- * ต้องประกาศแยกจาก class เพราะถ้าใช้ตัว class เป็น creation attributes
- * TypeScript จะบังคับให้ส่ง method ของ Model มาด้วยทุกครั้ง
- */
 export interface UserCreationAttributes {
   employeeCode?: string | null;
   username: string;
@@ -96,7 +90,6 @@ export class User extends AuditedModel<User, UserCreationAttributes> {
   @Column({ type: DataType.STRING(255), allowNull: true, field: 'refresh_token_hash' })
   refreshTokenHash: string | null;
 
-  /** 1 user ถือได้หลาย role พร้อมกัน สิทธิ์ = union ของทุก role (CLAUDE.md 4.2) */
   @BelongsToMany(() => Role, () => UserRole)
   roles: Role[];
 

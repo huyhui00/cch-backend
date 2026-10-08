@@ -12,7 +12,6 @@ export enum FollowUpStatus {
   CANCELLED = 'CANCELLED',
 }
 
-/** งานติดตามลูกค้า — ป้อนเข้า notification rule แบบ FOLLOWUP_DUE */
 export interface FollowUpCreationAttributes {
   customerId: number;
   projectId?: number | null;

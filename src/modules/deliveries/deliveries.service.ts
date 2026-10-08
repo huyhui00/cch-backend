@@ -38,18 +38,8 @@ import {
   toDeliveryResponse,
 } from './dto/delivery.response';
 
-/**
- * ref_type ของไฟล์แนบที่เป็นของใบส่งมอบ
- *
- * ผูกชนิดไว้กับ AttachmentRefType เพื่อให้พิมพ์ผิดเป็น error ตอน build
- * ไม่ใช่ไปเงียบ ๆ แล้วคืนไฟล์แนบเป็นรายการว่างตลอดกาลโดยไม่มีใครรู้
- */
 const ATTACHMENT_REF_TYPE: AttachmentRefType = 'DELIVERY';
 
-/**
- * สถานะโครงการที่การยอมรับการส่งมอบครั้งสุดท้ายจะพาไปเป็น DELIVERED ให้เอง
- * CLOSED / CANCELLED ไม่แตะ เพราะเป็นการตัดสินใจของคนที่เกิดทีหลังแล้ว
- */
 const OPEN_PROJECT_STATUSES: readonly ProjectStatus[] = [
   ProjectStatus.DRAFT,
   ProjectStatus.IN_PROGRESS,
@@ -122,12 +112,6 @@ export class DeliveriesService {
     private readonly warrantiesService: WarrantiesService,
   ) {}
 
-  /**
-   * ประวัติการส่งมอบของโครงการ
-   *
-   * เรียงจากใหม่ไปเก่าเป็นค่าเริ่มต้น เพราะหน้าจอต้องการรู้ว่า "เวอร์ชันล่าสุดคืออะไร"
-   * เป็นคำถามแรกเสมอ
-   */
   async findAllByProject(
     projectId: number,
     query: QueryDeliveriesDto,
@@ -177,7 +161,6 @@ export class DeliveriesService {
     );
   }
 
-  /** รายละเอียดใบส่งมอบ พร้อมประกันที่ออกจากใบนี้และไฟล์แนบ */
   async findOne(id: number): Promise<DeliveryResponseDto> {
     const delivery = await this.deliveryModel.findByPk(id, {
       include: [projectInclude(), acceptedByContactInclude(), deliveredByUserInclude()],
@@ -316,7 +299,6 @@ export class DeliveriesService {
     const delivery = await this.findOrFail(id);
     const project = await this.projectsService.findOrFail(delivery.projectId);
 
-    // ไม่ส่ง isFinal มา = คงค่าเดิม ตรวจรับซ้ำโดยไม่ตอบคำถามเรื่องครั้งสุดท้ายต้องไม่ล้างค่า
     const nextIsFinal = dto.isFinal ?? delivery.isFinal;
     const wasFinalAccepted = canIssueWarranty(delivery);
     const willBeFinalAccepted = canIssueWarranty({
@@ -376,8 +358,6 @@ export class DeliveriesService {
     return this.findOne(id);
   }
 
-  // ---- ใช้ร่วมกับ WarrantiesService ----------------------------------------
-
   async findOrFail(id: number): Promise<Delivery> {
     const delivery = await this.deliveryModel.findByPk(id);
 
@@ -387,8 +367,6 @@ export class DeliveriesService {
 
     return delivery;
   }
-
-  // ---- helpers -------------------------------------------------------------
 
   private async assertNoActiveWarranty(deliveryId: number): Promise<void> {
     const activeWarranties = await this.warrantyModel.count({
@@ -403,7 +381,6 @@ export class DeliveriesService {
     }
   }
 
-  /** 1 โครงการมีการส่งมอบครั้งสุดท้ายที่ยอมรับแล้วได้ใบเดียว — ประกันจะได้มีวันเริ่มจุดเดียว */
   private async assertNoOtherFinalAccepted(delivery: Delivery): Promise<void> {
     const other = await this.deliveryModel.findOne({
       where: {
@@ -424,23 +401,17 @@ export class DeliveriesService {
     }
   }
 
-  /** ตั้งหรือล้าง acceptedAt ให้สอดคล้องกับสถานะเสมอ */
   private acceptancePatch(
     delivery: Delivery,
     acceptanceStatus: AcceptanceStatus,
   ): { acceptanceStatus: AcceptanceStatus; acceptedAt: Date | null } {
     if (acceptanceStatus === AcceptanceStatus.ACCEPTED) {
-      // ตรวจรับซ้ำไม่ทับเวลาเดิม จะได้รู้ว่าลูกค้ารับมอบจริงเมื่อไร
       return { acceptanceStatus, acceptedAt: delivery.acceptedAt ?? new Date() };
     }
 
     return { acceptanceStatus, acceptedAt: null };
   }
 
-  /**
-   * เลขที่ใบส่งมอบต้องไม่ซ้ำ — ตรวจรวมรายการที่ถูก soft delete ไปแล้วด้วย
-   * เพราะ unique index ในฐานข้อมูลไม่สนใจ deleted_at
-   */
   private async assertDeliveryNoIsAvailable(deliveryNo: string, excludeId?: number): Promise<void> {
     const where: WhereOptions<Delivery> = excludeId
       ? { deliveryNo, id: { [Op.ne]: excludeId } }
@@ -453,13 +424,6 @@ export class DeliveriesService {
     }
   }
 
-  /**
-   * ผู้ส่งมอบต้องมีตัวตนในระบบ แต่ไม่บังคับว่าต้อง ACTIVE
-   *
-   * ต่างจากการมอบหมายงานหรือตั้งผู้จัดการโครงการที่ต้องเป็นคนที่ยังทำงานอยู่
-   * เพราะนี่คือการบันทึกว่า "ใครเป็นคนส่งมอบ" ซึ่งเป็นข้อเท็จจริงในอดีต
-   * บริษัทเพิ่งเริ่มใช้ระบบและต้องคีย์ของเก่าย้อนหลัง คนที่ส่งมอบไปอาจลาออกแล้ว
-   */
   private async assertUserExists(userId: number): Promise<void> {
     const user = await this.userModel.findByPk(userId, {
       attributes: ['id'],
@@ -471,7 +435,6 @@ export class DeliveriesService {
     }
   }
 
-  /** กันการระบุผู้รับมอบที่เป็นคนของลูกค้ารายอื่น ซึ่งทำให้ประวัติปนข้ามราย */
   private async assertContactBelongsToCustomer(
     contactId: number,
     customerId: number,

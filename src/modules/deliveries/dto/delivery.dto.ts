@@ -26,7 +26,6 @@ const trimToNull = ({ value }: { value: unknown }) => {
 };
 
 export class CreateDeliveryDto {
-  /** รับไว้เพื่อให้โค้ดเก่าคอมไพล์ได้ แต่ ValidationPipe จะปฏิเสธฟิลด์นี้ */
   @ApiHideProperty()
   deliveryNo?: unknown;
 
@@ -104,7 +103,6 @@ export class CreateDeliveryDto {
  */
 export class UpdateDeliveryDto extends PartialType(CreateDeliveryDto) {}
 
-/** ผลการตรวจรับ — แยกจากการแก้ไขรายละเอียดเพราะใช้สิทธิ์ `delivery.accept` */
 export class UpdateAcceptanceDto {
   @ApiProperty({
     enum: AcceptanceStatus,
@@ -147,7 +145,6 @@ export class UpdateAcceptanceDto {
   isFinal?: boolean;
 }
 
-/** `search` ที่สืบมาจาก PaginationDto ค้นจากหัวข้อและเลขที่ใบส่งมอบ */
 export class QueryDeliveriesDto extends PaginationDto {
   @ApiPropertyOptional({ enum: AcceptanceStatus, description: 'กรองตามสถานะการตรวจรับ' })
   @IsOptional()

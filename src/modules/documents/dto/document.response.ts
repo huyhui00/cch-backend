@@ -10,12 +10,6 @@ export class DocumentUploaderDto {
   fullName: string;
 }
 
-/**
- * เอกสารของโครงการ
- *
- * **ไม่คืน object key ของที่เก็บไฟล์** — ให้ดาวน์โหลดผ่าน `downloadUrl` ซึ่งตรวจสิทธิ์ทุกครั้ง
- * ถ้าคืน key ไป frontend อาจเอาไปต่อเป็นลิงก์ตรงเข้า R2 ซึ่งข้ามการตรวจสิทธิ์ทั้งหมด
- */
 export class DocumentResponseDto {
   @ApiProperty({ example: 12 })
   id: number;
@@ -77,7 +71,6 @@ export class DocumentProjectSummaryDto {
   customerName: string | null;
 }
 
-/** GET /documents — รายการรวมทั้งบริษัท พ่วงโครงการ (แยกคลาสเพื่อไม่เปลี่ยนสัญญาของเส้นรายโครงการ) */
 export class CompanyDocumentResponseDto extends DocumentResponseDto {
   @ApiProperty({ type: DocumentProjectSummaryDto, nullable: true })
   project: DocumentProjectSummaryDto | null;

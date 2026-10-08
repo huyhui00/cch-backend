@@ -17,7 +17,6 @@ import {
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { AuditAction } from '../../../models';
 
-// อ่านค่าดิบจาก obj ไม่ใช่ value — enableImplicitConversion แปลง 'false' เป็น true ไปก่อนแล้ว
 function toBoolean(raw: unknown): unknown {
   return raw === 'true' ? true : raw === 'false' ? false : raw;
 }

@@ -19,12 +19,6 @@ import { User } from './user.model';
  * ตารางนี้เป็น append-only — ไม่มี updated_at / deleted_at และไม่เปิด paranoid
  * เพราะ audit log ที่แก้ไขหรือลบได้ก็ไม่ใช่ audit log
  */
-/**
- * ชนิดของ action ที่ถูกบันทึก
- *
- * ตัวที่ขึ้นต้นด้วย BULK_ มาจากคำสั่งที่กระทำหลายแถวพร้อมกัน (bulkCreate / update / destroy
- * แบบระบุ where) ซึ่ง Sequelize ไม่ส่งข้อมูลรายแถวมาให้ จึงบันทึกได้แค่ระดับคำสั่ง
- */
 export enum AuditAction {
   CREATE = 'CREATE',
   UPDATE = 'UPDATE',
@@ -34,7 +28,6 @@ export enum AuditAction {
   BULK_DELETE = 'BULK_DELETE',
 }
 
-/** ฟิลด์ที่ส่งได้ตอน create — ดูหมายเหตุใน UserCreationAttributes */
 export interface AuditLogCreationAttributes {
   userId?: number | null;
   action: string;
@@ -59,7 +52,6 @@ export class AuditLog extends Model<AuditLog, AuditLogCreationAttributes> {
   @Column({ type: DataType.BIGINT.UNSIGNED })
   id: number;
 
-  /** null ได้ในกรณีที่ระบบเป็นผู้กระทำเอง เช่น scheduler */
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: true, field: 'user_id' })
   userId: number | null;

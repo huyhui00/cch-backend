@@ -63,7 +63,6 @@ export enum TaskReviewTab {
   REVIEWED = 'REVIEWED',
 }
 
-/** เมนู "งานตรวจ" — แท็บรอตรวจ / ที่ฉันตรวจไปแล้ว */
 export class QueryTaskReviewsDto extends PaginationDto {
   @ApiPropertyOptional({
     enum: TaskReviewTab,
