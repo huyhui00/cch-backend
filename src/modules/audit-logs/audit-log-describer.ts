@@ -34,6 +34,7 @@ export type AuditRefLabels = ReadonlyMap<string, ReadonlyMap<number, string>>;
 
 export const AUDIT_TABLE_LABELS: Readonly<Record<string, string>> = {
   users: 'ผู้ใช้',
+  user_sessions: 'การเข้าสู่ระบบ',
   roles: 'บทบาท',
   permissions: 'สิทธิ์',
   user_roles: 'บทบาทของผู้ใช้',
@@ -75,6 +76,10 @@ const HIDDEN_FIELDS: ReadonlySet<string> = new Set([
   'deletedBy',
   'where',
   'refreshTokenHash',
+  'lastUsedAt',
+  'expiresAt',
+  'userAgent',
+  'ipAddress',
 ]);
 
 const FIELD_LABELS: Readonly<Record<string, string>> = {
@@ -617,6 +622,8 @@ function summarizeCreate(
   refs: AuditRefLabels,
 ): string {
   switch (tableName) {
+    case 'user_sessions':
+      return 'เข้าสู่ระบบ';
     case 'ticket_resolutions': {
       const result = enumLabel(ENUM_BY_FIELD.result, values.result);
       return 'บันทึกผลการแก้ไข' + ref + (result ? ' (ผล: ' + result + ')' : '');
@@ -677,6 +684,10 @@ function summarizeUpdate(
 ): string {
   const changed = new Set(Object.keys(newValues));
   const visible = changes.map((c) => c.field);
+
+  if (tableName === 'user_sessions') {
+    return 'ต่ออายุการเข้าสู่ระบบ';
+  }
 
   if (tableName === 'users') {
     if (changed.has('passwordHash')) {
@@ -798,6 +809,10 @@ function summarizeDelete(tableName: string, tableLabel: string, ref: string): st
     return 'ลบไฟล์แนบ' + ref;
   }
 
+  if (tableName === 'user_sessions') {
+    return 'ออกจากระบบ';
+  }
+
   return 'ลบ' + tableLabel + ref;
 }
 
@@ -836,6 +851,8 @@ function summarizeBulkDelete(tableName: string, tableLabel: string): string {
       return 'ถอดสิทธิ์ออกจากบทบาท';
     case 'user_roles':
       return 'ถอดบทบาทเดิมของผู้ใช้';
+    case 'user_sessions':
+      return 'ตัดการเข้าสู่ระบบเดิมของผู้ใช้';
     default:
       return 'ลบ' + tableLabel;
   }

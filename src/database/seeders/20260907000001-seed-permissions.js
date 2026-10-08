@@ -14,7 +14,7 @@ const PERMISSION_GROUPS = [
   {
     name: 'user',
     label: 'ผู้ใช้งาน',
-    actions: ['view', 'create', 'update', 'delete', 'reset_password'],
+    actions: ['view', 'create', 'update', 'reset_password'],
   },
   { name: 'role', label: 'บทบาทและสิทธิ์', actions: ['view', 'manage'] },
   { name: 'permission', label: 'รายการสิทธิ์', actions: ['view'] },
@@ -25,7 +25,7 @@ const PERMISSION_GROUPS = [
     label: 'บันทึกการติดต่อ',
     actions: ['view', 'create', 'update', 'delete'],
   },
-  { name: 'project', label: 'โครงการ', actions: ['view', 'create', 'update', 'delete'] },
+  { name: 'project', label: 'โครงการ', actions: ['view', 'create', 'update'] },
   {
     name: 'task',
     label: 'งานย่อย',
@@ -34,9 +34,9 @@ const PERMISSION_GROUPS = [
   {
     name: 'delivery',
     label: 'การส่งมอบ',
-    actions: ['view', 'create', 'update', 'delete', 'accept'],
+    actions: ['view', 'create', 'update', 'accept'],
   },
-  { name: 'warranty', label: 'การรับประกัน', actions: ['view', 'create', 'update', 'delete'] },
+  { name: 'warranty', label: 'การรับประกัน', actions: ['view', 'create', 'update'] },
   {
     name: 'ticket',
     label: 'ใบแจ้งปัญหา',
@@ -44,7 +44,6 @@ const PERMISSION_GROUPS = [
       'view',
       'create',
       'update',
-      'delete',
       'assign',
       'resolve',
       'reopen',
@@ -63,7 +62,6 @@ const PERMISSION_GROUPS = [
   { name: 'survey', label: 'แบบประเมิน', actions: ['view', 'create', 'update', 'delete', 'send'] },
   { name: 'report', label: 'รายงาน', actions: ['view', 'export'] },
   { name: 'notification', label: 'การแจ้งเตือน', actions: ['view', 'manage'] },
-  { name: 'audit', label: 'ประวัติการใช้งาน', actions: ['view'] },
 ];
 
 const ACTION_LABELS = {

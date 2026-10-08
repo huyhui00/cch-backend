@@ -5,6 +5,7 @@ import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ipTracker, loginBucketKey } from '../../common/throttle/throttle-tracker';
 import { Public } from '../../common/decorators/public.decorator';
+import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { AuthService } from './auth.service';
 import { AuthProfileDto, LoginResponseDto, RefreshResponseDto } from './dto/auth.response';
 import { LoginDto } from './dto/login.dto';
@@ -34,7 +35,8 @@ export class AuthController {
     summary: 'เข้าสู่ระบบ',
     description:
       'ตรวจชื่อผู้ใช้และรหัสผ่าน แล้วออก access token กับ refresh token ' +
-      'เข้าได้เฉพาะบัญชีที่สถานะเป็น ACTIVE เท่านั้น (CLAUDE.md 4.3)',
+      'เข้าได้เฉพาะบัญชีที่สถานะเป็น ACTIVE เท่านั้น (CLAUDE.md 4.3) · ' +
+      'เครื่องที่ล็อกอินบัญชีนี้อยู่ก่อนจะหลุดทันที (บัญชีละหนึ่งเครื่อง CLAUDE.md 4.4)',
   })
   @ApiResponse({ status: 200, description: 'เข้าสู่ระบบสำเร็จ', type: LoginResponseDto })
   @ApiResponse({ status: 400, description: 'ข้อมูลที่ส่งมาไม่ถูกต้อง' })
@@ -71,14 +73,13 @@ export class AuthController {
   @ApiOperation({
     summary: 'ออกจากระบบ',
     description:
-      'ล้าง refresh token ที่ระบบเก็บไว้ ทำให้ต่ออายุ session ไม่ได้อีก ' +
-      'ส่วน access token ใบปัจจุบันยังใช้ได้จนหมดอายุตามปกติ ' +
-      'ถ้าต้องการตัดสิทธิ์ทันที ให้เปลี่ยนสถานะบัญชีเป็น SUSPENDED แทน',
+      'ลบ session ของ access token ใบนี้ ทั้ง access และ refresh token ใช้ไม่ได้ทันที ' +
+      '(บัญชีละหนึ่งเครื่อง — ล็อกอินที่เครื่องอื่นก็ทำให้เครื่องนี้หลุดเช่นกัน CLAUDE.md 4.4)',
   })
   @ApiResponse({ status: 200, description: 'ออกจากระบบเรียบร้อย' })
   @ApiResponse({ status: 401, description: 'ยังไม่ได้เข้าสู่ระบบ หรือ token หมดอายุ' })
-  async logout(@CurrentUser('id') userId: number): Promise<{ data: null; message: string }> {
-    await this.authService.logout(userId);
+  async logout(@CurrentUser() user: AuthenticatedUser): Promise<{ data: null; message: string }> {
+    await this.authService.logout(user);
     return { data: null, message: 'ออกจากระบบเรียบร้อย' };
   }
 

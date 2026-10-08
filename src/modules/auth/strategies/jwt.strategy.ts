@@ -5,13 +5,15 @@ import { InjectModel } from '@nestjs/sequelize';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import type { AuthenticatedUser, JwtPayload } from '../../../common/types/auth.types';
-import { User, UserStatus } from '../../../models';
+import { User, UserSession, UserStatus } from '../../../models';
+import { SESSION_REPLACED } from '../auth.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     config: ConfigService,
     @InjectModel(User) private readonly userModel: typeof User,
+    @InjectModel(UserSession) private readonly sessionModel: typeof UserSession,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -33,6 +35,22 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('บัญชีนี้ถูกระงับการใช้งาน');
     }
 
-    return { id: user.id, username: user.username, accountType: user.accountType };
+    if (payload.sid !== undefined) {
+      const session = await this.sessionModel.findOne({
+        where: { id: payload.sid, userId: user.id },
+        attributes: ['id'],
+      });
+
+      if (!session) {
+        throw new UnauthorizedException(SESSION_REPLACED);
+      }
+    }
+
+    return {
+      id: user.id,
+      username: user.username,
+      accountType: user.accountType,
+      sessionId: payload.sid ?? null,
+    };
   }
 }

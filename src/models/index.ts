@@ -27,6 +27,7 @@ import { TaskSubmission } from './task-submission.model';
 import { TicketResolution } from './ticket-resolution.model';
 import { Ticket } from './ticket.model';
 import { UserRole } from './user-role.model';
+import { UserSession } from './user-session.model';
 import { User } from './user.model';
 import { Warranty } from './warranty.model';
 
@@ -60,6 +61,7 @@ export * from './task-submission.model';
 export * from './ticket-resolution.model';
 export * from './ticket.model';
 export * from './user-role.model';
+export * from './user-session.model';
 export * from './user.model';
 export * from './warranty.model';
 
@@ -68,6 +70,7 @@ export const ALL_MODELS = [
   Role,
   Permission,
   UserRole,
+  UserSession,
   RolePermission,
   AuditLog,
   Customer,

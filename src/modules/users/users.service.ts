@@ -16,7 +16,7 @@ import { type PaginatedResult, toPaginatedResult } from '../../common/dto/pagina
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { DEFAULT_SALT_ROUNDS, hashPassword, verifyPassword } from '../../common/utils/crypto.util';
 import { AccessControlService } from '../../common/services/access-control.service';
-import { AccountType, Role, User, UserRole, UserStatus } from '../../models';
+import { AccountType, Role, User, UserRole, UserSession, UserStatus } from '../../models';
 import { StorageService, type StoredFileStream } from '../files/storage.service';
 import { buildStorageKey, type UploadedFileLike } from '../files/upload.util';
 import { assertAvatarFile, avatarContentType, avatarScope, isOwnAvatarKey } from './avatar.util';
@@ -57,6 +57,7 @@ export class UsersService {
     @InjectModel(User) private readonly userModel: typeof User,
     @InjectModel(Role) private readonly roleModel: typeof Role,
     @InjectModel(UserRole) private readonly userRoleModel: typeof UserRole,
+    @InjectModel(UserSession) private readonly sessionModel: typeof UserSession,
     @InjectConnection() private readonly sequelize: Sequelize,
     private readonly config: ConfigService,
     private readonly accessControl: AccessControlService,
@@ -280,10 +281,12 @@ export class UsersService {
       await this.assertNotLastSuperAdmin(user.id);
     }
 
-    await user.update({
-      status: dto.status,
-      ...(dto.status === UserStatus.ACTIVE ? {} : { refreshTokenHash: null }),
-      updatedBy: actor.id,
+    await this.sequelize.transaction(async (transaction) => {
+      await user.update({ status: dto.status, updatedBy: actor.id }, { transaction });
+
+      if (dto.status !== UserStatus.ACTIVE) {
+        await this.revokeAllSessions(user.id, transaction);
+      }
     });
 
     return this.findDetailOrFail(id);
@@ -306,18 +309,28 @@ export class UsersService {
       throw new BadRequestException('รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม');
     }
 
-    await user.update({
-      passwordHash: await hashPassword(dto.newPassword, this.saltRounds),
-      refreshTokenHash: null,
-      updatedBy: user.id,
+    const passwordHash = await hashPassword(dto.newPassword, this.saltRounds);
+
+    await this.sequelize.transaction(async (transaction) => {
+      await user.update({ passwordHash, updatedBy: user.id }, { transaction });
+      await this.revokeAllSessions(user.id, transaction);
     });
   }
 
   async updateOwnProfile(userId: number, dto: UpdateOwnProfileDto): Promise<void> {
     const user = await this.findSelfOrFail(userId);
+    const changes: { fullName?: string; nickname?: string | null } = {};
+
+    if (dto.fullName !== undefined) {
+      changes.fullName = dto.fullName;
+    }
 
     if (dto.nickname !== undefined) {
-      await user.update({ nickname: dto.nickname ?? null, updatedBy: user.id });
+      changes.nickname = dto.nickname ?? null;
+    }
+
+    if (Object.keys(changes).length > 0) {
+      await user.update({ ...changes, updatedBy: user.id });
     }
   }
 
@@ -400,11 +413,17 @@ export class UsersService {
 
     this.assertCanManage(actor, user);
 
-    await user.update({
-      passwordHash: await hashPassword(dto.newPassword, this.saltRounds),
-      refreshTokenHash: null,
-      updatedBy: actor.id,
+    const passwordHash = await hashPassword(dto.newPassword, this.saltRounds);
+
+    await this.sequelize.transaction(async (transaction) => {
+      await user.update({ passwordHash, updatedBy: actor.id }, { transaction });
+      await this.revokeAllSessions(user.id, transaction);
     });
+  }
+
+  /** หลุดทุกเครื่อง (CLAUDE.md 4.4) */
+  private async revokeAllSessions(userId: number, transaction: Transaction): Promise<void> {
+    await this.sessionModel.destroy({ where: { userId }, transaction });
   }
 
   private get saltRounds(): number {

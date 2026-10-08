@@ -117,6 +117,39 @@ describe('describeAuditLog', () => {
     expect(result.changes.map((c) => c.field)).toEqual(['lastLoginAt']);
   });
 
+  it('session: ล็อกอิน / ต่ออายุ / ออกจากระบบ / ตัดเครื่องเดิม ไม่แสดง token', () => {
+    const session = (action: AuditAction, value: Record<string, unknown> | null) =>
+      describeAuditLog(
+        log({
+          action,
+          tableName: 'user_sessions',
+          recordId: 12,
+          oldValue: action === AuditAction.CREATE ? null : value,
+          newValue: action === AuditAction.DELETE ? null : value,
+        }),
+        refs,
+      );
+    const row = {
+      userId: 4,
+      refreshTokenHash: '[REDACTED]',
+      userAgent: 'Mozilla',
+      ipAddress: '100.1.2.3',
+      expiresAt: '2026-10-15T00:00:00.000Z',
+    };
+
+    const created = session(AuditAction.CREATE, row);
+    expect(created.tableLabel).toBe('การเข้าสู่ระบบ');
+    expect(created.summary).toBe('เข้าสู่ระบบ');
+    expect(created.changes.map((c) => c.field)).toEqual(['userId']);
+    expect(session(AuditAction.UPDATE, { refreshTokenHash: '[REDACTED]' }).summary).toBe(
+      'ต่ออายุการเข้าสู่ระบบ',
+    );
+    expect(session(AuditAction.DELETE, row).summary).toBe('ออกจากระบบ');
+    expect(session(AuditAction.BULK_DELETE, { where: { userId: 4 } }).summary).toBe(
+      'ตัดการเข้าสู่ระบบเดิมของผู้ใช้',
+    );
+  });
+
   it('เปลี่ยนรหัสผ่านบอกว่าเปลี่ยนของใคร แต่ไม่แสดงค่า', () => {
     const result = describeAuditLog(
       log({

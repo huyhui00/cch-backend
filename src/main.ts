@@ -54,6 +54,7 @@ async function bootstrap() {
     origin: allowedOrigins.length > 0 ? allowedOrigins : false,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Retry-After', 'Content-Disposition'],
     credentials: true,
     maxAge: 86400,
   });

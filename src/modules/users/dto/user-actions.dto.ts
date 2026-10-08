@@ -12,6 +12,7 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 import { UserStatus } from '../../../models';
@@ -71,6 +72,14 @@ export class ChangePasswordDto {
 export const MAX_NICKNAME_LENGTH = 50;
 
 export class UpdateOwnProfileDto {
+  @ApiPropertyOptional({ maxLength: 255, description: 'ชื่อ-นามสกุล', example: 'สมชาย ใจดี' })
+  @ValidateIf((dto: UpdateOwnProfileDto) => dto.fullName !== undefined)
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString({ message: 'ชื่อ-นามสกุลต้องเป็นข้อความ' })
+  @IsNotEmpty({ message: 'กรุณากรอกชื่อ-นามสกุล' })
+  @MaxLength(255, { message: 'ชื่อ-นามสกุลยาวเกิน 255 ตัวอักษร' })
+  fullName?: string;
+
   @ApiPropertyOptional({
     nullable: true,
     maxLength: MAX_NICKNAME_LENGTH,

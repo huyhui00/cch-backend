@@ -7,7 +7,7 @@ import type { Sequelize } from 'sequelize-typescript';
 import type { AccessControlService } from '../../common/services/access-control.service';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { verifyPassword } from '../../common/utils/crypto.util';
-import { AccountType, Role, User, UserRole } from '../../models';
+import { AccountType, Role, User, UserRole, UserSession } from '../../models';
 import type { StorageService } from '../files/storage.service';
 import { UsersService } from './users.service';
 
@@ -46,18 +46,27 @@ function userRow(overrides: Record<string, unknown> = {}) {
     username: 'pranee',
     accountType: AccountType.USER,
     passwordHash: 'old-hash',
-    refreshTokenHash: 'session-hash',
     update: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
 
+const TX = { id: 'tx' };
+
+function sequelizeMock() {
+  return {
+    transaction: jest.fn((callback: (tx: unknown) => Promise<unknown>) => callback(TX)),
+  };
+}
+
 describe('UsersService.resetPassword', () => {
   let userModel: ModelMock;
+  let sessionModel: { destroy: jest.Mock };
   let service: UsersService;
 
   beforeEach(() => {
     userModel = modelMock();
+    sessionModel = { destroy: jest.fn().mockResolvedValue(2) };
     const config = {
       get: jest.fn((key: string) => (key === 'BCRYPT_SALT_ROUNDS' ? 4 : undefined)),
     };
@@ -66,24 +75,27 @@ describe('UsersService.resetPassword', () => {
       userModel as unknown as typeof User,
       modelMock() as unknown as typeof Role,
       modelMock() as unknown as typeof UserRole,
-      { transaction: jest.fn() } as unknown as Sequelize,
+      sessionModel as unknown as typeof UserSession,
+      sequelizeMock() as unknown as Sequelize,
       config as unknown as ConfigService,
       { hasPermission: jest.fn() } as unknown as AccessControlService,
       {} as unknown as StorageService,
     );
   });
 
-  it('ตั้งรหัสใหม่ ตัด session และไม่เก็บรหัสเป็นข้อความล้วน', async () => {
+  it('ตั้งรหัสใหม่ ตัด session ทุกเครื่อง และไม่เก็บรหัสเป็นข้อความล้วน', async () => {
     const row = userRow();
     userModel.findByPk.mockResolvedValue(row);
 
     await service.resetPassword(5, { newPassword: 'TempPassw0rd!' }, actor());
 
     expect(row.update).toHaveBeenCalledTimes(1);
-    const [payload] = row.update.mock.calls[0] as [
-      { passwordHash: string; refreshTokenHash: null; updatedBy: number },
+    const [payload, options] = row.update.mock.calls[0] as [
+      { passwordHash: string; updatedBy: number },
+      { transaction: unknown },
     ];
-    expect(payload.refreshTokenHash).toBeNull();
+    expect(options.transaction).toBe(TX);
+    expect(sessionModel.destroy).toHaveBeenCalledWith({ where: { userId: 5 }, transaction: TX });
     expect(payload.updatedBy).toBe(1);
     expect(payload.passwordHash).not.toBe('TempPassw0rd!');
     await expect(verifyPassword('TempPassw0rd!', payload.passwordHash)).resolves.toBe(true);
@@ -143,7 +155,8 @@ describe('UsersService โปรไฟล์ของตัวเอง', () => 
       userModel as unknown as typeof User,
       modelMock() as unknown as typeof Role,
       modelMock() as unknown as typeof UserRole,
-      { transaction: jest.fn() } as unknown as Sequelize,
+      { destroy: jest.fn() } as unknown as typeof UserSession,
+      sequelizeMock() as unknown as Sequelize,
       { get: jest.fn() } as unknown as ConfigService,
       { hasPermission: jest.fn() } as unknown as AccessControlService,
       storage as unknown as StorageService,
@@ -157,6 +170,19 @@ describe('UsersService โปรไฟล์ของตัวเอง', () => 
     await service.updateOwnProfile(5, { nickname: 'ปราณี' });
 
     expect(row.update).toHaveBeenCalledWith({ nickname: 'ปราณี', updatedBy: 5 });
+  });
+
+  it('แก้ชื่อ-นามสกุลพร้อมชื่อเล่นในครั้งเดียว', async () => {
+    const row = userRow();
+    userModel.findByPk.mockResolvedValue(row);
+
+    await service.updateOwnProfile(5, { fullName: 'ปราณี ใจงาม', nickname: 'นี' });
+
+    expect(row.update).toHaveBeenCalledWith({
+      fullName: 'ปราณี ใจงาม',
+      nickname: 'นี',
+      updatedBy: 5,
+    });
   });
 
   it('ส่ง null = ลบชื่อเล่น · ไม่ส่งเลย = ไม่แตะแถว', async () => {

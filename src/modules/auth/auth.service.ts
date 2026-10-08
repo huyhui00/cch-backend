@@ -1,15 +1,18 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { InjectModel } from '@nestjs/sequelize';
+import { InjectConnection, InjectModel } from '@nestjs/sequelize';
 import type { SignOptions } from 'jsonwebtoken';
+import { Sequelize } from 'sequelize-typescript';
 
-import { setCurrentUserId } from '../../common/context/request-context';
+import { getRequestContext, setCurrentUserId } from '../../common/context/request-context';
 import { SUPER_ADMIN_ONLY_PERMISSIONS } from '../../common/decorators/require-permission.decorator';
 import { AccessControlService } from '../../common/services/access-control.service';
-import type { JwtPayload } from '../../common/types/auth.types';
+import type { AuthenticatedUser, JwtPayload } from '../../common/types/auth.types';
 import { hashRefreshToken, safeCompareHex, verifyPassword } from '../../common/utils/crypto.util';
-import { AccountType, Permission, User, UserStatus } from '../../models';
+import { AccountType, Permission, User, UserSession, UserStatus } from '../../models';
 import { toRoleSummary } from '../roles/dto/role.response';
 import { avatarUrlFor } from '../users/avatar.util';
 import { AuthProfileDto, LoginResponseDto, RefreshResponseDto } from './dto/auth.response';
@@ -19,6 +22,8 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 const INVALID_CREDENTIALS = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
 const INVALID_REFRESH_TOKEN = 'Refresh token ไม่ถูกต้องหรือหมดอายุแล้ว';
 const ACCOUNT_NOT_ACTIVE = 'บัญชีนี้ถูกระงับการใช้งาน';
+export const SESSION_REPLACED =
+  'บัญชีนี้ถูกเข้าสู่ระบบจากเครื่องอื่น หรือออกจากระบบแล้ว กรุณาเข้าสู่ระบบใหม่';
 
 interface TokenPair {
   accessToken: string;
@@ -30,6 +35,8 @@ export class AuthService {
   constructor(
     @InjectModel(User) private readonly userModel: typeof User,
     @InjectModel(Permission) private readonly permissionModel: typeof Permission,
+    @InjectModel(UserSession) private readonly sessionModel: typeof UserSession,
+    @InjectConnection() private readonly sequelize: Sequelize,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly accessControl: AccessControlService,
@@ -59,11 +66,43 @@ export class AuthService {
     // และคำถามที่ audit log ต้องตอบได้ที่สุดข้อหนึ่งคือใครล็อกอินเมื่อไรจาก IP ไหน (BR-09)
     setCurrentUserId(user.id);
 
-    const tokens = await this.issueTokens(user);
+    const now = new Date();
+    const context = getRequestContext();
 
-    user.refreshTokenHash = hashRefreshToken(tokens.refreshToken);
-    user.lastLoginAt = new Date();
-    await user.save();
+    const tokens = await this.sequelize.transaction(async (transaction) => {
+      // บัญชีละหนึ่งเครื่อง (CLAUDE.md 4.4) — นับก่อน ไม่งั้นได้แถว BULK_DELETE ว่างทุกครั้งที่ล็อกอิน
+      if ((await this.sessionModel.count({ where: { userId: user.id }, transaction })) > 0) {
+        await this.sessionModel.destroy({ where: { userId: user.id }, transaction });
+      }
+
+      const session = await this.sessionModel.create(
+        {
+          userId: user.id,
+          refreshTokenHash: hashRefreshToken(randomBytes(32).toString('hex')),
+          userAgent: context?.userAgent ?? null,
+          ipAddress: context?.ipAddress ?? null,
+          lastUsedAt: now,
+          expiresAt: now,
+        },
+        { transaction },
+      );
+
+      const issued = await this.issueTokens(user, session.id);
+
+      // เติม hash จริงหลังรู้ sid — แถว CREATE ข้างบนคือหลักฐานการล็อกอินแล้ว ไม่ต้องบันทึกซ้ำ
+      await session.update(
+        {
+          refreshTokenHash: hashRefreshToken(issued.refreshToken),
+          expiresAt: this.expiryOf(issued.refreshToken),
+        },
+        { transaction, hooks: false },
+      );
+
+      user.lastLoginAt = now;
+      await user.save({ transaction, hooks: false });
+
+      return issued;
+    });
 
     return {
       ...tokens,
@@ -76,11 +115,20 @@ export class AuthService {
     const payload = await this.verifyRefreshToken(dto.refreshToken);
     const user = await this.userModel.findByPk(payload.sub);
 
-    if (!user || !user.refreshTokenHash) {
+    if (!user) {
       throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
     }
 
-    if (!safeCompareHex(user.refreshTokenHash, hashRefreshToken(dto.refreshToken))) {
+    if (
+      payload.sid !== undefined &&
+      (await this.sessionModel.count({ where: { id: payload.sid, userId: user.id } })) === 0
+    ) {
+      throw new UnauthorizedException(SESSION_REPLACED);
+    }
+
+    const session = await this.findSession(user.id, payload.sid, dto.refreshToken);
+
+    if (!session || session.expiresAt.getTime() <= Date.now()) {
       throw new UnauthorizedException(INVALID_REFRESH_TOKEN);
     }
 
@@ -90,26 +138,31 @@ export class AuthService {
 
     setCurrentUserId(user.id);
 
-    const tokens = await this.issueTokens(user);
+    const tokens = await this.issueTokens(user, session.id);
+    const context = getRequestContext();
 
-    user.refreshTokenHash = hashRefreshToken(tokens.refreshToken);
-    await user.save();
+    await session.update({
+      refreshTokenHash: hashRefreshToken(tokens.refreshToken),
+      expiresAt: this.expiryOf(tokens.refreshToken),
+      lastUsedAt: new Date(),
+      userAgent: context?.userAgent ?? session.userAgent,
+      ipAddress: context?.ipAddress ?? session.ipAddress,
+    });
 
     return { ...tokens, tokenType: 'Bearer' };
   }
 
-  async logout(userId: number): Promise<void> {
-    const user = await this.userModel.findByPk(userId);
-
-    if (!user || user.refreshTokenHash === null) {
+  async logout(user: AuthenticatedUser): Promise<void> {
+    if (!user.sessionId) {
       return;
     }
 
-    // อัปเดตผ่าน instance ไม่ใช่ update({ where }) เพื่อให้ audit hook บันทึกเป็น UPDATE
-    // พร้อม record_id ของผู้ใช้ ถ้าใช้แบบ where จะได้ BULK_UPDATE ที่ไม่มี record_id
-    // ทำให้ตามรอยว่าใครออกจากระบบเมื่อไรได้ยากกว่าที่ควร (BR-09)
-    user.refreshTokenHash = null;
-    await user.save();
+    const session = await this.sessionModel.findOne({
+      where: { id: user.sessionId, userId: user.id },
+    });
+
+    // ลบผ่าน instance เพื่อให้ audit ได้ DELETE พร้อม record_id ของ session (BR-09)
+    await session?.destroy();
   }
 
   async me(userId: number): Promise<AuthProfileDto> {
@@ -179,11 +232,31 @@ export class AuthService {
       : codes;
   }
 
-  private async issueTokens(user: User): Promise<TokenPair> {
+  /** token รุ่นก่อน 8 ต.ค. ไม่มี sid — หาจาก hash ในบรรดา session ของคนนั้นแทน */
+  private async findSession(
+    userId: number,
+    sid: number | undefined,
+    refreshToken: string,
+  ): Promise<UserSession | null> {
+    const hash = hashRefreshToken(refreshToken);
+    const candidates = await this.sessionModel.findAll({
+      where: sid === undefined ? { userId } : { id: sid, userId },
+    });
+
+    return candidates.find((session) => safeCompareHex(session.refreshTokenHash, hash)) ?? null;
+  }
+
+  private expiryOf(token: string): Date {
+    const { exp } = this.jwtService.decode<{ exp: number }>(token);
+    return new Date(exp * 1000);
+  }
+
+  private async issueTokens(user: User, sessionId: number): Promise<TokenPair> {
     const payload: JwtPayload = {
       sub: user.id,
       username: user.username,
       accountType: user.accountType,
+      sid: sessionId,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -194,6 +267,8 @@ export class AuthService {
       this.jwtService.signAsync(payload, {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
         expiresIn: this.expiresIn('JWT_REFRESH_EXPIRES_IN', '7d'),
+        // ไม่งั้นต่ออายุภายในวินาทีเดียวกันได้ token ใบเดิม แล้วใบเก่ายังใช้ซ้ำได้
+        jwtid: randomUUID(),
       }),
     ]);
 

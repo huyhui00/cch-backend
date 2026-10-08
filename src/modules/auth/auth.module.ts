@@ -4,7 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { SequelizeModule } from '@nestjs/sequelize';
 
-import { Permission, User } from '../../models';
+import { Permission, User, UserSession } from '../../models';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -29,7 +29,7 @@ function assertSecretsAreSet(config: ConfigService): void {
 
 @Module({
   imports: [
-    SequelizeModule.forFeature([User, Permission]),
+    SequelizeModule.forFeature([User, Permission, UserSession]),
     PassportModule.register({ defaultStrategy: 'jwt', session: false }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

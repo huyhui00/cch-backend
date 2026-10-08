@@ -138,4 +138,35 @@ describe('ตั้งรหัสผ่านใหม่ให้ผู้ใ�
     await login(username, oldPassword).expect(401);
     await login(username, newPassword).expect(200);
   });
+
+  it('SUPER_ADMIN แก้ชื่อ-นามสกุลของตัวเองได้ · ว่าง/null/username = 400', async () => {
+    const before = await api()
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${superToken}`)
+      .expect(200);
+    const originalName = (before.body as ApiResponse<{ fullName: string }>).data.fullName;
+
+    const updated = await api()
+      .patch('/api/users/me')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ fullName: `  ผู้ดูแลระบบ ${stamp}  ` })
+      .expect(200);
+    expect((updated.body as ApiResponse<{ fullName: string }>).data.fullName).toBe(
+      `ผู้ดูแลระบบ ${stamp}`,
+    );
+
+    for (const body of [{ fullName: '   ' }, { fullName: null }, { username: 'renamed' }]) {
+      await api()
+        .patch('/api/users/me')
+        .set('Authorization', `Bearer ${superToken}`)
+        .send(body)
+        .expect(400);
+    }
+
+    await api()
+      .patch('/api/users/me')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ fullName: originalName })
+      .expect(200);
+  });
 });

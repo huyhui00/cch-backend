@@ -32,7 +32,8 @@ export type AuditLogPage =
   | CursorPaginatedResult<AuditLogResponseDto>;
 
 const SESSION_EVENT_EXCLUSION = literal(
-  "NOT (`AuditLog`.`table_name` = 'users' AND `AuditLog`.`action` = 'UPDATE' AND " +
+  "`AuditLog`.`table_name` <> 'user_sessions' AND " +
+    "NOT (`AuditLog`.`table_name` = 'users' AND `AuditLog`.`action` = 'UPDATE' AND " +
     "COALESCE(JSON_LENGTH(JSON_REMOVE(`AuditLog`.`new_value`, '$.lastLoginAt', '$.refreshTokenHash', " +
     "'$.updatedAt', '$.updatedBy')), 1) = 0)",
 );
