@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsDefined,
   IsEnum,
   IsInt,
   IsOptional,
@@ -48,9 +49,7 @@ const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
  */
 export class CreateFollowUpDto {
   @ApiPropertyOptional({
-    description:
-      'ลูกค้าที่ต้องติดตาม — ไม่ต้องส่งถ้าส่ง projectId มา ระบบคัดลอกจากโปรเจคให้ ' +
-      'ถ้าส่งมาทั้งคู่ต้องเป็นเจ้าของโปรเจคนั้นจริง ต้องมีอย่างน้อยหนึ่งในสองค่านี้',
+    description: 'ไม่ต้องส่ง — ระบบคัดลอกจากเจ้าของโปรเจคให้ ถ้าส่งมาต้องเป็นเจ้าของโปรเจคนั้นจริง',
     example: 1,
   })
   @IsOptional()
@@ -58,16 +57,14 @@ export class CreateFollowUpDto {
   @IsPositive({ message: 'customerId ต้องมากกว่า 0' })
   customerId?: number;
 
-  @ApiPropertyOptional({
-    description:
-      'โปรเจคที่ติดตาม (ประชุม 11 ก.ย. — "ติดตามโปรเจค ไม่ใช่ตามลูกค้า") ' +
-      'ยังไม่บังคับที่ API เพราะยังไม่ตกลงว่าทุกงานต้องมีโปรเจคไหม',
+  @ApiProperty({
+    description: 'โปรเจคที่ติดตาม — บังคับ (Q16: งานติดตามทุกงานต้องผูกโปรเจค)',
     example: 3,
   })
-  @IsOptional()
+  @IsDefined({ message: 'กรุณาเลือกโปรเจคที่ต้องติดตาม' })
   @IsInt({ message: 'projectId ต้องเป็นจำนวนเต็ม' })
   @IsPositive({ message: 'projectId ต้องมากกว่า 0' })
-  projectId?: number;
+  projectId: number;
 
   @ApiProperty({
     description: 'เรื่องที่ต้องติดตาม',
@@ -118,7 +115,7 @@ export class CreateFollowUpDto {
  */
 export class UpdateFollowUpDto {
   @ApiPropertyOptional({
-    description: 'เปลี่ยนโปรเจคได้เฉพาะโปรเจคของลูกค้ารายเดิม — ส่ง null เพื่อถอดออก',
+    description: 'เปลี่ยนโปรเจคได้เฉพาะโปรเจคของลูกค้ารายเดิม — ถอดออก (null) ไม่ได้',
     example: 3,
   })
   @IsOptional()

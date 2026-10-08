@@ -5,7 +5,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
-import { Customer, FollowUp, FollowUpStatus, Project, User, UserStatus } from '../../models';
+import { FollowUp, FollowUpStatus, Project, User, UserStatus } from '../../models';
 import { todayAsDateOnly } from '../../common/utils/date.util';
 import { FollowUpsService } from './follow-ups.service';
 import { isFollowUpOverdue } from './dto/follow-up.response';
@@ -43,6 +43,7 @@ function followUpRow(overrides: Record<string, unknown> = {}): FollowUp {
   return {
     id: 12,
     customerId: 1,
+    projectId: 3,
     title: 'โทรถามความคืบหน้า',
     detail: null,
     dueDate: '2026-09-20',
@@ -62,27 +63,23 @@ function followUpRow(overrides: Record<string, unknown> = {}): FollowUp {
 
 describe('FollowUpsService', () => {
   let followUpModel: ModelMock;
-  let customerModel: ModelMock;
   let projectModel: ModelMock;
   let userModel: ModelMock;
   let service: FollowUpsService;
 
   beforeEach(() => {
     followUpModel = modelMock();
-    customerModel = modelMock();
     projectModel = modelMock();
     userModel = modelMock();
 
     followUpModel.findByPk.mockResolvedValue(followUpRow());
     followUpModel.create.mockResolvedValue(followUpRow());
     followUpModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
-    customerModel.findByPk.mockResolvedValue({ id: 1 });
     projectModel.findByPk.mockResolvedValue({ id: 3, customerId: 1 });
     userModel.findByPk.mockResolvedValue({ id: 4, status: UserStatus.ACTIVE });
 
     service = new FollowUpsService(
       followUpModel as unknown as typeof FollowUp,
-      customerModel as unknown as typeof Customer,
       projectModel as unknown as typeof Project,
       userModel as unknown as typeof User,
       {
@@ -102,7 +99,7 @@ describe('FollowUpsService', () => {
       return Promise.resolve(followUpRow());
     });
 
-    await service.create({ customerId: 1, title: 'โทรถาม', dueDate: '2026-09-20' });
+    await service.create({ projectId: 3, title: 'โทรถาม', dueDate: '2026-09-20' });
 
     expect(Object.keys(captured)).not.toContain('channel');
   });
@@ -118,7 +115,7 @@ describe('FollowUpsService', () => {
         return Promise.resolve(followUpRow());
       });
 
-      await service.create({ customerId: 1, title: 'ตามงานเก่า', dueDate: '2020-01-01' });
+      await service.create({ projectId: 3, title: 'ตามงานเก่า', dueDate: '2020-01-01' });
 
       expect(captured.status).toBe(FollowUpStatus.PLANNED);
     });
@@ -262,9 +259,13 @@ describe('FollowUpsService', () => {
     it('ไม่ไปแตะ customers.last_contacted_at', async () => {
       // ค่านั้นมีเจ้าของอยู่แล้วคือการบันทึกการติดต่อ ซึ่งมีหลักฐานครบ
       // ถ้าที่นี่เขียนด้วย หน้าจอ "ลูกค้าที่ถูกลืม" จะเงียบทั้งที่ยังไม่มีใครคุยกับลูกค้าจริง
+      const update = jest.fn().mockResolvedValue(undefined);
+      followUpModel.findByPk.mockResolvedValue(followUpRow({ update }));
+
       await service.complete(12, { resultNote: 'โทรแล้ว' });
 
-      expect(customerModel.findByPk).not.toHaveBeenCalled();
+      const [values] = update.mock.calls[0] as [Record<string, unknown>];
+      expect(Object.keys(values)).not.toContain('lastContactedAt');
     });
 
     it('งานที่ยกเลิกแล้วปิดงานไม่ได้', async () => {
@@ -372,6 +373,25 @@ describe('FollowUpsService', () => {
       expect(followUpModel.create).not.toHaveBeenCalled();
     });
 
+    it('งานเก่าที่ไม่มีโปรเจค + nextDueDate → 400 ต้องเลือกโปรเจคก่อน', async () => {
+      const update = jest.fn();
+      followUpModel.findByPk.mockResolvedValue(followUpRow({ projectId: null, update }));
+
+      await expect(service.complete(12, { nextDueDate: nextDate })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(update).not.toHaveBeenCalled();
+      expect(followUpModel.create).not.toHaveBeenCalled();
+    });
+
+    it('งานเก่าที่ไม่มีโปรเจค ปิดงานเฉย ๆ ได้', async () => {
+      followUpModel.findByPk.mockResolvedValue(followUpRow({ projectId: null }));
+
+      const result = await service.complete(12, { resultNote: 'โทรแล้ว' });
+
+      expect(result.nextFollowUp).toBeNull();
+    });
+
     it('ส่ง nextTitle โดยไม่มี nextDueDate → 400', async () => {
       await expect(service.complete(12, { nextTitle: 'ส่งใบเสนอราคา' })).rejects.toBeInstanceOf(
         BadRequestException,
@@ -383,14 +403,6 @@ describe('FollowUpsService', () => {
   // การมอบหมายและการตรวจข้อมูลอ้างอิง
   // -------------------------------------------------------------------------
   describe('การตรวจข้อมูลอ้างอิง', () => {
-    it('ไม่พบลูกค้า → 404', async () => {
-      customerModel.findByPk.mockResolvedValue(null);
-
-      await expect(
-        service.create({ customerId: 99, title: 'x', dueDate: '2026-09-20' }),
-      ).rejects.toBeInstanceOf(NotFoundException);
-    });
-
     it('มอบหมายให้พนักงานที่ลาออกแล้วไม่ได้', async () => {
       userModel.findByPk.mockResolvedValue({
         id: 5,
@@ -398,12 +410,12 @@ describe('FollowUpsService', () => {
       });
 
       await expect(
-        service.create({ customerId: 1, title: 'x', dueDate: '2026-09-20', assignedUserId: 5 }),
+        service.create({ projectId: 3, title: 'x', dueDate: '2026-09-20', assignedUserId: 5 }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('ไม่มอบหมายก็สร้างได้ ไม่ต้องไปเช็คพนักงาน', async () => {
-      await service.create({ customerId: 1, title: 'x', dueDate: '2026-09-20' });
+      await service.create({ projectId: 3, title: 'x', dueDate: '2026-09-20' });
 
       expect(userModel.findByPk).not.toHaveBeenCalled();
     });
@@ -455,27 +467,12 @@ describe('FollowUpsService', () => {
       expect(captured()).toEqual(expect.objectContaining({ customerId: 7, projectId: 3 }));
     });
 
-    it('ไม่ส่งทั้งโปรเจคและลูกค้า → 400', async () => {
-      await expect(service.create({ title: 'x', dueDate: '2026-09-20' })).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-    });
-
     it('ไม่พบโปรเจค → 404', async () => {
       projectModel.findByPk.mockResolvedValue(null);
 
       await expect(
         service.create({ projectId: 99, title: 'x', dueDate: '2026-09-20' }),
       ).rejects.toBeInstanceOf(NotFoundException);
-    });
-
-    it('ไม่มีโปรเจค (งานแบบเดิม) → projectId เป็น null', async () => {
-      const captured = captureCreate();
-
-      await service.create({ customerId: 1, title: 'x', dueDate: '2026-09-20' });
-
-      expect(captured()).toEqual(expect.objectContaining({ customerId: 1, projectId: null }));
-      expect(projectModel.findByPk).not.toHaveBeenCalled();
     });
 
     it('แก้ไข: เปลี่ยนไปโปรเจคของลูกค้ารายอื่นไม่ได้ — กติกา "ย้ายลูกค้าไม่ได้" ยังอยู่', async () => {
@@ -499,14 +496,14 @@ describe('FollowUpsService', () => {
       expect(update).toHaveBeenCalledWith(expect.objectContaining({ projectId: 8 }));
     });
 
-    it('แก้ไข: ส่ง null เพื่อถอดโปรเจคออกได้ โดยไม่ต้องไปหาโปรเจค', async () => {
+    it('แก้ไข: ถอดโปรเจคออก (null) ไม่ได้ — Q16 งานติดตามต้องผูกโปรเจค', async () => {
       const update = jest.fn().mockResolvedValue(undefined);
       followUpModel.findByPk.mockResolvedValue(followUpRow({ projectId: 3, update }));
 
-      await service.update(12, { projectId: null });
-
-      expect(update).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }));
-      expect(projectModel.findByPk).not.toHaveBeenCalled();
+      await expect(service.update(12, { projectId: null })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('?projectId= กรองเฉพาะงานของโปรเจคนั้น', async () => {

@@ -78,7 +78,6 @@ function assignedUserInclude() {
 export class FollowUpsService {
   constructor(
     @InjectModel(FollowUp) private readonly followUpModel: typeof FollowUp,
-    @InjectModel(Customer) private readonly customerModel: typeof Customer,
     @InjectModel(Project) private readonly projectModel: typeof Project,
     @InjectModel(User) private readonly userModel: typeof User,
     private readonly sequelize: Sequelize,
@@ -183,7 +182,7 @@ export class FollowUpsService {
 
     const followUp = await this.followUpModel.create({
       customerId,
-      projectId: dto.projectId ?? null,
+      projectId: dto.projectId,
       title: dto.title,
       detail: dto.detail ?? null,
       dueDate: dto.dueDate,
@@ -215,6 +214,10 @@ export class FollowUpsService {
 
     if (dto.assignedUserId) {
       await this.assertUserIsAssignable(dto.assignedUserId);
+    }
+
+    if (dto.projectId === null) {
+      throw new BadRequestException('งานติดตามต้องผูกโปรเจค ถอดโปรเจคออกไม่ได้');
     }
 
     // ย้ายลูกค้าไม่ได้ — เปลี่ยนโปรเจคได้เฉพาะโปรเจคของลูกค้ารายเดิม
@@ -275,6 +278,13 @@ export class FollowUpsService {
       if (dto.nextDueDate < todayAsDateOnly()) {
         throw new BadRequestException('วันติดตามครั้งถัดไปต้องไม่ก่อนวันนี้');
       }
+
+      // งานเก่าก่อน Q16 ไม่มีโปรเจค — งานครั้งถัดไปที่คัดลอกไปต้องไม่หลุดกติกา
+      if (followUp.projectId === null) {
+        throw new BadRequestException(
+          'งานติดตามนี้ยังไม่ได้ผูกโปรเจค — เลือกโปรเจคให้งานนี้ก่อน แล้วค่อยนัดครั้งถัดไป',
+        );
+      }
     }
 
     const nextAssigneeId =
@@ -298,7 +308,7 @@ export class FollowUpsService {
       const next = await this.followUpModel.create(
         {
           customerId: followUp.customerId,
-          projectId: followUp.projectId ?? null,
+          projectId: followUp.projectId,
           title: dto.nextTitle ?? followUp.title,
           detail: dto.resultNote ? `ต่อจากครั้งก่อน: ${dto.resultNote}` : null,
           dueDate: dto.nextDueDate,
@@ -376,31 +386,22 @@ export class FollowUpsService {
   }
 
   /**
-   * ลูกค้าของงานติดตามใหม่
-   *
-   * มีโปรเจค → ใช้เจ้าของโปรเจคเสมอ ถ้าส่ง customerId มาด้วยต้องตรงกัน ไม่งั้น 400
-   * (ไม่เดาว่าอันไหนถูก) ไม่มีโปรเจค → ต้องมี customerId และลูกค้าต้องมีอยู่จริง
+   * ลูกค้าของงานติดตามใหม่ = เจ้าของโปรเจคเสมอ
+   * ถ้าส่ง customerId มาด้วยต้องตรงกัน ไม่งั้น 400 (ไม่เดาว่าอันไหนถูก)
    */
-  private async resolveCustomerId(customerId?: number, projectId?: number): Promise<number> {
-    if (projectId) {
-      const project = await this.findProjectOrFail(projectId);
+  private async resolveCustomerId(
+    customerId: number | undefined,
+    projectId: number,
+  ): Promise<number> {
+    const project = await this.findProjectOrFail(projectId);
 
-      if (customerId !== undefined && customerId !== project.customerId) {
-        throw new BadRequestException(
-          'ลูกค้าที่ระบุไม่ใช่เจ้าของโครงการนี้ — ไม่ต้องส่ง customerId มา ระบบใช้ลูกค้าของโครงการให้เอง',
-        );
-      }
-
-      return project.customerId;
+    if (customerId !== undefined && customerId !== project.customerId) {
+      throw new BadRequestException(
+        'ลูกค้าที่ระบุไม่ใช่เจ้าของโครงการนี้ — ไม่ต้องส่ง customerId มา ระบบใช้ลูกค้าของโครงการให้เอง',
+      );
     }
 
-    if (customerId === undefined) {
-      throw new BadRequestException('กรุณาระบุโครงการหรือลูกค้าที่ต้องติดตาม');
-    }
-
-    await this.assertCustomerExists(customerId);
-
-    return customerId;
+    return project.customerId;
   }
 
   private async findProjectOrFail(projectId: number): Promise<Project> {
@@ -413,14 +414,6 @@ export class FollowUpsService {
     }
 
     return project;
-  }
-
-  private async assertCustomerExists(customerId: number): Promise<void> {
-    const customer = await this.customerModel.findByPk(customerId, { attributes: ['id'] });
-
-    if (!customer) {
-      throw new NotFoundException('ไม่พบข้อมูลลูกค้า');
-    }
   }
 
   /** มอบหมายให้พนักงานที่ลาออกหรือถูกระงับไม่ได้ — กติกาเดียวกับการมอบหมายงานใน Phase 5 */

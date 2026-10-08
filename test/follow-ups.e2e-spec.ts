@@ -122,7 +122,7 @@ describe('Follow-ups (e2e)', () => {
 
   function createFollowUp(body: Record<string, unknown>) {
     return authed('post', '/api/follow-ups').send({
-      customerId,
+      projectId,
       title: `งานติดตาม ${stamp}`,
       dueDate: shiftDays(7),
       ...body,
@@ -290,44 +290,43 @@ describe('Follow-ups (e2e)', () => {
   });
 
   it('ส่ง customerId ที่ไม่ใช่เจ้าของโปรเจค → 400', async () => {
-    await createFollowUp({ projectId: otherCustomerProjectId }).expect(400);
+    await createFollowUp({ customerId, projectId: otherCustomerProjectId }).expect(400);
   });
 
-  it('ไม่ส่งทั้งโปรเจคและลูกค้า → 400', async () => {
-    await authed('post', '/api/follow-ups')
-      .send({ title: `ไม่มีเจ้าของ ${stamp}`, dueDate: shiftDays(3) })
+  it('ไม่ส่งโปรเจค → 400 แม้ส่งลูกค้ามา (Q16 งานติดตามต้องผูกโปรเจค)', async () => {
+    const response = await authed('post', '/api/follow-ups')
+      .send({ customerId, title: `ไม่มีโปรเจค ${stamp}`, dueDate: shiftDays(3) })
       .expect(400);
+
+    expect((response.body as ApiResponse<null>).message).toContain('กรุณาเลือกโปรเจค');
   });
 
   it('?projectId= กรองเฉพาะงานของโปรเจคนั้น', async () => {
-    const withProject = await createFollowUp({ projectId }).expect(201);
-    const withoutProject = await createFollowUp({}).expect(201);
+    const withProject = await createFollowUp({}).expect(201);
 
     const response = await authed('get', `/api/follow-ups?projectId=${projectId}&limit=100`).expect(
       200,
     );
-    const ids = (response.body as ApiResponse<ListPayload<FollowUpPayload>>).data.items.map(
-      (item) => item.id,
-    );
+    const items = (response.body as ApiResponse<ListPayload<FollowUpPayload>>).data.items;
 
-    expect(ids).toContain((withProject.body as ApiResponse<FollowUpPayload>).data.id);
-    expect(ids).not.toContain((withoutProject.body as ApiResponse<FollowUpPayload>).data.id);
+    expect(items.map((item) => item.id)).toContain(
+      (withProject.body as ApiResponse<FollowUpPayload>).data.id,
+    );
+    expect(items.every((item) => item.projectId === projectId)).toBe(true);
   });
 
-  it('เปลี่ยนไปโปรเจคของลูกค้ารายอื่นไม่ได้ แต่ถอดโปรเจคออกได้', async () => {
-    const created = await createFollowUp({ projectId }).expect(201);
+  it('เปลี่ยนไปโปรเจคของลูกค้ารายอื่นไม่ได้ และถอดโปรเจคออกไม่ได้', async () => {
+    const created = await createFollowUp({}).expect(201);
     const id = (created.body as ApiResponse<FollowUpPayload>).data.id;
 
     await authed('patch', `/api/follow-ups/${id}`)
       .send({ projectId: otherCustomerProjectId })
       .expect(400);
 
-    const cleared = await authed('patch', `/api/follow-ups/${id}`)
-      .send({ projectId: null })
-      .expect(200);
+    await authed('patch', `/api/follow-ups/${id}`).send({ projectId: null }).expect(400);
 
-    expect((cleared.body as ApiResponse<FollowUpPayload>).data.projectId).toBeNull();
-    expect((cleared.body as ApiResponse<FollowUpPayload>).data.customerId).toBe(customerId);
+    const after = await authed('get', `/api/follow-ups/${id}`).expect(200);
+    expect((after.body as ApiResponse<FollowUpPayload>).data.projectId).toBe(projectId);
   });
 
   // -------------------------------------------------------------------------
