@@ -306,6 +306,22 @@ describe('ReportsService', () => {
       expect(Object.keys(where)).toContain('startDate');
       expect(Object.keys(where)).toContain('endDate');
     });
+
+    it('นับสัญญาซ้อนเฉพาะของลูกค้ารายเดียวกัน — ต่างลูกค้าที่คุ้มครองพร้อมกันไม่ใช่การซ้อน', async () => {
+      const { service } = build({
+        contracts: [
+          contractRow({ id: 1, customerId: 1, startDate: '2026-01-01', endDate: '2026-12-31' }),
+          contractRow({ id: 2, customerId: 2, startDate: '2026-01-01', endDate: '2026-12-31' }),
+          contractRow({ id: 3, customerId: 3, startDate: '2026-06-01', endDate: '2027-05-31' }),
+          contractRow({ id: 4, customerId: 3, startDate: '2026-07-01', endDate: '2027-06-30' }),
+        ],
+      });
+
+      const report = await service.upcomingContractValue();
+
+      expect(report.overlappingContractCount).toBe(2);
+      expect((await service.contractOverlaps({})).contractCount).toBe(2);
+    });
   });
 
   // =========================================================================

@@ -18,6 +18,7 @@ import {
   AuditLog,
   Contact,
   Customer,
+  MaContract,
   Project,
   Ticket,
   TicketBillingType,
@@ -26,8 +27,10 @@ import {
   User,
   UserStatus,
   Attachment,
+  Warranty,
 } from '../../models';
 import { MaQuotaService } from '../ma/ma-quota.service';
+import { thaiShortDate } from '../notifications/notification-digest';
 import { TicketWorkflowNotifyService } from '../notifications/ticket-workflow-notify.service';
 import { WarrantiesService } from '../warranties/warranties.service';
 import { CreateResolutionDto } from './dto/resolution.dto';
@@ -66,6 +69,10 @@ import {
 export const CLOSED_TICKET_RESOLUTION_MESSAGE =
   'ปัญหานี้ปิดงานแล้ว ถ้าอาการเดิมกลับมาให้กด "ปัญหาเดิมกลับมา" เพื่อเปิดใบนี้ก่อน ' +
   'แล้วจึงบันทึกการแก้ไขรอบถัดไป';
+
+function thaiFullDate(dateOnly: string): string {
+  return `${thaiShortDate(dateOnly)} ${Number(dateOnly.slice(0, 4)) + 543}`;
+}
 
 const ASSIGNABLE_TICKET_STATUSES: readonly TicketStatus[] = [
   TicketStatus.WAITING_ADMIN,
@@ -144,10 +151,20 @@ function claimedByAdminUserInclude() {
   };
 }
 
+function warrantyInclude() {
+  return { model: Warranty, attributes: ['id', 'warrantyNo'], required: false, paranoid: false };
+}
+
+function maContractInclude() {
+  return { model: MaContract, attributes: ['id', 'contractNo'], required: false, paranoid: false };
+}
+
 function listIncludes() {
   return [
     customerInclude(),
     projectInclude(),
+    warrantyInclude(),
+    maContractInclude(),
     assignedUserInclude(),
     receivedByUserInclude(),
     claimedByAdminUserInclude(),
@@ -1141,8 +1158,8 @@ export class TicketsService {
         maIsExhausted,
         maIsReferenceOnly: contract !== null,
         reason:
-          `อยู่ในระยะประกันถึง ${warranty.endDate} — ` +
-          'ครอบคลุมเฉพาะ bug ในขอบเขตเดิม ถ้าเป็นงานที่ขอเพิ่มใหม่ต้องเปลี่ยนเป็น ONE_TIME (BR-07)',
+          `อยู่ในระยะประกันถึง ${thaiFullDate(warranty.endDate)} — ` +
+          'ครอบคลุมเฉพาะปัญหาในขอบเขตงานเดิม ถ้าเป็นงานที่ขอเพิ่มใหม่ให้เปลี่ยนเป็น "คิดค่าบริการเป็นครั้ง"',
       };
     }
 
@@ -1168,7 +1185,7 @@ export class TicketsService {
         maRemaining,
         maIsExhausted,
         maIsReferenceOnly: false,
-        reason: `มีสัญญา MA ที่ยังใช้งานอยู่ถึง ${contract.endDate}`,
+        reason: `มีสัญญา MA ที่ยังใช้งานอยู่ถึง ${thaiFullDate(contract.endDate)}`,
       };
     }
 

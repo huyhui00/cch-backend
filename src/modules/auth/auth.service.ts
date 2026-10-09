@@ -20,7 +20,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 const INVALID_CREDENTIALS = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
-const INVALID_REFRESH_TOKEN = 'Refresh token ไม่ถูกต้องหรือหมดอายุแล้ว';
+const INVALID_REFRESH_TOKEN = 'การเข้าสู่ระบบหมดอายุแล้ว กรุณาเข้าสู่ระบบใหม่';
 const ACCOUNT_NOT_ACTIVE = 'บัญชีนี้ถูกระงับการใช้งาน';
 export const SESSION_REPLACED =
   'บัญชีนี้ถูกเข้าสู่ระบบจากเครื่องอื่น หรือออกจากระบบแล้ว กรุณาเข้าสู่ระบบใหม่';

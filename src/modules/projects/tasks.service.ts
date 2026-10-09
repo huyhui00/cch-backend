@@ -11,7 +11,6 @@ import { Sequelize } from 'sequelize-typescript';
 
 import { getCurrentUserId } from '../../common/context/request-context';
 import {
-  PaginationDto,
   type PaginatedResult,
   type SortOrder,
   toPaginatedResult,
@@ -37,6 +36,8 @@ import { ProjectsService } from './projects.service';
 import {
   type CompanyTaskResponseDto,
   isTaskOverdue,
+  type MyTaskCountsDto,
+  type MyTasksResponseDto,
   type TaskAssigneeLoadDto,
   type TaskBoardSummaryDto,
   type TaskResponseDto,
@@ -55,7 +56,9 @@ import {
 } from './dto/task-submission.dto';
 import {
   CreateTaskDto,
+  MyTaskTab,
   QueryCompanyTasksDto,
+  QueryMyTasksDto,
   QueryDueSoonTasksDto,
   QueryOverdueTasksDto,
   QueryTaskBoardDto,
@@ -294,23 +297,108 @@ export class TasksService {
     return toTaskResponse(task);
   }
 
-  async findMyTasks(
-    userId: number,
-    query: PaginationDto,
-  ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
-    const { rows, count } = await this.taskModel.findAndCountAll({
-      where: this.myOpenTasksWhere(userId),
-      include: [assigneeInclude(), assignedByInclude(), projectInclude()],
-      order: [
-        ['dueDate', 'ASC'],
-        ['priority', 'DESC'],
-        ['id', 'ASC'],
-      ],
-      limit: query.limit,
-      offset: query.offset,
-    });
+  async findMyTasks(userId: number, query: QueryMyTasksDto): Promise<MyTasksResponseDto> {
+    const tab = query.tab ?? MyTaskTab.OPEN;
+    const searchWhere = this.myTasksSearchWhere(query.search);
 
-    return toPaginatedResult(rows.map(toCompanyTaskResponse), count, query);
+    const [{ rows, count }, counts] = await Promise.all([
+      this.taskModel.findAndCountAll({
+        where: { ...this.myTasksWhere(userId, tab), ...searchWhere },
+        include: [assigneeInclude(), assignedByInclude(), projectInclude()],
+        order:
+          tab === MyTaskTab.DONE
+            ? [
+                ['completedAt', 'DESC'],
+                ['id', 'DESC'],
+              ]
+            : [
+                ['dueDate', 'ASC'],
+                ['priority', 'DESC'],
+                ['id', 'ASC'],
+              ],
+        limit: query.limit,
+        offset: query.offset,
+      }),
+      this.countMyTasksByTab(userId, searchWhere),
+    ]);
+
+    return {
+      ...toPaginatedResult(rows.map(toCompanyTaskResponse), count, query),
+      counts,
+    };
+  }
+
+  myTasksWhere(userId: number, tab: MyTaskTab): WhereOptions<Task> {
+    switch (tab) {
+      case MyTaskTab.OPEN:
+        return this.myOpenTasksWhere(userId);
+      case MyTaskTab.TODO:
+        return { assignedUserId: userId, status: TaskStatus.TODO };
+      case MyTaskTab.IN_PROGRESS:
+        return {
+          assignedUserId: userId,
+          status: { [Op.in]: [TaskStatus.DOING, TaskStatus.WAITING] },
+        };
+      case MyTaskTab.REVIEW:
+        return { assignedUserId: userId, status: TaskStatus.REVIEW };
+      case MyTaskTab.DONE:
+        return { assignedUserId: userId, status: TaskStatus.DONE };
+      case MyTaskTab.OVERDUE:
+        return {
+          assignedUserId: userId,
+          dueDate: { [Op.lt]: todayAsDateOnly() },
+          status: { [Op.ne]: TaskStatus.DONE },
+        };
+      case MyTaskTab.ALL:
+        return { assignedUserId: userId };
+      default: {
+        const _exhaustive: never = tab;
+        return _exhaustive;
+      }
+    }
+  }
+
+  private myTasksSearchWhere(search: string | undefined): WhereOptions<Task> {
+    if (!search) {
+      return {};
+    }
+
+    const like = '%' + search + '%';
+    return { [Op.or]: [{ title: { [Op.like]: like } }, { description: { [Op.like]: like } }] };
+  }
+
+  private async countMyTasksByTab(
+    userId: number,
+    searchWhere: WhereOptions<Task>,
+  ): Promise<MyTaskCountsDto> {
+    const [grouped, overdue] = await Promise.all([
+      this.taskModel.findAll({
+        where: { assignedUserId: userId, ...searchWhere },
+        attributes: ['status', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']],
+        group: ['status'],
+        raw: true,
+      }) as unknown as Promise<Array<{ status: TaskStatus; count: number | string }>>,
+      this.taskModel.count({
+        where: { ...this.myTasksWhere(userId, MyTaskTab.OVERDUE), ...searchWhere },
+      }),
+    ]);
+
+    const byStatus = new Map(grouped.map((row) => [row.status, Number(row.count)]));
+    const of = (status: TaskStatus) => byStatus.get(status) ?? 0;
+    const todo = of(TaskStatus.TODO);
+    const inProgress = of(TaskStatus.DOING) + of(TaskStatus.WAITING);
+    const review = of(TaskStatus.REVIEW);
+    const done = of(TaskStatus.DONE);
+
+    return {
+      OPEN: todo + inProgress,
+      TODO: todo,
+      IN_PROGRESS: inProgress,
+      REVIEW: review,
+      DONE: done,
+      OVERDUE: overdue,
+      ALL: todo + inProgress + review + done,
+    };
   }
 
   countMyOpenTasks(userId: number): Promise<number> {
@@ -889,7 +977,12 @@ export class TasksService {
       Object.assign(where, { status: query.status });
     }
 
-    if (query.status === TaskStatus.REVIEW && user) {
+    // คนที่ไม่มี task.review ยังเห็นคอลัมน์ "ส่งตรวจ" บนกระดานได้เหมือนคอลัมน์อื่น — จำกัดขอบเขตเฉพาะผู้ตรวจ
+    if (
+      query.status === TaskStatus.REVIEW &&
+      user &&
+      (await this.accessControl.hasPermission(user, 'task.review'))
+    ) {
       const scope = await this.reviewerScope(user);
       if (scope) {
         Object.assign(where, { [Op.and]: [scope] });

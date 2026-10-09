@@ -26,9 +26,10 @@ import {
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
-import { PaginationDto, type PaginatedResult } from '../../common/dto/pagination.dto';
+import { type PaginatedResult } from '../../common/dto/pagination.dto';
 import {
   CompanyTaskResponseDto,
+  MyTasksResponseDto,
   TaskBoardSummaryDto,
   TaskResponseDto,
   TaskReviewItemDto,
@@ -43,6 +44,7 @@ import {
 import {
   QueryCompanyTasksDto,
   QueryDueSoonTasksDto,
+  QueryMyTasksDto,
   QueryOverdueTasksDto,
   QueryTaskBoardDto,
   UpdateTaskOrderDto,
@@ -151,14 +153,18 @@ export class TasksController {
   @RequirePermission('task.view')
   @ApiOperation({
     summary: 'งานของฉัน',
-    description: 'คืนเฉพาะงานที่มอบหมายให้ผู้ใช้ที่ล็อกอินอยู่',
+    description:
+      'คืนเฉพาะงานที่มอบหมายให้ผู้ใช้ที่ล็อกอินอยู่ แยกแท็บด้วย ?tab= (ไม่ส่ง = OPEN) ' +
+      '`counts` คือตัวเลขของทุกแท็บ กรองด้วย search เดียวกับรายการ · ' +
+      'search ค้นชื่อและรายละเอียดงาน · แท็บ DONE เรียงเสร็จล่าสุดก่อน',
   })
-  @ApiResponse({ status: 200, description: 'สำเร็จ', type: [CompanyTaskResponseDto] })
+  @ApiResponse({ status: 200, description: 'สำเร็จ', type: MyTasksResponseDto })
+  @ApiResponse({ status: 400, description: 'tab ไม่ถูกต้อง' })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   findMyTasks(
     @CurrentUser('id') userId: number,
-    @Query() query: PaginationDto,
-  ): Promise<PaginatedResult<CompanyTaskResponseDto>> {
+    @Query() query: QueryMyTasksDto,
+  ): Promise<MyTasksResponseDto> {
     return this.tasksService.findMyTasks(userId, query);
   }
 

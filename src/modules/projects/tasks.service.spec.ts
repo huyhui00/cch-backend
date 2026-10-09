@@ -167,17 +167,96 @@ describe('TasksService', () => {
       expect(result).toMatchObject({ total: 1, page: 1, limit: 20 });
     });
 
-    it('badge tasksMeOpen นับด้วย where ชุดเดียวกับรายการ', async () => {
+    it('badge tasksMeOpen นับด้วย where ชุดเดียวกับรายการแท็บเริ่มต้น', async () => {
       taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
       taskModel.count.mockResolvedValue(3);
 
       await service.findMyTasks(42, { page: 1, limit: 20, offset: 0 } as never);
+      taskModel.count.mockClear();
       const count = await service.countMyOpenTasks(42);
 
       const [listOptions] = taskModel.findAndCountAll.mock.calls[0] as [{ where: unknown }];
       const [countOptions] = taskModel.count.mock.calls[0] as [{ where: unknown }];
       expect(countOptions.where).toEqual(listOptions.where);
       expect(count).toBe(3);
+    });
+
+    it.each([
+      ['TODO', { status: TaskStatus.TODO }],
+      ['IN_PROGRESS', { status: { [Op.in]: [TaskStatus.DOING, TaskStatus.WAITING] } }],
+      ['REVIEW', { status: TaskStatus.REVIEW }],
+      ['DONE', { status: TaskStatus.DONE }],
+      ['ALL', {}],
+    ])('แท็บ %s กรองสถานะถูกต้องและยังจำกัดเฉพาะงานของฉัน', async (tab, statusWhere) => {
+      taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+
+      await service.findMyTasks(42, { page: 1, limit: 20, offset: 0, tab } as never);
+
+      const [options] = taskModel.findAndCountAll.mock.calls[0] as [{ where: unknown }];
+      expect(options.where).toEqual({ assignedUserId: 42, ...statusWhere });
+    });
+
+    it('แท็บ OVERDUE ใช้เกณฑ์เดียวกับ isTaskOverdue', async () => {
+      taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+
+      await service.findMyTasks(42, { page: 1, limit: 20, offset: 0, tab: 'OVERDUE' } as never);
+
+      const [options] = taskModel.findAndCountAll.mock.calls[0] as [{ where: unknown }];
+      expect(options.where).toEqual({
+        assignedUserId: 42,
+        dueDate: { [Op.lt]: todayAsDateOnly() },
+        status: { [Op.ne]: TaskStatus.DONE },
+      });
+    });
+
+    it('แท็บ DONE เรียงเสร็จล่าสุดก่อน', async () => {
+      taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+
+      await service.findMyTasks(42, { page: 1, limit: 20, offset: 0, tab: 'DONE' } as never);
+
+      const [options] = taskModel.findAndCountAll.mock.calls[0] as [{ order: unknown }];
+      expect(options.order).toEqual([
+        ['completedAt', 'DESC'],
+        ['id', 'DESC'],
+      ]);
+    });
+
+    it('คืนตัวเลขทุกแท็บจากการนับตามสถานะ และ search ใช้กับทั้งรายการและตัวเลข', async () => {
+      taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+      taskModel.findAll.mockResolvedValue([
+        { status: TaskStatus.TODO, count: '2' },
+        { status: TaskStatus.DOING, count: 1 },
+        { status: TaskStatus.WAITING, count: 1 },
+        { status: TaskStatus.REVIEW, count: 3 },
+        { status: TaskStatus.DONE, count: 5 },
+      ]);
+      taskModel.count.mockResolvedValue(1);
+
+      const result = await service.findMyTasks(42, {
+        page: 1,
+        limit: 20,
+        offset: 0,
+        search: 'หน้าจอ',
+      } as never);
+
+      expect(result.counts).toEqual({
+        OPEN: 4,
+        TODO: 2,
+        IN_PROGRESS: 2,
+        REVIEW: 3,
+        DONE: 5,
+        OVERDUE: 1,
+        ALL: 12,
+      });
+
+      const like = { [Op.like]: '%หน้าจอ%' };
+      const searchWhere = { [Op.or]: [{ title: like }, { description: like }] };
+      const [listOptions] = taskModel.findAndCountAll.mock.calls[0] as [{ where: object }];
+      const [groupOptions] = taskModel.findAll.mock.calls[0] as [{ where: object }];
+      const [overdueOptions] = taskModel.count.mock.calls[0] as [{ where: object }];
+      for (const where of [listOptions.where, groupOptions.where, overdueOptions.where]) {
+        expect(where).toEqual(expect.objectContaining({ assignedUserId: 42, ...searchWhere }));
+      }
     });
   });
 

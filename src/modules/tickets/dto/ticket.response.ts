@@ -389,8 +389,18 @@ export class TicketResponseDto {
   @ApiProperty({ nullable: true, example: 4 })
   warrantyId: number | null;
 
+  @ApiProperty({
+    nullable: true,
+    description: 'เลขที่ใบประกัน — แสดงแทน id',
+    example: 'WAR69-0005',
+  })
+  warrantyNo: string | null;
+
   @ApiProperty({ nullable: true, example: 2 })
   maContractId: number | null;
+
+  @ApiProperty({ nullable: true, description: 'เลขที่สัญญา MA — แสดงแทน id', example: 'MA69-0004' })
+  maContractNo: string | null;
 
   @ApiProperty({ description: 'จำนวนรอบที่แก้ไปแล้ว (BR-03)', example: 2 })
   resolutionCount: number;
@@ -547,7 +557,9 @@ export function toTicketResponse(
     claimedByAdminUserId: ticket.claimedByAdminUserId,
     claimedByAdminUser: toUserSummary(ticket.claimedByAdminUser),
     warrantyId: ticket.warrantyId,
+    warrantyNo: ticket.warranty?.warrantyNo ?? null,
     maContractId: ticket.maContractId,
+    maContractNo: ticket.maContract?.contractNo ?? null,
     resolutionCount: ticket.resolutionCount,
     firstResponseAt: ticket.firstResponseAt,
     resolvedAt: ticket.resolvedAt,

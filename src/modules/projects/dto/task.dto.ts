@@ -205,6 +205,32 @@ export class QueryCompanyTasksDto extends QueryOverdueTasksDto {
   priority?: TaskPriority;
 }
 
+export enum MyTaskTab {
+  OPEN = 'OPEN',
+  TODO = 'TODO',
+  IN_PROGRESS = 'IN_PROGRESS',
+  REVIEW = 'REVIEW',
+  DONE = 'DONE',
+  OVERDUE = 'OVERDUE',
+  ALL = 'ALL',
+}
+
+export class QueryMyTasksDto extends PaginationDto {
+  @ApiPropertyOptional({
+    enum: MyTaskTab,
+    default: MyTaskTab.OPEN,
+    description:
+      'OPEN = ต้องลงมือ (TODO/DOING/WAITING — ตัวเลขเดียวกับ badge เมนู) · TODO · ' +
+      'IN_PROGRESS = DOING/WAITING · REVIEW = ส่งตรวจแล้ว รอผล · DONE · ' +
+      'OVERDUE = เลยวันครบกำหนดและยังไม่ DONE (เกณฑ์เดียวกับ isOverdue) · ALL = ทุกสถานะ',
+  })
+  @IsOptional()
+  @IsEnum(MyTaskTab, {
+    message: 'tab ต้องเป็น OPEN, TODO, IN_PROGRESS, REVIEW, DONE, OVERDUE หรือ ALL',
+  })
+  tab: MyTaskTab = MyTaskTab.OPEN;
+}
+
 export class QueryTaskBoardDto {
   @ApiPropertyOptional({ description: 'สรุปเฉพาะโครงการนี้ — ไม่ระบุ = ทั้งบริษัท', example: 1 })
   @IsOptional()

@@ -273,7 +273,10 @@ export class ReportsService {
         startDate: { [Op.lte]: today },
         endDate: { [Op.gte]: today },
       },
-      include: [{ model: Customer, attributes: ['id', 'name'], required: false, paranoid: false }],
+      include: [
+        { model: Customer, attributes: ['id', 'name'], required: false, paranoid: false },
+        { model: Project, attributes: ['id', 'name'], required: false, paranoid: false },
+      ],
       order: [['endDate', 'ASC']],
     });
 
@@ -290,6 +293,7 @@ export class ReportsService {
         customerId: contract.customerId,
         customerName: contract.customer ? contract.customer.name : '',
         projectId: contract.projectId,
+        projectName: contract.project ? contract.project.name : null,
         contractValue: contract.price,
         startDate: contract.startDate,
         endDate: contract.endDate,
@@ -373,7 +377,7 @@ export class ReportsService {
 
     return {
       disclaimer:
-        'ต้นทุนคิดจาก ticket_resolutions.hours_spent ซึ่งกรอกหรือไม่กรอกก็ได้ — ' +
+        'ต้นทุนคิดจาก "ชั่วโมงที่ใช้" ที่กรอกตอนบันทึกการแก้ไขแต่ละรอบ ซึ่งไม่บังคับกรอก — ' +
         'รอบที่ไม่ได้กรอกเวลาไม่ได้ถูกนับเป็น 0 ชั่วโมง แต่ถูกกันออกจากยอดรวม ' +
         'ให้อ่านตัวเลขคู่กับความครบถ้วนเสมอ',
       dateFrom: query.dateFrom ?? null,
@@ -721,7 +725,10 @@ export class ReportsService {
 
     for (let i = 0; i < usable.length; i += 1) {
       for (let j = i + 1; j < usable.length; j += 1) {
-        if (this.rangesOverlap(usable[i], usable[j])) {
+        if (
+          usable[i].customerId === usable[j].customerId &&
+          this.rangesOverlap(usable[i], usable[j])
+        ) {
           involved.add(usable[i].id);
           involved.add(usable[j].id);
         }

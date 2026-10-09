@@ -173,6 +173,47 @@ export class CompanyTaskResponseDto extends TaskResponseDto {
   project: TaskProjectSummaryDto | null;
 }
 
+/** ตัวเลขของทุกแท็บใน GET /tasks/me — กรองด้วย search เดียวกับรายการ */
+export class MyTaskCountsDto {
+  @ApiProperty({ example: 3 })
+  OPEN: number;
+
+  @ApiProperty({ example: 2 })
+  TODO: number;
+
+  @ApiProperty({ example: 1 })
+  IN_PROGRESS: number;
+
+  @ApiProperty({ example: 1 })
+  REVIEW: number;
+
+  @ApiProperty({ example: 8 })
+  DONE: number;
+
+  @ApiProperty({ example: 0 })
+  OVERDUE: number;
+
+  @ApiProperty({ example: 12 })
+  ALL: number;
+}
+
+export class MyTasksResponseDto {
+  @ApiProperty({ type: [CompanyTaskResponseDto] })
+  items: CompanyTaskResponseDto[];
+
+  @ApiProperty({ example: 3 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 20 })
+  limit: number;
+
+  @ApiProperty({ type: MyTaskCountsDto })
+  counts: MyTaskCountsDto;
+}
+
 /** GET /projects/options — ตัวเลือกดรอปดาวน์ ห้ามเติมฟิลด์ให้กลายเป็นรายการโครงการเต็ม */
 export class ProjectOptionDto {
   @ApiProperty({ example: 1 })

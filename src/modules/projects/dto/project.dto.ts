@@ -8,6 +8,7 @@ import {
 import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsISO8601,
   IsNotEmpty,
@@ -25,6 +26,8 @@ import {
 import { MAX_LIMIT, PaginationDto } from '../../../common/dto/pagination.dto';
 import { ProjectPriority, ProjectStatus } from '../../../models';
 import { CreateCustomerDto } from '../../customers/dto/create-customer.dto';
+
+export const CREATABLE_PROJECT_STATUSES = [ProjectStatus.DRAFT, ProjectStatus.IN_PROGRESS];
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -81,10 +84,16 @@ export class CreateProjectDto {
   @Transform(trimToNull)
   projectType?: string | null;
 
-  @ApiPropertyOptional({ enum: ProjectStatus, default: ProjectStatus.DRAFT })
+  @ApiPropertyOptional({
+    enum: CREATABLE_PROJECT_STATUSES,
+    default: ProjectStatus.DRAFT,
+    description:
+      'สร้างได้แค่ DRAFT / IN_PROGRESS — DELIVERED มาจากการตรวจรับส่งมอบครั้งสุดท้าย ' +
+      'สถานะอื่นเปลี่ยนตอนแก้ไขโครงการ',
+  })
   @IsOptional()
-  @IsEnum(ProjectStatus, {
-    message: 'สถานะโครงการต้องเป็น DRAFT, IN_PROGRESS, DELIVERED, CLOSED หรือ CANCELLED',
+  @IsIn(CREATABLE_PROJECT_STATUSES, {
+    message: 'โครงการใหม่ต้องเริ่มที่สถานะร่าง (DRAFT) หรือกำลังดำเนินการ (IN_PROGRESS)',
   })
   status?: ProjectStatus;
 
@@ -135,11 +144,18 @@ export class CreateProjectDto {
 }
 
 export class UpdateProjectDto extends PartialType(
-  OmitType(CreateProjectDto, ['newCustomer'] as const),
+  OmitType(CreateProjectDto, ['newCustomer', 'status'] as const),
 ) {
   @ApiPropertyOptional({ readOnly: true, description: 'เปลี่ยนไม่ได้ ส่งมาจะถูกปฏิเสธ' })
   @IsOptional()
   declare customerId?: number;
+
+  @ApiPropertyOptional({ enum: ProjectStatus })
+  @IsOptional()
+  @IsEnum(ProjectStatus, {
+    message: 'สถานะโครงการต้องเป็น DRAFT, IN_PROGRESS, DELIVERED, CLOSED หรือ CANCELLED',
+  })
+  status?: ProjectStatus;
 }
 
 export class QueryProjectOptionsDto {

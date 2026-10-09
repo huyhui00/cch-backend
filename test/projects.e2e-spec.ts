@@ -200,6 +200,22 @@ describe('Projects + ผู้ใช้ — ข้อตกลงประชุ
         .expect(201);
     });
 
+    it('สร้างได้แค่ DRAFT / IN_PROGRESS · แก้ไขทีหลังเปลี่ยนเป็น CLOSED ได้', async () => {
+      for (const status of ['DELIVERED', 'CLOSED', 'CANCELLED']) {
+        const response = await as(superToken, 'post', '/api/projects')
+          .send({ name: `เริ่มผิดสถานะ ${status} ${stamp}`, customerId: existingCustomerId, status })
+          .expect(400);
+        expect((response.body as ApiResponse<null>).message).toMatch(/ร่าง/);
+      }
+
+      const created = await as(superToken, 'post', '/api/projects')
+        .send({ name: `เริ่มทำเลย ${stamp}`, customerId: existingCustomerId, status: 'IN_PROGRESS' })
+        .expect(201);
+      const id = (created.body as ApiResponse<ProjectPayload>).data.id;
+
+      await as(superToken, 'put', `/api/projects/${id}`).send({ status: 'CLOSED' }).expect(200);
+    });
+
     it('แก้ไขโครงการส่ง newCustomer มาไม่ได้ — การสร้างลูกค้าใหม่ตอนแก้ไขคือการย้ายลูกค้า', async () => {
       const created = await as(superToken, 'post', '/api/projects')
         .send({ name: `แก้ไขทีหลัง ${stamp}`, customerId: existingCustomerId })

@@ -55,6 +55,7 @@ describe('Tasks across projects (e2e)', () => {
   let app: INestApplication;
   let token: string;
   let projectId: number;
+  let customerId: number;
   const titles = new Map<string, number>();
 
   const stamp = Date.now();
@@ -93,7 +94,7 @@ describe('Tasks across projects (e2e)', () => {
     const customer = await authed('post', '/api/customers')
       .send({ name: `ลูกค้าทดสอบงาน ${stamp}`, status: 'ACTIVE' })
       .expect(201);
-    const customerId = (customer.body as ApiResponse<{ id: number }>).data.id;
+    customerId = (customer.body as ApiResponse<{ id: number }>).data.id;
 
     const project = await authed('post', '/api/projects')
       .send({
@@ -216,6 +217,71 @@ describe('Tasks across projects (e2e)', () => {
       ]),
     );
     expect(board.byAssignee).toHaveLength(2);
+  });
+
+  it('งานของฉันแยกแท็บได้ครบ รวมงานที่ส่งตรวจและเสร็จแล้ว และตัวเลขทุกแท็บตรงกับรายการ', async () => {
+    const me = await authed('get', '/api/auth/me').expect(200);
+    const myId = (me.body as ApiResponse<{ id: number }>).data.id;
+    const project = await authed('post', '/api/projects')
+      .send({ customerId, name: `โครงการงานของฉัน ${stamp}`, status: 'IN_PROGRESS' })
+      .expect(201);
+    const mineProjectId = (project.body as ApiResponse<{ id: number }>).data.id;
+    const prefix = `งานของฉัน ${stamp}`;
+
+    const seeds = [
+      { title: `${prefix} ต้องทำ`, status: 'TODO' },
+      { title: `${prefix} เลยกำหนด`, status: 'DOING', dueDate: addDays(today, -1) },
+      { title: `${prefix} เสร็จ`, status: 'DONE' },
+    ];
+    for (const seed of seeds) {
+      await authed('post', `/api/projects/${mineProjectId}/tasks`)
+        .send({ ...seed, assignedUserId: myId })
+        .expect(201);
+    }
+    const toReview = await authed('post', `/api/projects/${mineProjectId}/tasks`)
+      .send({ title: `${prefix} ส่งตรวจ`, assignedUserId: myId })
+      .expect(201);
+    const toReviewId = (toReview.body as ApiResponse<{ id: number }>).data.id;
+    await authed('post', `/api/tasks/${toReviewId}/submissions`).field('report', 'รายงาน').expect(201);
+    await authed('patch', `/api/tasks/${toReviewId}/submit-review`).expect(200);
+
+    const search = encodeURIComponent(prefix);
+    const fetchTab = async (tab?: string) => {
+      const response = await authed(
+        'get',
+        `/api/tasks/me?search=${search}&limit=100${tab ? `&tab=${tab}` : ''}`,
+      ).expect(200);
+      return (
+        response.body as ApiResponse<Paginated<TaskPayload> & { counts: Record<string, number> }>
+      ).data;
+    };
+
+    const open = await fetchTab();
+    expect(open.counts).toEqual({
+      OPEN: 2,
+      TODO: 1,
+      IN_PROGRESS: 1,
+      REVIEW: 1,
+      DONE: 1,
+      OVERDUE: 1,
+      ALL: 4,
+    });
+    expect(open.items.map((task) => task.status).sort()).toEqual(['DOING', 'TODO']);
+
+    for (const [tab, statuses] of [
+      ['TODO', ['TODO']],
+      ['IN_PROGRESS', ['DOING']],
+      ['REVIEW', ['REVIEW']],
+      ['DONE', ['DONE']],
+      ['OVERDUE', ['DOING']],
+      ['ALL', ['DOING', 'DONE', 'REVIEW', 'TODO']],
+    ] as const) {
+      const page = await fetchTab(tab);
+      expect(page.items.map((task) => task.status).sort()).toEqual([...statuses]);
+      expect(page.total).toBe(open.counts[tab]);
+    }
+
+    await authed('get', '/api/tasks/me?tab=SOMETHING').expect(400);
   });
 
   it('ทุกเส้นยังต้องล็อกอินก่อน', async () => {

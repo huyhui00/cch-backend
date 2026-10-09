@@ -165,6 +165,9 @@ export class UpcomingContractItemDto {
   @ApiProperty({ example: 3 })
   projectId: number;
 
+  @ApiProperty({ nullable: true, example: 'ระบบจัดการคลังสินค้า' })
+  projectName: string | null;
+
   @ApiProperty({ example: '48000.00' })
   contractValue: string;
 
