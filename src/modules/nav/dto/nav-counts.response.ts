@@ -57,8 +57,8 @@ export class NavCountsDto {
     nullable: true,
     example: 3,
     description:
-      'total ของ GET /tasks/me — งานของฉันที่ยังต้องลงมือ (TODO / DOING / WAITING) ' +
-      '= badge เมนู "งานโปรเจกต์" · null ถ้าไม่มี task.view',
+      'total ของ GET /tasks/me แท็บ OPEN (TODO / DOING / WAITING) = badge เมนู "งานโปรเจกต์" · ' +
+      'SUPER_ADMIN/ADMIN นับทั้งบริษัท · USER นับเฉพาะงานของตน · null ถ้าไม่มี task.view',
   })
   tasksMeOpen: number | null;
 
@@ -66,7 +66,7 @@ export class NavCountsDto {
     nullable: true,
     example: 1,
     description:
-      'งานของฉัน (DOING / WAITING) ที่รอบส่งล่าสุดถูกตีกลับ — อยู่ใน GET /tasks/me เสมอ · ' +
+      'งาน (DOING / WAITING) ที่รอบส่งล่าสุดถูกตีกลับ — ขอบเขตเดียวกับ GET /tasks/me · ' +
       'null ถ้าไม่มี task.view',
   })
   tasksMeRejected: number | null;

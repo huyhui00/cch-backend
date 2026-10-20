@@ -11,6 +11,7 @@ import { Op } from 'sequelize';
 import type { Sequelize } from 'sequelize-typescript';
 
 import {
+  AccountType,
   Document,
   Task,
   TaskPriority,
@@ -19,11 +20,19 @@ import {
   User,
   UserStatus,
 } from '../../models';
+import type { AuthenticatedUser } from '../../common/types/auth.types';
 import { TasksService } from './tasks.service';
 import type { ProjectsService } from './projects.service';
 import { addDays } from '../../common/utils/date.util';
 import { runWithRequestContext } from '../../common/context/request-context';
 import { todayAsDateOnly } from './dto/project.response';
+
+function authUser(
+  id: number,
+  accountType: AccountType = AccountType.USER,
+): AuthenticatedUser {
+  return { id, username: `user-${id}`, accountType, sessionId: null };
+}
 
 /**
  * เทสต์กฎธุรกิจของ Phase 5 ฝั่งงานย่อย (CLAUDE.md 14)
@@ -144,7 +153,7 @@ describe('TasksService', () => {
   }
 
   describe('findMyTasks', () => {
-    it('กรองด้วย user id จากฝั่ง server และคืนผลแบบแบ่งหน้า', async () => {
+    it('USER กรองด้วย user id จากฝั่ง server และคืนผลแบบแบ่งหน้า', async () => {
       const task = taskRow({ assignedUserId: 42 });
       let captured: { assignedUserId: number } | undefined;
       taskModel.findAndCountAll.mockImplementation((options: { where: typeof captured }) => {
@@ -152,7 +161,7 @@ describe('TasksService', () => {
         return Promise.resolve({ rows: [task], count: 1 });
       });
 
-      const result = await service.findMyTasks(42, {
+      const result = await service.findMyTasks(authUser(42), {
         page: 1,
         limit: 20,
         offset: 0,
@@ -168,12 +177,13 @@ describe('TasksService', () => {
     });
 
     it('badge tasksMeOpen นับด้วย where ชุดเดียวกับรายการแท็บเริ่มต้น', async () => {
+      const user = authUser(42);
       taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
       taskModel.count.mockResolvedValue(3);
 
-      await service.findMyTasks(42, { page: 1, limit: 20, offset: 0 } as never);
+      await service.findMyTasks(user, { page: 1, limit: 20, offset: 0 } as never);
       taskModel.count.mockClear();
-      const count = await service.countMyOpenTasks(42);
+      const count = await service.countMyOpenTasks(user);
 
       const [listOptions] = taskModel.findAndCountAll.mock.calls[0] as [{ where: unknown }];
       const [countOptions] = taskModel.count.mock.calls[0] as [{ where: unknown }];
@@ -187,19 +197,42 @@ describe('TasksService', () => {
       ['REVIEW', { status: TaskStatus.REVIEW }],
       ['DONE', { status: TaskStatus.DONE }],
       ['ALL', {}],
-    ])('แท็บ %s กรองสถานะถูกต้องและยังจำกัดเฉพาะงานของฉัน', async (tab, statusWhere) => {
+    ])('แท็บ %s กรองสถานะถูกต้องและยังจำกัดเฉพาะงานของ USER', async (tab, statusWhere) => {
       taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
 
-      await service.findMyTasks(42, { page: 1, limit: 20, offset: 0, tab } as never);
+      await service.findMyTasks(authUser(42), { page: 1, limit: 20, offset: 0, tab } as never);
 
       const [options] = taskModel.findAndCountAll.mock.calls[0] as [{ where: unknown }];
       expect(options.where).toEqual({ assignedUserId: 42, ...statusWhere });
     });
 
+    it.each([AccountType.ADMIN, AccountType.SUPER_ADMIN])(
+      '%s เห็นงานทั้งบริษัทโดยไม่กรอง assignedUserId',
+      async (accountType) => {
+        taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+
+        await service.findMyTasks(authUser(42, accountType), {
+          page: 1,
+          limit: 20,
+          offset: 0,
+          tab: 'ALL',
+        } as never);
+
+        const [options] = taskModel.findAndCountAll.mock.calls[0] as [{ where: object }];
+        expect(options.where).toEqual({});
+        expect(options.where).not.toHaveProperty('assignedUserId');
+      },
+    );
+
     it('แท็บ OVERDUE ใช้เกณฑ์เดียวกับ isTaskOverdue', async () => {
       taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
 
-      await service.findMyTasks(42, { page: 1, limit: 20, offset: 0, tab: 'OVERDUE' } as never);
+      await service.findMyTasks(authUser(42), {
+        page: 1,
+        limit: 20,
+        offset: 0,
+        tab: 'OVERDUE',
+      } as never);
 
       const [options] = taskModel.findAndCountAll.mock.calls[0] as [{ where: unknown }];
       expect(options.where).toEqual({
@@ -212,7 +245,12 @@ describe('TasksService', () => {
     it('แท็บ DONE เรียงเสร็จล่าสุดก่อน', async () => {
       taskModel.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
 
-      await service.findMyTasks(42, { page: 1, limit: 20, offset: 0, tab: 'DONE' } as never);
+      await service.findMyTasks(authUser(42), {
+        page: 1,
+        limit: 20,
+        offset: 0,
+        tab: 'DONE',
+      } as never);
 
       const [options] = taskModel.findAndCountAll.mock.calls[0] as [{ order: unknown }];
       expect(options.order).toEqual([
@@ -232,7 +270,7 @@ describe('TasksService', () => {
       ]);
       taskModel.count.mockResolvedValue(1);
 
-      const result = await service.findMyTasks(42, {
+      const result = await service.findMyTasks(authUser(42), {
         page: 1,
         limit: 20,
         offset: 0,
@@ -666,7 +704,7 @@ describe('TasksService', () => {
   });
 
   describe('countRejectedMyTasks (badge งานโปรเจกต์)', () => {
-    it('นับเฉพาะงานที่รอบส่งล่าสุดถูกตีกลับ', async () => {
+    it('USER นับเฉพาะงานของตนที่รอบส่งล่าสุดถูกตีกลับ', async () => {
       taskModel.findAll.mockResolvedValue([{ id: 1 }, { id: 2 }, { id: 3 }]);
       // เรียงล่าสุดก่อนตาม order ของ query
       submissionModel.findAll.mockResolvedValue([
@@ -676,7 +714,7 @@ describe('TasksService', () => {
         { taskId: 1, status: 'REJECTED' },
       ]);
 
-      await expect(service.countRejectedMyTasks(8)).resolves.toBe(1);
+      await expect(service.countRejectedMyTasks(authUser(8))).resolves.toBe(1);
       expect(taskModel.findAll).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
@@ -687,10 +725,23 @@ describe('TasksService', () => {
       );
     });
 
+    it('ADMIN นับงานทั้งบริษัทโดยไม่กรอง assignedUserId', async () => {
+      taskModel.findAll.mockResolvedValue([]);
+
+      await expect(service.countRejectedMyTasks(authUser(8, AccountType.ADMIN))).resolves.toBe(0);
+      expect(taskModel.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: { [Op.in]: [TaskStatus.DOING, TaskStatus.WAITING] },
+          },
+        }),
+      );
+    });
+
     it('ไม่มีงานค้าง = 0 โดยไม่ query รอบส่ง', async () => {
       taskModel.findAll.mockResolvedValue([]);
 
-      await expect(service.countRejectedMyTasks(8)).resolves.toBe(0);
+      await expect(service.countRejectedMyTasks(authUser(8))).resolves.toBe(0);
       expect(submissionModel.findAll).not.toHaveBeenCalled();
     });
   });

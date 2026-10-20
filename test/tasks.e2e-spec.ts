@@ -284,6 +284,30 @@ describe('Tasks across projects (e2e)', () => {
     await authed('get', '/api/tasks/me?tab=SOMETHING').expect(400);
   });
 
+  it('SUPER_ADMIN เห็นงานที่มอบหมายให้คนอื่นใน GET /tasks/me?tab=ALL', async () => {
+    const users = await authed('get', '/api/users?limit=100').expect(200);
+    const other = (
+      users.body as ApiResponse<{ items: { id: number; accountType: string }[] }>
+    ).data.items.find((row) => row.accountType === 'USER');
+    expect(other).toBeDefined();
+
+    const prefix = `งานคนอื่น ${stamp}`;
+    await authed('post', `/api/projects/${projectId}/tasks`)
+      .send({ title: prefix, status: 'TODO', assignedUserId: other!.id })
+      .expect(201);
+
+    const response = await authed(
+      'get',
+      `/api/tasks/me?tab=ALL&search=${encodeURIComponent(prefix)}&limit=100`,
+    ).expect(200);
+    const page = (
+      response.body as ApiResponse<Paginated<TaskPayload> & { counts: Record<string, number> }>
+    ).data;
+
+    expect(page.total).toBeGreaterThanOrEqual(1);
+    expect(page.items.some((task) => task.title === prefix)).toBe(true);
+  });
+
   it('ทุกเส้นยังต้องล็อกอินก่อน', async () => {
     await api().get('/api/tasks').expect(401);
     await api().get('/api/tasks/summary').expect(401);

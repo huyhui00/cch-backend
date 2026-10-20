@@ -114,8 +114,8 @@ describe('NavService.getCounts', () => {
     await service.getCounts(user);
 
     expect(ticketsService.countOpenAssignedTo).toHaveBeenCalledWith(8);
-    expect(tasksService.countMyOpenTasks).toHaveBeenCalledWith(8);
-    expect(tasksService.countRejectedMyTasks).toHaveBeenCalledWith(8);
+    expect(tasksService.countMyOpenTasks).toHaveBeenCalledWith(user);
+    expect(tasksService.countRejectedMyTasks).toHaveBeenCalledWith(user);
     expect(followUpsService.countMineDue).toHaveBeenCalledWith(8);
     expect(EXPIRING_SOON_DAYS).toBe(30);
     expect(warrantiesService.countExpiring).toHaveBeenCalledWith(30);

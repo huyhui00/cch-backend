@@ -152,20 +152,20 @@ export class TasksController {
   @Get('me')
   @RequirePermission('task.view')
   @ApiOperation({
-    summary: 'งานของฉัน',
+    summary: 'งานโปรเจกต์ (ของฉัน / ทั้งบริษัทตามระดับบัญชี)',
     description:
-      'คืนเฉพาะงานที่มอบหมายให้ผู้ใช้ที่ล็อกอินอยู่ แยกแท็บด้วย ?tab= (ไม่ส่ง = OPEN) ' +
-      '`counts` คือตัวเลขของทุกแท็บ กรองด้วย search เดียวกับรายการ · ' +
-      'search ค้นชื่อและรายละเอียดงาน · แท็บ DONE เรียงเสร็จล่าสุดก่อน',
+      'แยกแท็บด้วย ?tab= (ไม่ส่ง = OPEN) · `counts` คือตัวเลขของทุกแท็บ กรองด้วย search เดียวกับรายการ · ' +
+      'search ค้นชื่อและรายละเอียดงาน · แท็บ DONE เรียงเสร็จล่าสุดก่อน · ' +
+      'SUPER_ADMIN / ADMIN เห็นงานย่อยทั้งบริษัท · USER เห็นเฉพาะงานที่มอบหมายให้ตัวเอง',
   })
   @ApiResponse({ status: 200, description: 'สำเร็จ', type: MyTasksResponseDto })
   @ApiResponse({ status: 400, description: 'tab ไม่ถูกต้อง' })
   @ApiResponse({ status: 403, description: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' })
   findMyTasks(
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: AuthenticatedUser,
     @Query() query: QueryMyTasksDto,
   ): Promise<MyTasksResponseDto> {
-    return this.tasksService.findMyTasks(userId, query);
+    return this.tasksService.findMyTasks(user, query);
   }
 
   @Get()

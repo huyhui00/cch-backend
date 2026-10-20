@@ -50,6 +50,19 @@ async function bootstrap() {
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
 
+  // หน้าเว็บบน Tailscale (100.x) ยิงเข้า IP ใน LAN ถือเป็น private network
+  // Chrome ส่ง preflight พร้อมหัวนี้ และตัดคำขอทิ้งถ้าไม่ได้รับอนุญาตกลับ
+  // ทำให้หน้าล็อกอินขึ้นว่าเชื่อมต่อไม่ได้ ทั้งที่พอร์ต 3000 ฟังอยู่
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.headers['access-control-request-private-network'] === 'true') {
+      const origin = req.headers.origin;
+      if (typeof origin === 'string' && allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Private-Network', 'true');
+      }
+    }
+    next();
+  });
+
   app.enableCors({
     origin: allowedOrigins.length > 0 ? allowedOrigins : false,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],

@@ -813,9 +813,11 @@ return true;
     = แท็บ "กำลังทำ" ของหน้าใบของฉัน · `tasksMeRejected` = งานของฉัน DOING/WAITING ที่รอบส่ง**ล่าสุด**ถูกตีกลับ
  · `tasksMeOpen` (29 ก.ย.) = total ของ `GET /tasks/me` แท็บเริ่มต้น `OPEN` (TODO/DOING/WAITING) = badge เมนู "งานโปรเจกต์"
  ใช้ `TasksService.myOpenTasksWhere()` ร่วมกับรายการ · `null` ถ้าไม่มี `task.view`
- · **`GET /tasks/me?tab=` (9 ต.ค.)** `OPEN` (ไม่ส่ง) / `TODO` / `IN_PROGRESS` (DOING+WAITING) / `REVIEW` / `DONE` / `OVERDUE`
+ · **`GET /tasks/me?tab=` (9 ต.ค. · ปรับขอบเขต 20 ต.ค.)** `OPEN` (ไม่ส่ง) / `TODO` / `IN_PROGRESS` (DOING+WAITING) / `REVIEW` / `DONE` / `OVERDUE`
  (เกณฑ์เดียวกับ `isTaskOverdue` — รวม REVIEW ที่เลยกำหนด) / `ALL` · คืน `counts` ของทุกแท็บ กรองด้วย `search` เดียวกัน
  (ค้นชื่อ/รายละเอียดงาน) · DONE เรียงเสร็จล่าสุดก่อน · เดิมคืนแค่ OPEN ทำให้งานที่ส่งตรวจหายจากหน้าจอผู้ทำและแท็บ "เสร็จแล้ว" เป็น 0 ตลอด
+ · **ขอบเขตตามระดับบัญชี (20 ต.ค.)** — `SUPER_ADMIN` / `ADMIN` เห็นงานย่อยทั้งบริษัททุกแท็บ (ไม่กรอง `assignedUserId`) ·
+ `USER` เห็นเฉพาะงานที่มอบหมายให้ตัวเอง · badge `tasksMeOpen` / `tasksMeRejected` ใช้ขอบเขตชุดเดียวกับรายการ
  · (29 ก.ย.) `followUpsMineDue` = total ของ `GET /follow-ups?assignedUserId=<ฉัน>&dueByToday=true`
  (PLANNED/OVERDUE ที่ครบกำหนดภายในวันนี้ รวมที่เลยแล้ว · `followup.view`) ·
  `warrantiesExpiringSoon` = `GET /warranties/expiring?days=30` (`warranty.view`) ·

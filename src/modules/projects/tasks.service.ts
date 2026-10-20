@@ -297,13 +297,22 @@ export class TasksService {
     return toTaskResponse(task);
   }
 
-  async findMyTasks(userId: number, query: QueryMyTasksDto): Promise<MyTasksResponseDto> {
+  /**
+   * หน้างานโปรเจกต์ (`GET /tasks/me`) — SUPER_ADMIN / ADMIN เห็นงานทั้งบริษัท
+   * USER เห็นเฉพาะงานที่มอบหมายให้ตัวเอง
+   */
+  seesCompanyProjectTasks(accountType: AccountType): boolean {
+    return accountType === AccountType.SUPER_ADMIN || accountType === AccountType.ADMIN;
+  }
+
+  async findMyTasks(user: AuthenticatedUser, query: QueryMyTasksDto): Promise<MyTasksResponseDto> {
     const tab = query.tab ?? MyTaskTab.OPEN;
+    const companyWide = this.seesCompanyProjectTasks(user.accountType);
     const searchWhere = this.myTasksSearchWhere(query.search);
 
     const [{ rows, count }, counts] = await Promise.all([
       this.taskModel.findAndCountAll({
-        where: { ...this.myTasksWhere(userId, tab), ...searchWhere },
+        where: { ...this.myTasksWhere(user.id, tab, companyWide), ...searchWhere },
         include: [assigneeInclude(), assignedByInclude(), projectInclude()],
         order:
           tab === MyTaskTab.DONE
@@ -319,7 +328,7 @@ export class TasksService {
         limit: query.limit,
         offset: query.offset,
       }),
-      this.countMyTasksByTab(userId, searchWhere),
+      this.countMyTasksByTab(user.id, searchWhere, companyWide),
     ]);
 
     return {
@@ -328,29 +337,31 @@ export class TasksService {
     };
   }
 
-  myTasksWhere(userId: number, tab: MyTaskTab): WhereOptions<Task> {
+  myTasksWhere(userId: number, tab: MyTaskTab, companyWide = false): WhereOptions<Task> {
+    const mine: WhereOptions<Task> = companyWide ? {} : { assignedUserId: userId };
+
     switch (tab) {
       case MyTaskTab.OPEN:
-        return this.myOpenTasksWhere(userId);
+        return this.myOpenTasksWhere(userId, companyWide);
       case MyTaskTab.TODO:
-        return { assignedUserId: userId, status: TaskStatus.TODO };
+        return { ...mine, status: TaskStatus.TODO };
       case MyTaskTab.IN_PROGRESS:
         return {
-          assignedUserId: userId,
+          ...mine,
           status: { [Op.in]: [TaskStatus.DOING, TaskStatus.WAITING] },
         };
       case MyTaskTab.REVIEW:
-        return { assignedUserId: userId, status: TaskStatus.REVIEW };
+        return { ...mine, status: TaskStatus.REVIEW };
       case MyTaskTab.DONE:
-        return { assignedUserId: userId, status: TaskStatus.DONE };
+        return { ...mine, status: TaskStatus.DONE };
       case MyTaskTab.OVERDUE:
         return {
-          assignedUserId: userId,
+          ...mine,
           dueDate: { [Op.lt]: todayAsDateOnly() },
           status: { [Op.ne]: TaskStatus.DONE },
         };
       case MyTaskTab.ALL:
-        return { assignedUserId: userId };
+        return mine;
       default: {
         const _exhaustive: never = tab;
         return _exhaustive;
@@ -370,16 +381,18 @@ export class TasksService {
   private async countMyTasksByTab(
     userId: number,
     searchWhere: WhereOptions<Task>,
+    companyWide = false,
   ): Promise<MyTaskCountsDto> {
+    const mine: WhereOptions<Task> = companyWide ? {} : { assignedUserId: userId };
     const [grouped, overdue] = await Promise.all([
       this.taskModel.findAll({
-        where: { assignedUserId: userId, ...searchWhere },
+        where: { ...mine, ...searchWhere },
         attributes: ['status', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']],
         group: ['status'],
         raw: true,
       }) as unknown as Promise<Array<{ status: TaskStatus; count: number | string }>>,
       this.taskModel.count({
-        where: { ...this.myTasksWhere(userId, MyTaskTab.OVERDUE), ...searchWhere },
+        where: { ...this.myTasksWhere(userId, MyTaskTab.OVERDUE, companyWide), ...searchWhere },
       }),
     ]);
 
@@ -401,13 +414,15 @@ export class TasksService {
     };
   }
 
-  countMyOpenTasks(userId: number): Promise<number> {
-    return this.taskModel.count({ where: this.myOpenTasksWhere(userId) });
+  countMyOpenTasks(user: AuthenticatedUser): Promise<number> {
+    return this.taskModel.count({
+      where: this.myOpenTasksWhere(user.id, this.seesCompanyProjectTasks(user.accountType)),
+    });
   }
 
-  myOpenTasksWhere(userId: number): WhereOptions<Task> {
+  myOpenTasksWhere(userId: number, companyWide = false): WhereOptions<Task> {
     return {
-      assignedUserId: userId,
+      ...(companyWide ? {} : { assignedUserId: userId }),
       status: { [Op.notIn]: [TaskStatus.REVIEW, TaskStatus.DONE] },
     };
   }
@@ -810,10 +825,11 @@ export class TasksService {
     return (await this.findReviews(query, user)).total;
   }
 
-  async countRejectedMyTasks(userId: number): Promise<number> {
+  async countRejectedMyTasks(user: AuthenticatedUser): Promise<number> {
+    const companyWide = this.seesCompanyProjectTasks(user.accountType);
     const tasks = await this.taskModel.findAll({
       where: {
-        assignedUserId: userId,
+        ...(companyWide ? {} : { assignedUserId: user.id }),
         status: { [Op.in]: [TaskStatus.DOING, TaskStatus.WAITING] },
       },
       attributes: ['id'],
